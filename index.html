@@ -192,10 +192,10 @@ input[type=password]{letter-spacing:5px}
 .snap-net-neg{color:#B2342A}
 
 /* ── v11: Sites grid, wizard, stock ── */
-.sites-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
-@media(min-width:760px){.sites-grid{grid-template-columns:repeat(4,1fr)}}
-.site-block{background:#fff;border:1px solid #E6E2D8;border-radius:10px;padding:14px 14px 12px;cursor:pointer;position:relative}
-.site-block:active{background:#FAF9F5}
+.sites-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin-bottom:14px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+.site-block{background:#fff;border:1px solid #E6E2D8;border-radius:12px;padding:16px 14px 14px;cursor:pointer;position:relative}
+.site-block:active{filter:brightness(0.95)}
+.leader-tag{font-size:9px;font-weight:800;letter-spacing:2px;color:rgba(255,255,255,0.7);text-transform:uppercase;margin-bottom:8px}
 .sb-status{position:absolute;top:11px;right:11px;width:8px;height:8px;border-radius:50%}
 .sb-name{font-size:13px;font-weight:800;color:#1A1A1A;line-height:1.3;margin-bottom:3px;padding-right:16px}
 .sb-meta{font-size:10.5px;color:#8A8470;margin-bottom:10px}
@@ -695,6 +695,11 @@ DATA.sites.forEach(s=>{
   if(!s.products) s.products = [];
   ['contactPerson','addressName','mapsLink','hasSpec','specManufacturer','specFileName','specFileData','warranty','warrantyBy','endDate'].forEach(k=>{ if(s[k]===undefined) s[k]=''; });
 });
+if(!DATA._v12newmark){
+  const _nm = DATA.sites.find(s=>s.id==='site_newmark2');
+  if(_nm && _nm.status !== 'done'){ _nm.status = 'done'; _nm.endDate = '2026-07-13'; }
+  DATA._v12newmark = true;
+}
 try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); }catch(e){}
 let CURRENT_DOOR = 'overview';
 let scopeLineCount = 0;
@@ -822,6 +827,13 @@ const MANUFACTURER_PRODUCTS = {
     'Universal Roof Paint','Universal Waterbased Enamel','Universal Rust Primer'
   ]
 };
+// One block per leader, each with his own colour
+const LEADER_META = [
+  { key:'joe',    name:'Joe',    colour:'#8B1A1A' },  // Power Rock red
+  { key:'costa',  name:'Costa',  colour:'#1F4E6B' },  // deep ocean blue
+  { key:'daniel', name:'Daniel', colour:'#9C8049' },  // bronze gold
+  { key:'talent', name:'Talent', colour:'#4E7A5F' },  // forest green
+];
 const SURFACE_OPTIONS = ['Exterior Walls','Roof Surfaces','Exterior Ceilings','Exterior Steel Surfaces','Interior Walls','Interior Ceilings'];
 
 function R(n){ return "R " + (n||0).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -1351,35 +1363,57 @@ function renderSites(){
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Sites</div>`;
   h += `<button class="cta-btn" style="margin-bottom:16px" onclick="openAddSite()">+ Add new site</button>`;
 
-  const active = DATA.sites.filter(s=>s.status!=='done').sort((a,b)=>new Date(b.started)-new Date(a.started));
+  const active = DATA.sites.filter(s=>s.status!=='done');
   const done = DATA.sites.filter(s=>s.status==='done');
 
-  if(active.length === 0){
-    h += `<div class="empty-state ledger-card" style="padding:40px 20px">
-      <div class="empty-state-ico">▦</div>
-      <div class="empty-state-txt">No active sites. Add a site — it becomes a live block here with its profit per day.</div>
+  h += `<div class="section-lbl">The four teams — live profit per day</div>`;
+  h += `<div class="sites-grid">`;
+
+  const shownIds = [];
+  LEADER_META.forEach(lm=>{
+    const leaderSites = active.filter(s=>s.team===lm.key).sort((a,b)=>new Date(b.started)-new Date(a.started));
+    if(leaderSites.length === 0){
+      h += `<div class="site-block" style="background:#EFEDE6;border:1.5px dashed #C9C4B4">
+        <div class="leader-tag" style="color:#A39E8C">${lm.name}</div>
+        <div class="sb-name" style="color:#A39E8C">No active site</div>
+        <div class="sb-meta">Assign one with + Add new site</div>
+      </div>`;
+      return;
+    }
+    const s = leaderSites[0];
+    shownIds.push(s.id);
+    const ppd = siteProfitPerDay(s);
+    const days = siteDaysOnSite(s);
+    const extra = leaderSites.length > 1 ? ` · +${leaderSites.length-1} more` : '';
+    h += `<div class="site-block" style="background:${lm.colour};border-color:${lm.colour}" onclick="openSiteDetail('${s.id}')">
+      <div class="leader-tag">${lm.name}</div>
+      <div class="sb-name" style="color:#fff">${s.name}</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Started ${fd(s.started)}</div>
+      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Profit / Day</div>
+      <div class="sb-ppd disp" style="color:#fff">${R(ppd)}</div>
+      <div class="sb-days" style="color:rgba(255,255,255,0.6)">Day ${days} on site${extra}</div>
     </div>`;
-  } else {
-    h += `<div class="section-lbl">Active sites — live profit per day</div>`;
-    h += `<div class="sites-grid">`;
-    active.forEach(s=>{
+  });
+  h += `</div>`;
+
+  // Any other active work not shown in the four blocks (e.g. a leader running two sites)
+  const others = active.filter(s=>!shownIds.includes(s.id) && LEADER_META.some(lm=>lm.key===s.team))
+    .concat(active.filter(s=>!LEADER_META.some(lm=>lm.key===s.team)));
+  if(others.length){
+    h += `<div class="section-lbl">Other active sites</div>`;
+    others.forEach(s=>{
       const ppd = siteProfitPerDay(s);
-      const days = siteDaysOnSite(s);
-      const col = ppd > 0 ? '#5C7A6B' : (siteInvoicedToDate(s) > 0 ? '#B2342A' : '#A39E8C');
-      h += `<div class="site-block" onclick="openSiteDetail('${s.id}')">
-        <div class="sb-status" style="background:${s.status==='active'?'#5C7A6B':'#D4A55A'}"></div>
-        <div class="sb-name">${s.name}</div>
-        <div class="sb-meta">${cap(s.team)} · Started ${fd(s.started)}</div>
-        <div class="sb-ppd-lbl">Profit / Day</div>
-        <div class="sb-ppd disp" style="color:${col}">${R(ppd)}</div>
-        <div class="sb-days">Day ${days} on site</div>
+      h += `<div class="site-row" onclick="openSiteDetail('${s.id}')">
+        <div class="site-top">
+          <div><div class="site-name">${s.name}</div><div class="site-meta">${s.client||'No client'} · ${cap(s.team)} · Started ${fd(s.started)}</div></div>
+          <span class="disp" style="font-weight:800;color:${ppd>0?'#5C7A6B':'#B2342A'}">${R(ppd)}/day</span>
+        </div>
       </div>`;
     });
-    h += `</div>`;
   }
 
-  h += `<button class="cta-btn ghost" onclick="renderPreviousSites()">▤ Previous sites (${done.length})</button>
-  <div style="font-size:11px;color:#A39E8C;margin-top:12px;line-height:1.7">Profit per day = (invoiced to date − labour − material − overheads) ÷ days on site. Tap a block to see the full calculation, stock sheet and daily reports.</div>`;
+  h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="renderPreviousSites()">▤ Previous sites (${done.length})</button>
+  <div style="font-size:11px;color:#A39E8C;margin-top:12px;line-height:1.7">Profit per day = (invoiced to date − labour − material − overheads) ÷ days on site. Tap a block for the full calculation, stock sheet and daily reports.</div>`;
   $('pageBody').innerHTML = h;
 }
 
