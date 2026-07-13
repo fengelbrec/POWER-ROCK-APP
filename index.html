@@ -48,11 +48,11 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .pill-amber{background:rgba(212,165,90,0.22);color:#E8C58A}
 .pill-red{background:rgba(178,52,42,0.25);color:#F0A89E}
 
-.month-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:14px}
-.month-cell{background:rgba(255,255,255,0.05);border-radius:6px;padding:9px 6px;text-align:center;border:1px solid rgba(255,255,255,0.08)}
+.month-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:14px}
+.month-cell{background:rgba(255,255,255,0.05);border-radius:6px;padding:9px 5px;text-align:center;border:1px solid rgba(255,255,255,0.08);min-width:0;overflow:hidden}
 .month-cell.filled{border-color:rgba(139,26,26,0.5)}
 .month-cell-lbl{font-size:9px;color:rgba(255,255,255,0.45);font-weight:600;letter-spacing:0.5px;text-transform:uppercase}
-.month-cell-val{font-family:'Poppins',sans-serif;font-size:12.5px;color:#fff;margin-top:3px;font-weight:700}
+.month-cell-val{font-family:'Poppins',sans-serif;font-size:12.5px;color:#fff;margin-top:3px;font-weight:700;overflow-wrap:anywhere;word-break:break-word;line-height:1.25}
 
 .split-row{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #EFECE3}
 .split-row:last-child{border-bottom:none}
@@ -192,7 +192,10 @@ input[type=password]{letter-spacing:5px}
 .snap-net-neg{color:#B2342A}
 
 /* ── v11: Sites grid, wizard, stock ── */
-.sites-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin-bottom:14px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+.sites-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+@media(min-width:760px){.sites-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.site-block{min-width:0}
+.sb-ppd{overflow-wrap:anywhere;line-height:1.2}
 .site-block{background:#fff;border:1px solid #E6E2D8;border-radius:12px;padding:16px 14px 14px;cursor:pointer;position:relative}
 .site-block:active{filter:brightness(0.95)}
 .leader-tag{font-size:13px;font-weight:800;letter-spacing:2.5px;color:#fff;text-transform:uppercase;margin-bottom:8px;text-shadow:0 1px 2px rgba(0,0,0,0.25)}
@@ -215,6 +218,21 @@ input[type=password]{letter-spacing:5px}
 .stk-row:last-child{border-bottom:none}
 .stk-btn{width:34px;height:34px;border-radius:8px;border:1.5px solid #E6E2D8;background:#fff;font-size:16px;font-weight:800;color:#1A1A1A;cursor:pointer}
 .stk-btn:active{background:#F0EEE6}
+
+/* ── Mobile polish — phones are the primary device ── */
+@media(max-width:520px){
+  .topbar{padding:10px 14px}
+  .brand-name{font-size:15px}
+  .page{padding:14px 12px 100px}
+  .page-title{font-size:24px}
+  .sb-ppd{font-size:16px}
+  .sb-name{font-size:12.5px}
+  .leader-tag{font-size:11.5px;letter-spacing:2px}
+  .month-cell-val{font-size:11px}
+  .modal-sheet{padding:18px 14px 40px;max-height:92vh}
+  .dnitem{padding:13px 11px;font-size:12px}
+  .cta-btn{height:50px}
+}
 </style>
 </head>
 <body>
