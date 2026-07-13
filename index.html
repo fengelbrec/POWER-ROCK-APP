@@ -195,7 +195,7 @@ input[type=password]{letter-spacing:5px}
 .sites-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin-bottom:14px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}
 .site-block{background:#fff;border:1px solid #E6E2D8;border-radius:12px;padding:16px 14px 14px;cursor:pointer;position:relative}
 .site-block:active{filter:brightness(0.95)}
-.leader-tag{font-size:9px;font-weight:800;letter-spacing:2px;color:rgba(255,255,255,0.7);text-transform:uppercase;margin-bottom:8px}
+.leader-tag{font-size:13px;font-weight:800;letter-spacing:2.5px;color:#fff;text-transform:uppercase;margin-bottom:8px;text-shadow:0 1px 2px rgba(0,0,0,0.25)}
 .sb-status{position:absolute;top:11px;right:11px;width:8px;height:8px;border-radius:50%}
 .sb-name{font-size:13px;font-weight:800;color:#1A1A1A;line-height:1.3;margin-bottom:3px;padding-right:16px}
 .sb-meta{font-size:10.5px;color:#8A8470;margin-bottom:10px}
@@ -404,6 +404,9 @@ input[type=password]{letter-spacing:5px}
           <input class="f-input" type="number" id="as_materialbudget" placeholder="Auto: 26%" step="0.01" oninput="this.dataset.manual='1'"/>
         </div>
       </div>
+      <label class="f-label">Upload the actual quote (PDF or photo)</label>
+      <input type="file" id="as_quotefile" accept=".pdf,image/*" onchange="handleQuoteFile(this)" style="margin-bottom:8px;font-size:13px;width:100%"/>
+      <div id="as_quotefile_note" style="font-size:11px;color:#8A8470;margin-bottom:8px">Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.</div>
     </div>
 
     <div class="f-err" id="as_err">Please fill in at least the site name, team leader, start date and a quote value (or scope lines).</div>
@@ -693,7 +696,7 @@ DATA.sites.forEach(s=>{
   if(!s.surfaces) s.surfaces = [];
   if(!s.colours) s.colours = {};
   if(!s.products) s.products = [];
-  ['contactPerson','addressName','mapsLink','hasSpec','specManufacturer','specFileName','specFileData','warranty','warrantyBy','endDate'].forEach(k=>{ if(s[k]===undefined) s[k]=''; });
+  ['contactPerson','addressName','mapsLink','hasSpec','specManufacturer','specFileName','specFileData','quoteFileName','quoteFileData','warranty','warrantyBy','endDate'].forEach(k=>{ if(s[k]===undefined) s[k]=''; });
 });
 if(!DATA._v12newmark){
   const _nm = DATA.sites.find(s=>s.id==='site_newmark2');
@@ -1373,7 +1376,7 @@ function renderSites(){
   LEADER_META.forEach(lm=>{
     const leaderSites = active.filter(s=>s.team===lm.key).sort((a,b)=>new Date(b.started)-new Date(a.started));
     if(leaderSites.length === 0){
-      h += `<div class="site-block" style="background:#EFEDE6;border:1.5px dashed #C9C4B4">
+      h += `<div class="site-block" style="background:#EFEDE6;border:2.5px dashed #1A1A1A">
         <div class="leader-tag" style="color:#A39E8C">${lm.name}</div>
         <div class="sb-name" style="color:#A39E8C">No active site</div>
         <div class="sb-meta">Assign one with + Add new site</div>
@@ -1385,7 +1388,7 @@ function renderSites(){
     const ppd = siteProfitPerDay(s);
     const days = siteDaysOnSite(s);
     const extra = leaderSites.length > 1 ? ` · +${leaderSites.length-1} more` : '';
-    h += `<div class="site-block" style="background:${lm.colour};border-color:${lm.colour}" onclick="openSiteDetail('${s.id}')">
+    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteDetail('${s.id}')">
       <div class="leader-tag">${lm.name}</div>
       <div class="sb-name" style="color:#fff">${s.name}</div>
       <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Started ${fd(s.started)}</div>
@@ -1446,6 +1449,7 @@ function renderPreviousSites(){
 }
 
 let PENDING_SPEC = null;
+let PENDING_QUOTE = null;
 let productRowCount = 0;
 
 function openAddSite(){
@@ -1457,6 +1461,9 @@ function openAddSite(){
   scopeLineCount = 0;
   productRowCount = 0;
   PENDING_SPEC = null;
+  PENDING_QUOTE = null;
+  if($('as_quotefile')) $('as_quotefile').value='';
+  $('as_quotefile_note').textContent = 'Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.';
   $('as_hasspec').value=''; $('as_manufacturer').value=''; $('as_warranty').value='';
   $('as_manufacturer_wrap').style.display='none';
   $('as_spec_upload_wrap').style.display='none';
@@ -1507,6 +1514,19 @@ function handleSpecFile(input){
   } else {
     PENDING_SPEC = { name:f.name, data:'' };
     $('as_specfile_note').textContent = '✓ '+f.name+' noted. The file is too big to store inside the app — keep it in your site folder. (Tip: drop the spec into a chat with Claude and get the product list for question 11 in seconds.)';
+  }
+}
+
+function handleQuoteFile(input){
+  const f = input.files && input.files[0];
+  if(!f){ PENDING_QUOTE = null; return; }
+  if(f.size <= 1500000){
+    const reader = new FileReader();
+    reader.onload = e=>{ PENDING_QUOTE = { name:f.name, data:e.target.result }; $('as_quotefile_note').textContent = '✓ '+f.name+' — will be saved inside the app.'; };
+    reader.readAsDataURL(f);
+  } else {
+    PENDING_QUOTE = { name:f.name, data:'' };
+    $('as_quotefile_note').textContent = '✓ '+f.name+' noted. The file is too big to store inside the app — keep it in your site folder.';
   }
 }
 
@@ -1679,6 +1699,8 @@ function saveSite(){
     hasSpec, specManufacturer: hasSpec==='yes' ? $('as_manufacturer').value : '',
     specFileName: PENDING_SPEC ? PENDING_SPEC.name : '',
     specFileData: (PENDING_SPEC && PENDING_SPEC.data) ? PENDING_SPEC.data : '',
+    quoteFileName: PENDING_QUOTE ? PENDING_QUOTE.name : '',
+    quoteFileData: (PENDING_QUOTE && PENDING_QUOTE.data) ? PENDING_QUOTE.data : '',
     surfaces: selectedSurfaces(), colours,
     warranty, warrantyBy,
     products, endDate: ''
@@ -1767,6 +1789,11 @@ function openSiteDetail(id){
     <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid #EFECE3">
       <div><div style="font-size:10px;color:#8A8470;font-weight:600">INVOICED TO DATE</div><div class="disp" style="font-size:14px;font-weight:700">${R(invoicedToDate)}</div></div>
       <div style="text-align:right"><div style="font-size:10px;color:#8A8470;font-weight:600">PAID TO DATE</div><div class="disp" style="font-size:14px;font-weight:700;color:#5C7A6B">${R(paidToDate)}</div></div>
+    </div>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid #EFECE3;font-size:12px;color:#5C5748">
+      <span style="color:#8A8470">Quote document:</span>
+      ${s.quoteFileData ? `<strong>${s.quoteFileName}</strong> · <a href="${s.quoteFileData}" download="${s.quoteFileName||'quote.pdf'}" style="color:#8B1A1A;font-weight:700">Download</a> · ` : (s.quoteFileName ? `<strong>${s.quoteFileName}</strong> (kept in site folder) · ` : 'none uploaded · ')}
+      <a href="javascript:void(0)" onclick="uploadQuoteFor('${s.id}')" style="color:#8B1A1A;font-weight:700">${s.quoteFileName?'Replace':'Upload quote'}</a>
     </div>
   </div>
 
@@ -1859,6 +1886,33 @@ function openSiteDetail(id){
   openModal('modalSiteDetail');
   loadSiteStock(s.id);
   loadSiteReports(s.id);
+}
+
+function uploadQuoteFor(siteId){
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.pdf,image/*';
+  inp.onchange = ()=>{
+    const f = inp.files && inp.files[0];
+    if(!f) return;
+    const s = siteById(siteId);
+    if(f.size <= 1500000){
+      const reader = new FileReader();
+      reader.onload = e=>{
+        s.quoteFileName = f.name;
+        s.quoteFileData = e.target.result;
+        saveData('Quote saved to site');
+        openSiteDetail(siteId);
+      };
+      reader.readAsDataURL(f);
+    } else {
+      s.quoteFileName = f.name;
+      s.quoteFileData = '';
+      saveData('Quote name saved — file too big to store, keep it in your site folder');
+      openSiteDetail(siteId);
+    }
+  };
+  inp.click();
 }
 
 function copyMapsLink(siteId){
