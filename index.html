@@ -768,6 +768,7 @@ const NAV = [
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
   {id:'cashflow', label:'Cashflow', icon:'∿'},
   {id:'suppliers', label:'Suppliers', icon:'▣'},
+  {id:'invoiceinbox', label:'Invoice Inbox', icon:'📥'},
   {id:'foundation', label:'Foundation', icon:'✦'},
   {id:'marketing', label:'Marketing', icon:'◎'},
   {id:'settings', label:'Settings', icon:'⚙'},
@@ -821,6 +822,16 @@ async function sbDelete(table, filters){
       headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
     });
   }catch(e){}
+}
+async function sbPatch(table, filters, data){
+  try{
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?${filters}`, {
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body: JSON.stringify(data)
+    });
+    return r.ok;
+  }catch(e){ return false; }
 }
 
 // Products pre-loaded per manufacturer — seeded from real Power Rock specs.
@@ -935,7 +946,7 @@ function renderDoor(id){
     overview: renderOverview, dailyupdates: renderDailyUpdates,
     sites: renderSites, financials: renderFinancials,
     splitengine: renderSplitEngine, vat: renderVAT, cashflow: renderCashflow,
-    suppliers: renderSuppliers, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
+    suppliers: renderSuppliers, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
   };
   (renderers[id] || renderEmpty)();
 }
@@ -2400,6 +2411,140 @@ function renderSuppliers(){
 // ───────────────────────────────────────────
 // FOUNDATION
 // ───────────────────────────────────────────
+// ───────────────────────────────────────────
+// INVOICE INBOX — emailed invoices land here as pending;
+// Ferdi confirms → material cost + stock update automatically
+// ───────────────────────────────────────────
+let INBOX_CACHE = [];
+
+async function renderInvoiceInbox(){
+  $('pageBody').innerHTML = `
+    <div class="page-eyebrow">Door 1 · Owner</div>
+    <div class="page-title">Invoice Inbox</div>
+    <div style="font-size:12px;color:#8A8470;margin-bottom:16px;line-height:1.7">Invoices emailed to <strong>powerrock.invoices@gmail.com</strong> land here. Check what was read, pick the site if the guess is wrong, and tap Confirm — the material cost and paint stock update automatically. Nothing changes without your tap.</div>
+    <div id="inboxBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading…</div></div>`;
+
+  const pending = await sbGetRows('invoice_inbox', 'status=eq.pending&order=received_at.desc');
+  const recent = await sbGetRows('invoice_inbox', 'status=eq.confirmed&order=processed_at.desc&limit=8');
+  INBOX_CACHE = pending || [];
+  const body = $('inboxBody'); if(!body) return;
+
+  let h = '';
+  if(INBOX_CACHE.length === 0){
+    h += `<div class="empty-state ledger-card" style="padding:40px 20px">
+      <div class="empty-state-ico">📥</div>
+      <div class="empty-state-txt">No invoices waiting. When a supplier invoice arrives by email, it appears here for your confirmation.</div>
+    </div>`;
+  } else {
+    h += `<div class="section-lbl">Waiting for your confirmation (${INBOX_CACHE.length})</div>`;
+    INBOX_CACHE.forEach((inv, idx)=>{
+      const guessId = guessSiteId(inv.reference || inv.site_guess || inv.raw_summary || '');
+      const items = Array.isArray(inv.line_items) ? inv.line_items : [];
+      h += `<div class="ledger-card" style="padding:16px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <div style="font-size:14px;font-weight:800;color:#1A1A1A">${inv.supplier||'Unknown supplier'}</div>
+          <div class="disp" style="font-size:16px;font-weight:800">${R(inv.total)}</div>
+        </div>
+        <div style="font-size:11px;color:#8A8470;margin-bottom:10px">${inv.invoice_number?'#'+inv.invoice_number+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${inv.reference?' · Ref: '+inv.reference:''}</div>
+        ${items.length?`<div style="background:#F7F6F3;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#5C5748;line-height:1.9">${items.map(it=>`${it.product||'?'}${it.colour?' ('+it.colour+')':''} — <strong>${it.qty||0} × ${it.unit||''}</strong>`).join('<br/>')}</div>`:''}
+        ${inv.raw_summary?`<div style="font-size:11px;color:#A39E8C;margin-bottom:10px">${inv.raw_summary}</div>`:''}
+        <label class="f-label">Which site is this for?</label>
+        <select class="f-select" id="inbsite_${idx}">
+          ${DATA.sites.filter(s=>s.status!=='done').map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:8px">
+          <button class="cta-btn" style="flex:1" onclick="confirmInboxInvoice(${idx})">✓ Confirm — update cost &amp; stock</button>
+          <button class="cta-btn ghost" style="flex:0 0 100px" onclick="rejectInboxInvoice(${idx})">Reject</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  if(recent && recent.length){
+    h += `<div class="section-lbl">Recently processed</div><div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
+    recent.forEach(inv=>{
+      h += `<div class="snap-expense-line" style="padding:9px 0">
+        <span>${inv.supplier||''} ${inv.invoice_number?'· '+inv.invoice_number:''} · ${inv.processed_at?fd(inv.processed_at):''}</span>
+        <span class="disp" style="font-weight:700">${R(inv.total)}</span>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+  body.innerHTML = h;
+}
+
+function guessSiteId(text){
+  const t = slugId(text||'');
+  if(!t) return '';
+  let hit = '';
+  DATA.sites.filter(s=>s.status!=='done').forEach(s=>{
+    if(hit) return;
+    const tokens = slugId(s.name).split('_').filter(w=>w.length>3);
+    if(tokens.some(w=>t.includes(w))) hit = s.id;
+  });
+  return hit;
+}
+
+function matchStockRow(rows, name){
+  const n = slugId(name||'');
+  if(!n) return null;
+  let best = null;
+  rows.forEach(r=>{
+    if(best) return;
+    const rn = slugId(r.product);
+    if(rn === n || rn.includes(n) || n.includes(rn)) best = r;
+  });
+  if(best) return best;
+  const toks = n.split('_').filter(w=>w.length>3);
+  rows.forEach(r=>{
+    if(best) return;
+    const rt = slugId(r.product).split('_');
+    if(toks.filter(w=>rt.includes(w)).length >= 2) best = r;
+  });
+  return best;
+}
+
+async function confirmInboxInvoice(idx){
+  const inv = INBOX_CACHE[idx]; if(!inv) return;
+  const siteId = $('inbsite_'+idx) ? $('inbsite_'+idx).value : '';
+  const s = siteById(siteId);
+  if(!s){ alert('Please choose a site first.'); return; }
+
+  // 1. Material cost onto the site
+  if(!s.materialEntries) s.materialEntries = [];
+  s.materialEntries.push({ id: uid(), date: inv.invoice_date || new Date().toISOString().split('T')[0], supplier: inv.supplier||'', invNo: inv.invoice_number||'', amount: parseFloat(inv.total)||0 });
+
+  // 2. Stock: add received quantities per line item (matched to the sheet, or added as new)
+  const rows = await sbGetRows('paint_stock', `site_id=eq.${siteId}`);
+  const items = Array.isArray(inv.line_items) ? inv.line_items : [];
+  for(const it of items){
+    const qty = parseFloat(it.qty)||0;
+    if(!it.product || qty <= 0) continue;
+    let r = matchStockRow(rows, it.product);
+    if(!r){
+      r = { id:'stk_'+siteId+'_'+slugId(it.product)+'_'+slugId(it.colour||''), site_id:siteId, product:it.product, colour:it.colour||'', unit:it.unit||'20L drums', qty_on_site:0, total_received:0, total_used:0 };
+      rows.push(r);
+      if(!s.products) s.products = [];
+      s.products.push({ product: it.product, colour: it.colour||'', unit: it.unit||'20L drums' });
+    }
+    r.qty_on_site = (parseFloat(r.qty_on_site)||0) + qty;
+    r.total_received = (parseFloat(r.total_received)||0) + qty;
+    await sbUpsert('paint_stock', { id:r.id, site_id:siteId, product:r.product, colour:r.colour||'', unit:r.unit||'20L drums', qty_on_site:r.qty_on_site, total_received:r.total_received, total_used:r.total_used||0, updated_at:new Date().toISOString() });
+  }
+
+  saveData('Invoice confirmed — cost & stock updated');
+  await sbPatch('invoice_inbox', `id=eq.${encodeURIComponent(inv.id)}`, { status:'confirmed', site_guess:siteId, processed_at:new Date().toISOString() });
+  renderInvoiceInbox();
+}
+
+async function rejectInboxInvoice(idx){
+  const inv = INBOX_CACHE[idx]; if(!inv) return;
+  if(!confirm('Reject this invoice? It will not touch any figures or stock.')) return;
+  await sbPatch('invoice_inbox', `id=eq.${encodeURIComponent(inv.id)}`, { status:'rejected', processed_at:new Date().toISOString() });
+  showSaveToast('Invoice rejected');
+  renderInvoiceInbox();
+}
+
 function renderFoundation(){
   let h = `<div class="page-eyebrow">Door 1 · Owner only · Not visible to Henk</div><div class="page-title">Privilege Foundation</div>`;
 
