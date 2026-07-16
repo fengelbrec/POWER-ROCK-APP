@@ -270,7 +270,7 @@ input[type=password]{letter-spacing:5px}
       <div><div class="brand-name">POWER ROCK</div><div class="brand-sub">PAINTING</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <span class="role-badge">Ferdi · Owner</span>
+      <span class="role-badge" id="roleBadge">Ferdi · Owner</span>
       <button class="btnout" onclick="logout()">Sign out</button>
     </div>
   </div>
@@ -774,6 +774,15 @@ const NAV = [
   {id:'settings', label:'Settings', icon:'⚙'},
 ];
 
+// Henk's door — operations only. Deliberately no financials, splits or VAT.
+const NAV_HENK = [
+  {id:'overview', label:'Overview', icon:'◆'},
+  {id:'dailyupdates', label:'Daily Updates', icon:'📋'},
+  {id:'sites', label:'Sites & Labour', icon:'▦'},
+];
+
+function navFor(){ return CURRENT_ROLE === 'henk' ? NAV_HENK : NAV; }
+
 // Supabase connection
 const SB_URL = 'https://xpjdiithqjhbtxznlgdq.supabase.co';
 const SB_KEY = 'sb_publishable_0WVaSGjbD0NsNJNTjLYfLw_9KZXA6dc';
@@ -880,11 +889,17 @@ function fd(d){ return new Date(d).toLocaleDateString('en-ZA',{day:'numeric',mon
 // Change these PINs any time (they are test PINs for now).
 const DOOR_PINS = {
   '0000': { door: 1 },                       // Ferdi — full owner access
+  '5555': { door: 2 },                       // Henk — ops manager
   '1111': { door: 3, leader: 'joe'    },     // Joe
   '2222': { door: 3, leader: 'costa'  },     // Costa
   '3333': { door: 3, leader: 'daniel' },     // Daniel
   '4444': { door: 3, leader: 'talent' },     // Talent
 };
+
+// Door 1 and Door 2 share the same shell. The role decides which sections
+// appear and which numbers are shown — Henk runs operations, so he sees
+// stock, labour and the daily reports, but not the owner financials.
+let CURRENT_ROLE = 'owner';
 
 function doLogin(){
   const p = $('lPin').value;
@@ -892,6 +907,15 @@ function doLogin(){
   const route = DOOR_PINS[p];
   if(route && route.door === 1){
     $('lPin').value=''; e.textContent='';
+    CURRENT_ROLE = 'owner';
+    $('roleBadge').textContent = 'Ferdi · Owner';
+    buildNav();
+    renderDoor('overview');
+    show('sMain');
+  } else if(route && route.door === 2){
+    $('lPin').value=''; e.textContent='';
+    CURRENT_ROLE = 'henk';
+    $('roleBadge').textContent = 'Henk · Ops';
     buildNav();
     renderDoor('overview');
     show('sMain');
@@ -932,7 +956,7 @@ function leaderSignOut(){
 }
 
 function buildNav(){
-  $('doorNav').innerHTML = NAV.map(n=>
+  $('doorNav').innerHTML = navFor().map(n=>
     `<div class="dnitem ${n.id===CURRENT_DOOR?'sel':''}" onclick="renderDoor('${n.id}')">
       <span>${n.icon}</span><span>${n.label}</span>
     </div>`
@@ -942,6 +966,14 @@ function buildNav(){
 function renderDoor(id){
   CURRENT_DOOR = id;
   buildNav();
+  if(CURRENT_ROLE === 'henk'){
+    // Henk can only ever reach his own three sections, whatever id arrives.
+    const henkRenderers = {
+      overview: renderHenkOverview, dailyupdates: renderDailyUpdates, sites: renderHenkSites,
+    };
+    (henkRenderers[id] || renderHenkOverview)();
+    return;
+  }
   const renderers = {
     overview: renderOverview, dailyupdates: renderDailyUpdates,
     sites: renderSites, financials: renderFinancials,
@@ -1191,7 +1223,7 @@ function toggleSiteSplitPaid(monthKey, siteId, splitKey){
 // ───────────────────────────────────────────
 async function renderDailyUpdates(){
   $('pageBody').innerHTML = `
-    <div class="page-eyebrow">Door 1 · Owner</div>
+    <div class="page-eyebrow">${CURRENT_ROLE === 'henk' ? 'Door 2 · Ops' : 'Door 1 · Owner'}</div>
     <div class="page-title">Daily Updates</div>
     <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading updates...</div></div>`;
 
@@ -1752,7 +1784,7 @@ function saveSite(){
   });
 
   closeModal('modalAddSite');
-  renderSites();
+  renderDoor('sites'); // role-aware — Henk must land back on his own Sites page
 }
 
 function openSiteDetail(id){
@@ -2679,6 +2711,216 @@ function clearAllData(){
   DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
   saveData('All data cleared');
   renderDoor('overview');
+}
+
+// ══════════════════════════════════════════
+// DOOR 2 — HENK · OPS MANAGER
+// Reads live from Supabase rather than this browser's storage, so Henk and
+// Ferdi see the same sites from different devices. Deliberately no owner
+// financials here: no profit per day, no splits, no VAT.
+// ══════════════════════════════════════════
+let HENK = { sites: [], updates: [], stock: {}, usage: {} };
+
+async function loadHenkData(){
+  const res = await Promise.all([
+    sbGetRows('sites', 'order=started.desc'),
+    sbGetRows('daily_updates', 'order=date.desc&limit=100'),
+    sbGetRows('paint_stock', ''),
+    sbGetRows('stock_usage', '')
+  ]);
+  HENK.sites   = Array.isArray(res[0]) ? res[0] : [];
+  HENK.updates = Array.isArray(res[1]) ? res[1] : [];
+  HENK.stock = {}; HENK.usage = {};
+  (Array.isArray(res[2]) ? res[2] : []).forEach(function(r){
+    if(!HENK.stock[r.site_id]) HENK.stock[r.site_id] = [];
+    HENK.stock[r.site_id].push(r);
+  });
+  (Array.isArray(res[3]) ? res[3] : []).forEach(function(r){
+    if(!HENK.usage[r.site_id]) HENK.usage[r.site_id] = [];
+    HENK.usage[r.site_id].push(r);
+  });
+}
+
+function henkLeader(key){ return LEADER_META.find(function(l){ return l.key === key; }); }
+function henkLeaderName(key){ const l = henkLeader(key); return l ? l.name : cap(key || '—'); }
+function henkLeaderColour(key){ const l = henkLeader(key); return l ? l.colour : '#5C5748'; }
+
+function henkDays(s){
+  if(!s.started) return 0;
+  return Math.max(1, Math.floor((new Date() - new Date(s.started)) / 86400000) + 1);
+}
+
+// Material spend per site comes from captured invoices. Until invoices live in
+// the database this is 0 — show that honestly rather than implying no spend.
+function henkMaterialSpend(siteId){ return 0; }
+
+function henkBudgetBar(pct, over){
+  return `<div style="height:6px;background:#E6E2D8;border-radius:3px;overflow:hidden;margin-top:6px">
+    <div style="height:100%;width:${Math.min(100,pct)}%;background:${over?'#B2342A':'#5C7A6B'}"></div>
+  </div>`;
+}
+
+async function renderHenkOverview(){
+  $('pageBody').innerHTML = `
+    <div class="page-eyebrow">Door 2 · Ops</div>
+    <div class="page-title">Overview</div>
+    <div id="henkBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading live data…</div></div>`;
+  await loadHenkData();
+  const body = $('henkBody');
+  if(!body || CURRENT_DOOR !== 'overview' || CURRENT_ROLE !== 'henk') return;
+
+  const today = new Date().toISOString().split('T')[0];
+  const active = HENK.sites.filter(function(s){ return s.status !== 'done'; });
+  const todays = HENK.updates.filter(function(u){ return u.date === today; });
+
+  let h = `<div class="section-lbl">Today — ${new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'})}</div>`;
+
+  const waiting = active.filter(function(s){
+    return !todays.some(function(u){ return u.site_id === s.id; });
+  });
+  if(waiting.length){
+    h += `<div style="background:#FFF3E0;border:1px solid #D4A55A;border-radius:10px;padding:14px 16px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:800;color:#9C6000;letter-spacing:1px;margin-bottom:8px">⏳ STILL WAITING FOR</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${waiting.map(function(s){ return `<span style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#9C6000">${henkLeaderName(s.team_leader)} · ${s.name}</span>`; }).join('')}
+      </div></div>`;
+  } else if(active.length){
+    h += `<div style="background:#EAF1EC;border:1px solid #5C7A6B;border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:12.5px;font-weight:700;color:#3F5A4C">✓ Every site has reported today</div>`;
+  }
+
+  if(!active.length){
+    h += `<div class="empty-state ledger-card" style="padding:40px 20px">
+      <div class="empty-state-ico">▦</div>
+      <div class="empty-state-txt">No active sites yet.<br/>Add one on the Sites &amp; Labour tab.</div>
+    </div>`;
+    body.innerHTML = h;
+    return;
+  }
+
+  h += `<div class="section-lbl">Each leader — budget standing</div>`;
+  active.forEach(function(s){
+    const stock = HENK.stock[s.id] || [];
+    const unitsUsed = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
+    const labourActual = parseFloat(s.labour_actual)||0;
+    const labourBudget = parseFloat(s.labour_budget)||0;
+    const matBudget = parseFloat(s.material_budget)||0;
+    const matSpend = henkMaterialSpend(s.id);
+    const labPct = labourBudget ? Math.round(labourActual/labourBudget*100) : 0;
+    const labOver = labourBudget > 0 && labourActual > labourBudget;
+    const last = HENK.updates.find(function(u){ return u.site_id === s.id; });
+
+    h += `<div class="ledger-card" style="padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
+        <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${henkLeaderColour(s.team_leader)};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
+      </div>
+      <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">${s.client||'No client'} · Day ${henkDays(s)} on site${last?' · last report '+fd(last.date):' · no reports yet'}</div>
+
+      <div style="font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:1px">LABOUR</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="disp" style="font-size:16px;font-weight:800;color:${labOver?'#B2342A':'#1A1A1A'}">${R(labourActual)}</span>
+        <span style="font-size:11.5px;color:#8A8470">of ${R(labourBudget)} budget${labourBudget?' · '+labPct+'%':''}</span>
+      </div>
+      ${henkBudgetBar(labPct, labOver)}
+
+      <div style="font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-top:14px">MATERIAL</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A">${R(matSpend)}</span>
+        <span style="font-size:11.5px;color:#8A8470">of ${R(matBudget)} budget</span>
+      </div>
+      ${henkBudgetBar(matBudget?Math.round(matSpend/matBudget*100):0, false)}
+      <div style="font-size:10.5px;color:#A39E8C;margin-top:5px">Material spend shows R0 until invoices are captured in the app</div>
+
+      <div style="font-size:11.5px;color:#8A8470;margin-top:12px">🎨 ${stock.length} product${stock.length!==1?'s':''} on the stock sheet · ${unitsUsed} unit${unitsUsed!==1?'s':''} used so far</div>
+    </div>`;
+  });
+
+  body.innerHTML = h;
+}
+
+async function renderHenkSites(){
+  $('pageBody').innerHTML = `
+    <div class="page-eyebrow">Door 2 · Ops</div>
+    <div class="page-title">Sites &amp; Labour</div>
+    <button class="cta-btn" style="margin-bottom:16px" onclick="openAddSite()">+ Add new site</button>
+    <div id="henkBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading live data…</div></div>`;
+  await loadHenkData();
+  const body = $('henkBody');
+  if(!body || CURRENT_DOOR !== 'sites' || CURRENT_ROLE !== 'henk') return;
+
+  const active = HENK.sites.filter(function(s){ return s.status !== 'done'; });
+  if(!active.length){
+    body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px">
+      <div class="empty-state-ico">▦</div>
+      <div class="empty-state-txt">No active sites yet.<br/>Use + Add new site above.</div></div>`;
+    return;
+  }
+
+  let h = '';
+  active.forEach(function(s){
+    const stock = HENK.stock[s.id] || [];
+    const labourActual = parseFloat(s.labour_actual)||0;
+    const labourBudget = parseFloat(s.labour_budget)||0;
+
+    h += `<div class="ledger-card" style="padding:16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
+        <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${henkLeaderColour(s.team_leader)};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
+      </div>
+      <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${s.client||'No client'} · started ${fd(s.started)}</div>
+
+      <div class="section-lbl" style="margin:0 0 8px">Labour to date — you set this</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="f-input" id="lab_${s.id}" type="number" step="0.01" inputmode="decimal"
+               placeholder="0.00" value="${labourActual||''}" style="flex:1;margin:0"/>
+        <button class="cta-btn" style="width:auto;padding:0 18px;margin:0;flex:0 0 auto" onclick="saveHenkLabour('${s.id}')">Save</button>
+      </div>
+      <div style="font-size:11px;color:#A39E8C;margin-top:6px">Budget ${R(labourBudget)}${labourBudget?' · '+Math.round(labourActual/labourBudget*100)+'% used':''}</div>
+
+      <div class="section-lbl" style="margin:18px 0 8px">Material on site &amp; used</div>`;
+
+    if(!stock.length){
+      h += `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No products on this site's stock sheet yet.</div>`;
+    } else {
+      h += `<table class="snap-table"><thead><tr>
+        <th>Product</th><th>Received</th><th>Used</th><th>On site</th>
+      </tr></thead><tbody>`;
+      stock.forEach(function(r){
+        h += `<tr>
+          <td>${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</td>
+          <td>${parseFloat(r.total_received)||0}</td>
+          <td>${parseFloat(r.total_used)||0}</td>
+          <td><strong>${parseFloat(r.qty_on_site)||0}</strong></td>
+        </tr>`;
+      });
+      h += `</tbody></table>
+      <div style="font-size:10.5px;color:#A39E8C;margin-top:6px">Counted in each product's own unit — drums, tubes, bags. Prices appear here once invoices are captured in the app.</div>`;
+    }
+
+    h += `</div>`;
+  });
+
+  body.innerHTML = h;
+}
+
+async function saveHenkLabour(siteId){
+  const el = $('lab_' + siteId);
+  if(!el) return;
+  const raw = el.value.trim();
+  const val = parseFloat(raw);
+  if(raw !== '' && (isNaN(val) || val < 0)){
+    showSaveToast('Enter a labour amount of 0 or more');
+    return;
+  }
+  const amount = raw === '' ? 0 : val;
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { labour_actual: amount });
+  if(ok){
+    const s = HENK.sites.find(function(x){ return x.id === siteId; });
+    if(s) s.labour_actual = amount;
+    showSaveToast('Labour saved — ' + R(amount));
+  } else {
+    showSaveToast('Could not save — check your signal and try again');
+  }
 }
 
 function renderEmpty(){
