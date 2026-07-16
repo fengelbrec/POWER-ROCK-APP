@@ -248,13 +248,32 @@ input[type=password]{letter-spacing:5px}
         <div class="login-brand">POWER ROCK</div>
         <div class="login-brand-sub">PLATFORM</div>
       </div>
-      <div class="login-box">
+      <div class="login-box" id="loginBox">
         <label class="login-lbl">PIN</label>
         <input type="password" class="login-input" id="lPin" placeholder="••••" maxlength="10" inputmode="numeric" onkeydown="if(event.key==='Enter')doLogin()"/>
         <button class="cta-btn dark" onclick="doLogin()">Enter</button>
         <div class="login-err" id="lErr"></div>
       </div>
-      <div class="login-foot">One app — your PIN opens your door</div>
+
+      <!-- Testing only. Hidden on the live site — see TEST_MODE. -->
+      <div class="login-box" id="testPicker" style="display:none">
+        <div style="background:#FFF3E0;border:1px solid #D4A55A;border-radius:8px;padding:9px 12px;margin-bottom:14px">
+          <div style="font-size:10.5px;font-weight:800;color:#9C6000;letter-spacing:1px">🧪 TEST VERSION — NO PINS</div>
+          <div style="font-size:11px;color:#9C6000;margin-top:3px">Not the live app. Your team is unaffected.</div>
+        </div>
+        <label class="login-lbl">Open as</label>
+        <select class="login-input" id="testWho" style="height:52px">
+          <option value="0000">Ferdi — Owner</option>
+          <option value="5555">Henk — Ops Manager</option>
+          <option value="1111">Joe — Greenhill Village</option>
+          <option value="2222">Costa — The Firs</option>
+          <option value="3333">Daniel — Allen Joss Mazda</option>
+          <option value="4444">Talent — Mabe Park</option>
+        </select>
+        <button class="cta-btn dark" onclick="testOpen()">Open →</button>
+      </div>
+
+      <div class="login-foot" id="loginFoot">One app — your PIN opens your door</div>
     </div>
   </div>
 </div>
@@ -995,6 +1014,28 @@ const DOOR_PINS = {
 // appear and which numbers are shown — Henk runs operations, so he sees
 // stock, labour and the daily reports, but not the owner financials.
 let CURRENT_ROLE = 'owner';
+
+// ── TEST MODE ──
+// While we are testing, a people dropdown replaces the PIN screen so Ferdi can
+// jump between doors without typing. It must NEVER appear on the live site: a
+// no-PIN dropdown on a public link would put the owner financials one tap from
+// anyone who found the URL. So this is an allowlist of known test addresses —
+// anything else, including the live site and anywhere unexpected, gets PINs.
+const TEST_HOSTS = ['raw.githack.com', 'rawcdn.githack.com', 'localhost', '127.0.0.1'];
+const TEST_MODE = TEST_HOSTS.indexOf(location.hostname) !== -1 || location.protocol === 'file:';
+
+function applyTestMode(){
+  if(!TEST_MODE) return;
+  $('loginBox').style.display = 'none';
+  $('testPicker').style.display = 'block';
+  $('loginFoot').textContent = 'Test version — pick a person, no PIN needed';
+}
+
+function testOpen(){
+  if(!TEST_MODE) return;
+  $('lPin').value = $('testWho').value;
+  doLogin();
+}
 
 function doLogin(){
   const p = $('lPin').value;
@@ -3026,6 +3067,7 @@ function renderEmpty(){
 // The login screen is the first step in history, so Back from Overview lands
 // here instead of walking out of the app.
 replaceView({ kind: 'login' });
+applyTestMode();
 
 
 // ═══ EMBEDDED DOOR 3 — TEAM LEADER PORTAL (base64 of the full file) ═══
