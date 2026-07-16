@@ -979,8 +979,9 @@ function paintView(v){
     if(badge) badge.textContent = role === 'henk' ? 'Henk · Ops' : 'Ferdi · Owner';
     // Daily Updates has its own screens inside it — restore which one this step was.
     if(section === 'dailyupdates'){
-      DU_VIEW = (v.du && v.du.view) || 'today';
-      DU_SITE = (v.du && v.du.site) || null;
+      DU_VIEW   = (v.du && v.du.view) || 'today';
+      DU_SITE   = (v.du && v.du.site) || null;
+      DU_LEADER = (v.du && v.du.leader) || null;
       DU_SELECTED = null;
     }
     CURRENT_VIEW = { kind: 'door', role: role, section: section, du: v.du || null };
@@ -1121,7 +1122,7 @@ function buildNav(){
 
 // Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
-  if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_SELECTED = null; }
+  if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
   paintDoor(id);
 }
@@ -1395,8 +1396,9 @@ const DU_SITES = { site_greenhill:'Greenhill Village', site_firs:'The Firs', sit
 
 let DU_CACHE = [];
 let DU_SITELIST = [];
-let DU_VIEW = 'today';    // 'today' | 'archive' | 'site'
+let DU_VIEW = 'today';    // 'today' | 'archive' | 'leader' | 'site'
 let DU_SITE = null;       // which site, when DU_VIEW === 'site'
+let DU_LEADER = null;     // which leader, when DU_VIEW === 'leader'
 let DU_SELECTED = null;   // a date picked on a calendar
 let DU_CAL = null;        // which month a calendar is showing
 
@@ -1423,9 +1425,10 @@ async function renderDailyUpdates(){
 
 // Archive views are proper history steps, so the phone's Back button walks
 // site -> archive -> today instead of jumping out of the section.
-function duGo(view, siteId){
+function duGo(view, siteId, leaderKey){
   DU_VIEW = view;
   DU_SITE = siteId || null;
+  DU_LEADER = leaderKey || null;
   DU_SELECTED = null;
   if(view === 'site'){
     const s = duSiteById(siteId);
@@ -1437,7 +1440,8 @@ function duGo(view, siteId){
     const n = new Date();
     DU_CAL = { y: n.getFullYear(), m: n.getMonth() };
   }
-  pushView({ kind:'door', role: CURRENT_ROLE, section:'dailyupdates', du: { view: view, site: siteId || null } });
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'dailyupdates',
+             du: { view: view, site: siteId || null, leader: leaderKey || null } });
   paintUpdates();
 }
 
@@ -1467,6 +1471,7 @@ function paintUpdates(){
   const body = $('updatesBody');
   if(!body) return;
   if(DU_VIEW === 'archive')   { body.innerHTML = duPaintArchive(); return; }
+  if(DU_VIEW === 'leader')    { body.innerHTML = duPaintLeader();  return; }
   if(DU_VIEW === 'site')      { body.innerHTML = duPaintSite();    return; }
   body.innerHTML = duPaintToday();
 }
@@ -1495,46 +1500,83 @@ function duPaintToday(){
   return h;
 }
 
-// ── ARCHIVE — two ways in: by site, or by date across every site ──
+// ── ARCHIVE — two ways in: pick a date, or pick a leader ──
 function duPaintArchive(){
   const today = new Date().toISOString().split('T')[0];
   const grouped = duGrouped();
-  const active   = DU_SITELIST.filter(function(s){ return s.status !== 'done'; });
-  const finished = DU_SITELIST.filter(function(s){ return s.status === 'done'; });
 
   let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Daily update archive</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Pick a site to see its own diary, or pick a date to see where every team worked.</div>`;
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Pick a date to see where every team worked, or pick a leader to walk their projects.</div>`;
 
-  const siteRow = function(s){
-    const n = DU_CACHE.filter(function(u){ return u.site_id === s.id; }).length;
-    const done = s.status === 'done';
-    return `<div class="ledger-card" style="padding:13px 15px;margin-bottom:8px;cursor:pointer;${done?'background:#F7F6F3':''}" onclick="duGo('site','${s.id}')">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-        <div style="font-weight:800;font-size:13.5px;color:${done?'#5C5748':'#1A1A1A'}">${s.name}</div>
-        <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${done?'#A39E8C':(henkLeaderColour?henkLeaderColour(s.team_leader):'#8A8470')};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
-      </div>
-      <div style="font-size:11px;color:#8A8470;margin-top:3px">${s.client||'No client'} · started ${fd(s.started)}${done&&s.end_date?' · finished '+fd(s.end_date):''} · ${n} report${n!==1?'s':''}</div>
-    </div>`;
-  };
-
-  h += `<div class="section-lbl">Active sites (${active.length})</div>`;
-  h += active.length ? active.map(siteRow).join('')
-    : `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No active sites.</div>`;
-
-  h += `<div class="section-lbl">Finished sites (${finished.length})</div>`;
-  h += finished.length ? finished.map(siteRow).join('')
-    : `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No finished sites yet. When a site is marked done it moves here.</div>`;
-
-  h += `<div class="section-lbl">Or pick any date</div>`;
+  h += `<div class="section-lbl">Pick any date</div>`;
   h += duCalendar(grouped, today, null);
 
   if(DU_SELECTED){
     const list = grouped[DU_SELECTED] || [];
     h += `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A;margin:16px 0 3px">${new Date(DU_SELECTED+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
-      <div style="font-size:11.5px;color:#8A8470;margin-bottom:10px">Where every team worked that day</div>`;
+      <div style="font-size:11.5px;color:#8A8470;margin-bottom:10px">Who worked where that day — tap one to read the report</div>`;
     h += list.length ? duCards(list, true)
       : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">Nobody reported on this day.</div>`;
   }
+
+  h += `<div class="section-lbl">Or pick a leader</div>`;
+  h += `<div class="sites-grid">`;
+  LEADER_META.forEach(function(lm){
+    const sites = duLeaderSites(lm.key);
+    const reports = DU_CACHE.filter(function(u){ return u.leader_key === lm.key; }).length;
+    const current = sites.filter(function(s){ return s.status !== 'done'; }).length;
+    const past = sites.filter(function(s){ return s.status === 'done'; }).length;
+    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="duGo('leader', null, '${lm.key}')">
+      <div class="leader-tag">${lm.name}</div>
+      <div class="sb-name" style="color:#fff">${current} current · ${past} past</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">project${sites.length!==1?'s':''}</div>
+      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Reports filed</div>
+      <div class="sb-ppd disp" style="color:#fff">${reports}</div>
+      <div class="sb-days" style="color:rgba(255,255,255,0.6)">Tap to open the diary</div>
+    </div>`;
+  });
+  h += `</div>`;
+  return h;
+}
+
+function duLeaderSites(leaderKey){
+  return DU_SITELIST.filter(function(s){ return s.team_leader === leaderKey; })
+    .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
+}
+
+// ── ONE LEADER — current projects green, past projects red ──
+function duPaintLeader(){
+  const lm = LEADER_META.find(function(l){ return l.key === DU_LEADER; });
+  const name = lm ? lm.name : cap(DU_LEADER || '');
+  const sites = duLeaderSites(DU_LEADER);
+  const current = sites.filter(function(s){ return s.status !== 'done'; });
+  const past    = sites.filter(function(s){ return s.status === 'done'; });
+
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${name}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Tap a project to see every day worked on it.</div>`;
+
+  const projBlock = function(s, isCurrent){
+    const n = DU_CACHE.filter(function(u){ return u.site_id === s.id; }).length;
+    const col = isCurrent ? '#5C7A6B' : '#8B1A1A';
+    return `<div class="ledger-card" style="padding:0;margin-bottom:9px;cursor:pointer;overflow:hidden" onclick="duGo('site','${s.id}')">
+      <div style="height:4px;background:${col}"></div>
+      <div style="padding:13px 15px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${s.name}</div>
+          <span style="background:${isCurrent?'#EBF2EC':'#FEF0EE'};color:${col};font-size:9.5px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:20px;white-space:nowrap">${isCurrent?'CURRENT':'PAST'}</span>
+        </div>
+        <div style="font-size:11px;color:#8A8470;margin-top:4px">${s.client||'No client'} · ${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${n} report${n!==1?'s':''}</div>
+      </div>
+    </div>`;
+  };
+
+  h += `<div class="section-lbl" style="color:#3F5A4C">Current project${current.length!==1?'s':''} (${current.length})</div>`;
+  h += current.length ? current.map(function(s){ return projBlock(s, true); }).join('')
+    : `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No project running right now.</div>`;
+
+  h += `<div class="section-lbl" style="color:#8B1A1A">Past project${past.length!==1?'s':''} (${past.length})</div>`;
+  h += past.length ? past.map(function(s){ return projBlock(s, false); }).join('')
+    : `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No finished projects yet. A site moves here once it is marked done.</div>`;
   return h;
 }
 
@@ -3215,7 +3257,39 @@ async function renderHenkOverview(){
     </div>
   </div>`;
 
-  h += `<div class="section-lbl">Each leader — budget standing</div>`;
+  // Same four blocks as Ferdi's Sites page, but headlined with labour against
+  // budget — that is Henk's job. No profit per day: that is owner territory.
+  h += `<div class="section-lbl">The four teams — labour against budget</div>`;
+  h += `<div class="sites-grid">`;
+  LEADER_META.forEach(function(lm){
+    const mine = active.filter(function(s){ return s.team_leader === lm.key; })
+      .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
+    if(!mine.length){
+      h += `<div class="site-block" style="background:#EFEDE6;border:2.5px dashed #1A1A1A;cursor:default">
+        <div class="leader-tag" style="color:#A39E8C;text-shadow:none">${lm.name}</div>
+        <div class="sb-name" style="color:#A39E8C">No active site</div>
+        <div class="sb-meta">Ferdi assigns one on his Sites page</div>
+      </div>`;
+      return;
+    }
+    const s = mine[0];
+    const extra = mine.length > 1 ? ` · +${mine.length-1} more` : '';
+    const labourActual = parseFloat(s.labour_actual)||0;
+    const labourBudget = parseFloat(s.labour_budget)||0;
+    const labPct = labourBudget ? Math.round(labourActual/labourBudget*100) : 0;
+    const over = labourBudget > 0 && labourActual > labourBudget;
+    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="duJumpToLeader('${lm.key}')">
+      <div class="leader-tag">${lm.name}</div>
+      <div class="sb-name" style="color:#fff">${s.name}</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Started ${fd(s.started)}</div>
+      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Labour used</div>
+      <div class="sb-ppd disp" style="color:${over?'#FFC9C4':'#fff'}">${R(labourActual)}</div>
+      <div class="sb-days" style="color:rgba(255,255,255,0.6)">of ${R(labourBudget)}${labourBudget?' · '+labPct+'%':''} · Day ${henkDays(s)}${extra}</div>
+    </div>`;
+  });
+  h += `</div>`;
+
+  h += `<div class="section-lbl">Every active site — the detail</div>`;
   active.forEach(function(s){
     const stock = HENK.stock[s.id] || [];
     const unitsUsed = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
@@ -3254,6 +3328,14 @@ async function renderHenkOverview(){
   });
 
   body.innerHTML = h;
+}
+
+// Tapping a leader block on the Overview lands in that leader's archive.
+// renderDoor starts the fetch; duGo switches the view straight away and the
+// fetch repaints when it lands — no timer to guess at.
+function duJumpToLeader(leaderKey){
+  renderDoor('dailyupdates');
+  duGo('leader', null, leaderKey);
 }
 
 async function renderHenkSites(){
