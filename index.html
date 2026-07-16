@@ -892,6 +892,27 @@ const MANUFACTURER_PRODUCTS = {
   ]
 };
 // One block per leader, each with his own colour
+// Leaders' WhatsApp numbers, for the Chase button. A web page cannot send a
+// WhatsApp by itself — this opens WhatsApp with the message typed out and Henk
+// presses send. Real automatic reminders need the WhatsApp Business API.
+const LEADER_WHATSAPP = {
+  joe: '', costa: '', daniel: '', talent: ''   // fill in as 27XXXXXXXXX — no + and no leading 0
+};
+
+function chaseLeader(leaderKey, siteName){
+  const num = LEADER_WHATSAPP[leaderKey];
+  const name = cap(leaderKey);
+  if(!num){
+    showSaveToast(name + ' has no WhatsApp number saved yet');
+    return;
+  }
+  const msg = encodeURIComponent(
+    `Hi ${name}, your daily site report for ${siteName||'site'} is not in yet. ` +
+    `Please submit it before 16:00. Thanks — Power Rock`
+  );
+  window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
+}
+
 const LEADER_META = [
   { key:'joe',    name:'Joe',    colour:'#8B1A1A' },  // Power Rock red
   { key:'costa',  name:'Costa',  colour:'#1F4E6B' },  // deep ocean blue
@@ -956,7 +977,13 @@ function paintView(v){
     CURRENT_ROLE = role;
     const badge = $('roleBadge');
     if(badge) badge.textContent = role === 'henk' ? 'Henk · Ops' : 'Ferdi · Owner';
-    CURRENT_VIEW = { kind: 'door', role: role, section: section };
+    // Daily Updates has its own screens inside it — restore which one this step was.
+    if(section === 'dailyupdates'){
+      DU_VIEW = (v.du && v.du.view) || 'today';
+      DU_SITE = (v.du && v.du.site) || null;
+      DU_SELECTED = null;
+    }
+    CURRENT_VIEW = { kind: 'door', role: role, section: section, du: v.du || null };
     show('sMain');
     paintDoor(section);
   }
@@ -1094,6 +1121,7 @@ function buildNav(){
 
 // Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
+  if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_SELECTED = null; }
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
   paintDoor(id);
 }
@@ -1366,8 +1394,11 @@ const DU_LEADER_COLOURS = { joe:'#5C7A6B', costa:'#8B1A1A', daniel:'#9C8049', ta
 const DU_SITES = { site_greenhill:'Greenhill Village', site_firs:'The Firs', site_alljoss:'Allen Joss Mazda', site_mabepark:'Mabe Park' };
 
 let DU_CACHE = [];
-let DU_SELECTED = null;   // a date from the calendar, or null for the full archive
-let DU_CAL = null;        // which month the calendar is showing
+let DU_SITELIST = [];
+let DU_VIEW = 'today';    // 'today' | 'archive' | 'site'
+let DU_SITE = null;       // which site, when DU_VIEW === 'site'
+let DU_SELECTED = null;   // a date picked on a calendar
+let DU_CAL = null;        // which month a calendar is showing
 
 async function renderDailyUpdates(){
   $('pageBody').innerHTML = `
@@ -1375,11 +1406,55 @@ async function renderDailyUpdates(){
     <div class="page-title">Daily Updates</div>
     <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading updates...</div></div>`;
 
-  const rows = await sbFetch('daily_updates', `select=${DU_COLS}&limit=400`);
-  DU_CACHE = Array.isArray(rows) ? rows : [];
+  const res = await Promise.all([
+    sbFetch('daily_updates', `select=${DU_COLS}&limit=400`),
+    sbGetRows('sites', 'order=started.desc')
+  ]);
+  DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
+  DU_SITELIST = Array.isArray(res[1]) ? res[1] : [];
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
+  // Coming back to a site view: the sites only arrive now, so set the month here.
+  if(DU_VIEW === 'site' && DU_SITE){
+    const s = duSiteById(DU_SITE);
+    if(s){ const last = duSiteLastMonth(s); DU_CAL = { y: last.y, m: last.m }; }
+  }
   if(CURRENT_DOOR === 'dailyupdates') paintUpdates();
 }
+
+// Archive views are proper history steps, so the phone's Back button walks
+// site -> archive -> today instead of jumping out of the section.
+function duGo(view, siteId){
+  DU_VIEW = view;
+  DU_SITE = siteId || null;
+  DU_SELECTED = null;
+  if(view === 'site'){
+    const s = duSiteById(siteId);
+    const start = s && s.started ? new Date(s.started) : new Date();
+    const last = duSiteLastMonth(s);
+    DU_CAL = { y: last.y, m: last.m };   // open on the site's final month
+    if(start > new Date()) DU_CAL = { y: start.getFullYear(), m: start.getMonth() };
+  } else {
+    const n = new Date();
+    DU_CAL = { y: n.getFullYear(), m: n.getMonth() };
+  }
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'dailyupdates', du: { view: view, site: siteId || null } });
+  paintUpdates();
+}
+
+function duSiteById(id){ return DU_SITELIST.find(function(s){ return s.id === id; }); }
+function duSiteName(id){ const s = duSiteById(id); return s ? s.name : (DU_SITES[id] || id); }
+
+// A site's calendar is bounded by the job: first month it started, last month it
+// ran (or this month if it is still going).
+function duSiteFirstMonth(s){
+  const d = s && s.started ? new Date(s.started) : new Date();
+  return { y: d.getFullYear(), m: d.getMonth() };
+}
+function duSiteLastMonth(s){
+  const d = (s && s.status === 'done' && s.end_date) ? new Date(s.end_date) : new Date();
+  return { y: d.getFullYear(), m: d.getMonth() };
+}
+function duMonthIndex(o){ return o.y * 12 + o.m; }
 
 function duGrouped(){
   const g = {};
@@ -1391,9 +1466,14 @@ function duDateStr(y, m, d){ return y + '-' + String(m+1).padStart(2,'0') + '-' 
 function paintUpdates(){
   const body = $('updatesBody');
   if(!body) return;
+  if(DU_VIEW === 'archive')   { body.innerHTML = duPaintArchive(); return; }
+  if(DU_VIEW === 'site')      { body.innerHTML = duPaintSite();    return; }
+  body.innerHTML = duPaintToday();
+}
 
+// ── TODAY — no calendar here; history lives behind the archive button ──
+function duPaintToday(){
   const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
   const grouped = duGrouped();
   const todayUpdates = grouped[today] || [];
   const submittedKeys = todayUpdates.map(function(u){ return u.leader_key; });
@@ -1403,9 +1483,99 @@ function paintUpdates(){
     <div style="font-size:11px;color:#8A8470;margin-bottom:14px">Today's reports</div>`;
 
   h += duStatusBoxes(missing, todayUpdates);
-  h += duCalendar(grouped, today);
-  h += duList(grouped, today, yesterday);
-  body.innerHTML = h;
+
+  h += `<button onclick="duGo('archive')" style="width:100%;height:52px;background:#8B1A1A;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;margin-bottom:18px;letter-spacing:0.3px">📂 DAILY UPDATE ARCHIVE</button>`;
+
+  h += `<div class="section-lbl">Today's reports</div>`;
+  h += todayUpdates.length ? duCards(todayUpdates)
+    : `<div class="empty-state ledger-card" style="padding:34px 20px">
+        <div class="empty-state-ico">📋</div>
+        <div class="empty-state-txt">No reports in yet today.<br/>They appear here the moment a leader submits.</div>
+      </div>`;
+  return h;
+}
+
+// ── ARCHIVE — two ways in: by site, or by date across every site ──
+function duPaintArchive(){
+  const today = new Date().toISOString().split('T')[0];
+  const grouped = duGrouped();
+  const active   = DU_SITELIST.filter(function(s){ return s.status !== 'done'; });
+  const finished = DU_SITELIST.filter(function(s){ return s.status === 'done'; });
+
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Daily update archive</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Pick a site to see its own diary, or pick a date to see where every team worked.</div>`;
+
+  const siteRow = function(s){
+    const n = DU_CACHE.filter(function(u){ return u.site_id === s.id; }).length;
+    const done = s.status === 'done';
+    return `<div class="ledger-card" style="padding:13px 15px;margin-bottom:8px;cursor:pointer;${done?'background:#F7F6F3':''}" onclick="duGo('site','${s.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-weight:800;font-size:13.5px;color:${done?'#5C5748':'#1A1A1A'}">${s.name}</div>
+        <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${done?'#A39E8C':(henkLeaderColour?henkLeaderColour(s.team_leader):'#8A8470')};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
+      </div>
+      <div style="font-size:11px;color:#8A8470;margin-top:3px">${s.client||'No client'} · started ${fd(s.started)}${done&&s.end_date?' · finished '+fd(s.end_date):''} · ${n} report${n!==1?'s':''}</div>
+    </div>`;
+  };
+
+  h += `<div class="section-lbl">Active sites (${active.length})</div>`;
+  h += active.length ? active.map(siteRow).join('')
+    : `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No active sites.</div>`;
+
+  h += `<div class="section-lbl">Finished sites (${finished.length})</div>`;
+  h += finished.length ? finished.map(siteRow).join('')
+    : `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No finished sites yet. When a site is marked done it moves here.</div>`;
+
+  h += `<div class="section-lbl">Or pick any date</div>`;
+  h += duCalendar(grouped, today, null);
+
+  if(DU_SELECTED){
+    const list = grouped[DU_SELECTED] || [];
+    h += `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A;margin:16px 0 3px">${new Date(DU_SELECTED+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+      <div style="font-size:11.5px;color:#8A8470;margin-bottom:10px">Where every team worked that day</div>`;
+    h += list.length ? duCards(list, true)
+      : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">Nobody reported on this day.</div>`;
+  }
+  return h;
+}
+
+// ── ONE SITE — its own diary, calendar bounded by the job's own dates ──
+function duPaintSite(){
+  const s = duSiteById(DU_SITE);
+  if(!s) return `<div style="font-size:12px;color:#A39E8C">Site not found.</div>`;
+
+  const mine = DU_CACHE.filter(function(u){ return u.site_id === DU_SITE; });
+  const grouped = {};
+  mine.forEach(function(u){ if(!grouped[u.date]) grouped[u.date] = []; grouped[u.date].push(u); });
+  const today = new Date().toISOString().split('T')[0];
+
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${s.name}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${mine.length} report${mine.length!==1?'s':''}</div>`;
+
+  h += duCalendar(grouped, today, s);
+
+  if(DU_SELECTED){
+    const list = grouped[DU_SELECTED] || [];
+    h += `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A;margin:16px 0 10px">${new Date(DU_SELECTED+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>`;
+    h += list.length ? duCards(list) : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No report on this day.</div>`;
+  } else {
+    h += `<div class="section-lbl">Every report on this site</div>`;
+    h += mine.length ? duCards(mine, false, true)
+      : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No reports on this site yet.</div>`;
+  }
+  return h;
+}
+
+// An outstanding name doubles as a Chase button — Henk is already looking at
+// this box at quarter to four, so the nudge belongs right here.
+function duChaseChip(leaderKey){
+  const site = DU_SITELIST.find(function(s){ return s.team_leader === leaderKey && s.status !== 'done'; });
+  const siteName = site ? site.name : '';
+  const has = !!LEADER_WHATSAPP[leaderKey];
+  return `<span onclick="chaseLeader('${leaderKey}', ${JSON.stringify(siteName)})"
+    title="${has ? 'Chase on WhatsApp' : 'No WhatsApp number saved yet'}"
+    style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:#9C6000;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+    ${cap(leaderKey)}<span style="font-size:11px;opacity:${has?'1':'0.35'}">💬</span></span>`;
 }
 
 // Outstanding in orange, submitted in green, side by side on a wide screen and
@@ -1419,7 +1589,7 @@ function duStatusBoxes(missing, submitted){
   h += `<div style="background:${missing.length?'#FFF3E0':'#F7F6F3'};border:1px solid ${missing.length?'#D4A55A':'#E6E2D8'};border-radius:10px;padding:13px 15px">
     <div style="font-size:10.5px;font-weight:800;color:${missing.length?'#9C6000':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">⏳ STILL OUTSTANDING (${missing.length})</div>
     ${missing.length
-      ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${missing.map(function(l){ return chip(cap(l), '#9C6000'); }).join('')}</div>`
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${missing.map(function(l){ return duChaseChip(l); }).join('')}</div>`
       : `<div style="font-size:12px;color:#A39E8C">Nobody — everyone is in</div>`}
   </div>`;
 
@@ -1433,18 +1603,24 @@ function duStatusBoxes(missing, submitted){
   return h + `</div>`;
 }
 
-function duCalendar(grouped, today){
+// site == null → every site, any month. site given → bounded to that job's own
+// dates, so you cannot page into months the site was never running.
+function duCalendar(grouped, today, site){
   const y = DU_CAL.y, m = DU_CAL.m;
   const first = new Date(y, m, 1);
   const startDow = (first.getDay() + 6) % 7;           // Monday-first grid
   const daysInMonth = new Date(y, m+1, 0).getDate();
-  const arrow = 'width:34px;height:34px;border-radius:8px;border:1px solid #E6E2D8;background:#fff;font-size:16px;font-weight:800;color:#5C5748;cursor:pointer;font-family:inherit';
+  const here = duMonthIndex({ y: y, m: m });
+  const canBack = !site || here > duMonthIndex(duSiteFirstMonth(site));
+  const canFwd  = !site || here < duMonthIndex(duSiteLastMonth(site));
+  const arrow = 'width:34px;height:34px;border-radius:8px;border:1px solid #E6E2D8;background:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit';
+  const dim = 'width:34px;height:34px;border-radius:8px;border:1px solid #F0EEE6;background:#FAF9F5;font-size:16px;font-weight:800;color:#DAD7CE;font-family:inherit;cursor:default';
 
   let h = `<div class="ledger-card" style="padding:14px;margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <button style="${arrow}" onclick="duCalStep(-1)" aria-label="Previous month">‹</button>
+      ${canBack ? `<button style="${arrow};color:#5C5748" onclick="duCalStep(-1)" aria-label="Previous month">‹</button>` : `<button style="${dim}" disabled>‹</button>`}
       <div style="font-family:'Poppins',sans-serif;font-weight:800;font-size:14px">${first.toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</div>
-      <button style="${arrow}" onclick="duCalStep(1)" aria-label="Next month">›</button>
+      ${canFwd ? `<button style="${arrow};color:#5C5748" onclick="duCalStep(1)" aria-label="Next month">›</button>` : `<button style="${dim}" disabled>›</button>`}
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center">`;
 
@@ -1470,16 +1646,27 @@ function duCalendar(grouped, today){
   }
 
   h += `</div>
-    <div style="font-size:10.5px;color:#A39E8C;margin-top:10px;text-align:center">Green days have reports — tap one to open that day${DU_SELECTED?` · <span onclick="duSelectDate(null)" style="color:#8B1A1A;font-weight:800;cursor:pointer">show all dates</span>`:''}</div>
+    <div style="font-size:10.5px;color:#A39E8C;margin-top:10px;text-align:center">Green days have reports — tap one to open that day${DU_SELECTED?` · <span onclick="duSelectDate(null)" style="color:#8B1A1A;font-weight:800;cursor:pointer">clear</span>`:''}</div>
   </div>`;
   return h;
 }
 
 // Let Date do the month arithmetic — it rolls the year over correctly for any
 // step, where hand-rolled wrapping only ever works for a single month.
+// The clamp lives here, not only in the arrows: hiding a button stops a tap, it
+// does not stop the month from being moved somewhere the site never ran.
 function duCalStep(n){
   const d = new Date(DU_CAL.y, DU_CAL.m + n, 1);
-  DU_CAL = { y: d.getFullYear(), m: d.getMonth() };
+  let next = { y: d.getFullYear(), m: d.getMonth() };
+  if(DU_VIEW === 'site'){
+    const s = duSiteById(DU_SITE);
+    if(s){
+      const lo = duSiteFirstMonth(s), hi = duSiteLastMonth(s), i = duMonthIndex(next);
+      if(i < duMonthIndex(lo)) next = lo;
+      if(i > duMonthIndex(hi)) next = hi;
+    }
+  }
+  DU_CAL = next;
   paintUpdates();
 }
 function duSelectDate(ds){
@@ -1487,46 +1674,32 @@ function duSelectDate(ds){
   paintUpdates();
 }
 
-function duList(grouped, today, yesterday){
-  const dates = Object.keys(grouped).sort(function(a,b){ return b.localeCompare(a); });
-  const shown = DU_SELECTED ? dates.filter(function(d){ return d === DU_SELECTED; }) : dates;
-
-  if(!shown.length){
-    return `<div class="empty-state ledger-card" style="padding:40px 20px">
-      <div class="empty-state-ico">📋</div>
-      <div class="empty-state-txt">${DU_CACHE.length ? 'No reports on that day.' : 'No updates submitted yet.<br/>Once team leaders submit their daily updates, they appear here in real time.'}</div>
-    </div>`;
-  }
-
-  let h = `<div class="section-lbl">${DU_SELECTED ? 'Reports for this day' : 'Daily update archive'}</div>`;
-
-  shown.forEach(function(date){
-    const label = date === today ? 'Today' : date === yesterday ? 'Yesterday'
-      : new Date(date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-    h += `<div style="font-family:'Poppins',sans-serif;font-size:13.5px;font-weight:800;color:#1A1A1A;margin:16px 0 8px;padding-bottom:5px;border-bottom:2px solid #1A1A1A">${label}
-      <span style="float:right;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;color:#8A8470">${grouped[date].length} report${grouped[date].length!==1?'s':''}</span></div>`;
-
-    grouped[date].forEach(function(u){
-      const col = DU_LEADER_COLOURS[u.leader_key] || '#8A8470';
-      const siteName = DU_SITES[u.site_id] || u.site_name || u.site_id;
-      const time = u.submitted_at ? new Date(u.submitted_at).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}) : '';
-      h += `<div class="ledger-card" style="margin-bottom:10px;cursor:pointer" onclick="viewUpdate('${u.id}')">
-        <div style="height:4px;background:${col}"></div>
-        <div style="padding:14px 16px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-            <div>
-              <div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A">${u.leader_name}</div>
-              <div style="font-size:11px;color:#8A8470">${siteName}${time?' · '+time:''}</div>
-            </div>
-            ${u.challenges?`<span style="background:#FFF3E0;color:#9C6000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap">⚠️ Challenge</span>`:''}
+// One card per report. showSite puts the site in bold — that is the "who worked
+// where" question. showDate stamps each card when the list spans many days.
+function duCards(list, showSite, showDate){
+  return list.map(function(u){
+    const col = DU_LEADER_COLOURS[u.leader_key] || '#8A8470';
+    const siteName = duSiteName(u.site_id) || u.site_name || u.site_id;
+    const time = u.submitted_at ? new Date(u.submitted_at).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}) : '';
+    const stamp = showDate ? new Date(u.date+'T12:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}) : '';
+    return `<div class="ledger-card" style="margin-bottom:10px;cursor:pointer" onclick="viewUpdate('${u.id}')">
+      <div style="height:4px;background:${col}"></div>
+      <div style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px">
+          <div>
+            ${showSite
+              ? `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A">${siteName}</div>
+                 <div style="font-size:11px;color:#8A8470">${u.leader_name}${time?' · '+time:''}</div>`
+              : `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A">${u.leader_name}</div>
+                 <div style="font-size:11px;color:#8A8470">${stamp || siteName}${time?' · '+time:''}</div>`}
           </div>
-          <div style="font-size:12.5px;color:#1A1A1A;line-height:1.6;margin-bottom:6px">${(u.done||'').substring(0,120)}${(u.done||'').length>120?'...':''}</div>
-          ${u.plan_tomorrow?`<div style="font-size:11px;color:#5C7A6B;font-weight:600">→ Tomorrow: ${(u.plan_tomorrow||'').substring(0,80)}${(u.plan_tomorrow||'').length>80?'...':''}</div>`:''}
+          ${u.challenges?`<span style="background:#FFF3E0;color:#9C6000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap">⚠️ Challenge</span>`:''}
         </div>
-      </div>`;
-    });
-  });
-  return h;
+        <div style="font-size:12.5px;color:#1A1A1A;line-height:1.6;margin-bottom:6px">${(u.done||'').substring(0,120)}${(u.done||'').length>120?'...':''}</div>
+        ${u.plan_tomorrow?`<div style="font-size:11px;color:#5C7A6B;font-weight:600">→ Tomorrow: ${(u.plan_tomorrow||'').substring(0,80)}${(u.plan_tomorrow||'').length>80?'...':''}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 async function viewUpdate(id){
@@ -2974,6 +3147,16 @@ function henkDays(s){
   return Math.max(1, Math.floor((new Date() - new Date(s.started)) / 86400000) + 1);
 }
 
+// Same idea as the Daily Updates chase chip, but Henk's overview works from
+// sites rather than leader keys.
+function henkChaseChip(s){
+  const has = !!LEADER_WHATSAPP[s.team_leader];
+  return `<span onclick="chaseLeader('${s.team_leader}', ${JSON.stringify(s.name || '')})"
+    title="${has ? 'Chase on WhatsApp' : 'No WhatsApp number saved yet'}"
+    style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:#9C6000;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+    ${henkLeaderName(s.team_leader)}<span style="font-size:11px;opacity:${has?'1':'0.35'}">💬</span></span>`;
+}
+
 // Material spend per site comes from captured invoices. Until invoices live in
 // the database this is 0 — show that honestly rather than implying no spend.
 function henkMaterialSpend(siteId){ return 0; }
@@ -3021,7 +3204,7 @@ async function renderHenkOverview(){
     <div style="background:${waiting.length?'#FFF3E0':'#F7F6F3'};border:1px solid ${waiting.length?'#D4A55A':'#E6E2D8'};border-radius:10px;padding:13px 15px">
       <div style="font-size:10.5px;font-weight:800;color:${waiting.length?'#9C6000':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">⏳ STILL OUTSTANDING (${waiting.length})</div>
       ${waiting.length
-        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${waiting.map(function(s){ return chip(henkLeaderName(s.team_leader), '#9C6000'); }).join('')}</div>`
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${waiting.map(function(s){ return henkChaseChip(s); }).join('')}</div>`
         : `<div style="font-size:12px;color:#A39E8C">Nobody — everyone is in</div>`}
     </div>
     <div style="background:${arrived.length?'#EBF2EC':'#F7F6F3'};border:1px solid ${arrived.length?'#5C7A6B':'#E6E2D8'};border-radius:10px;padding:13px 15px">
