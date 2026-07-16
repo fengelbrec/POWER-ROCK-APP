@@ -20,6 +20,9 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .brand-sub{font-size:9px;color:#C9847E;letter-spacing:3px;font-weight:600;margin-top:1px}
 .role-badge{background:rgba(139,26,26,0.25);color:#E8B0A8;border:1px solid rgba(139,26,26,0.5);border-radius:20px;padding:4px 13px;font-size:11px;font-weight:600;letter-spacing:0.3px}
 .btnout{background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.18);border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer;font-weight:500}
+/* Back — thumb-sized target, sits in the sticky top bar so it never scrolls away */
+.btn-back{display:none;align-items:center;justify-content:center;gap:5px;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.18);border-radius:8px;height:38px;min-width:44px;padding:0 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:10px;flex:0 0 auto;-webkit-tap-highlight-color:transparent}
+.btn-back:active{background:rgba(255,255,255,0.2)}
 
 .door-nav{display:flex;background:#242424;padding:0 12px;overflow-x:auto;gap:2px;position:sticky;top:58px;z-index:99;-webkit-overflow-scrolling:touch;border-bottom:1px solid rgba(255,255,255,0.06)}
 .door-nav::-webkit-scrollbar{display:none}
@@ -266,6 +269,7 @@ input[type=password]{letter-spacing:5px}
 <div class="screen" id="sMain">
   <div class="topbar">
     <div class="brand-mark">
+      <button class="btn-back" id="backBtn" onclick="goBack()" aria-label="Back">←<span>Back</span></button>
       <svg width="30" height="30" viewBox="0 0 100 100"><path d="M62,12 C40,10 22,26 18,45 C14,64 26,82 45,88" fill="none" stroke="#8B1A1A" stroke-width="11" stroke-linecap="round"/></svg>
       <div><div class="brand-name">POWER ROCK</div><div class="brand-sub">PAINTING</div></div>
     </div>
@@ -880,8 +884,99 @@ const SURFACE_OPTIONS = ['Exterior Walls','Roof Surfaces','Exterior Ceilings','E
 function R(n){ return "R " + (n||0).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function $(id){ return document.getElementById(id); }
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(id).classList.add('active'); window.scrollTo(0,0); }
-function openModal(id){ $(id).classList.remove('hidden'); }
-function closeModal(id){ $(id).classList.add('hidden'); }
+// ══════════════════════════════════════════
+// PHONE NAVIGATION
+// Every screen change adds a step to the phone's own history, so the hardware
+// back button walks back through the app instead of leaving it. The ← in the
+// top bar does the same journey for anyone who doesn't use the phone button.
+// ══════════════════════════════════════════
+let CURRENT_VIEW = { kind: 'login' };
+let MODAL_STACK = [];
+
+function hideAllModals(){
+  document.querySelectorAll('.modal-overlay').forEach(function(m){ m.classList.add('hidden'); });
+  MODAL_STACK = [];
+}
+
+function updateBackBtn(){
+  const b = $('backBtn');
+  if(!b) return;
+  const v = CURRENT_VIEW;
+  const wanted = MODAL_STACK.length > 0 || (v.kind === 'door' && v.section !== 'overview');
+  b.style.display = wanted ? 'flex' : 'none';
+}
+
+function pushView(v){
+  CURRENT_VIEW = v;
+  history.pushState({ pr: true, view: v }, '');
+  updateBackBtn();
+}
+
+function replaceView(v){
+  CURRENT_VIEW = v;
+  history.replaceState({ pr: true, view: v }, '');
+  updateBackBtn();
+}
+
+// Paint whichever view history hands back. A modal is never restored — landing
+// on one means Back was pressed, so we show the page underneath it instead.
+function paintView(v){
+  hideAllModals();
+  if(v.kind === 'login'){
+    CURRENT_VIEW = { kind: 'login' };
+    // Never leave a leader's portal loaded behind the login screen.
+    const fr = $('door3Frame');
+    if(fr){ fr.onload = null; fr.srcdoc = ''; }
+    show('sLogin');
+  } else if(v.kind === 'leader'){
+    CURRENT_VIEW = { kind: 'leader', leader: v.leader };
+    show('sLeader');
+  } else {
+    const role = v.role || 'owner';
+    const section = v.section || 'overview';
+    CURRENT_ROLE = role;
+    const badge = $('roleBadge');
+    if(badge) badge.textContent = role === 'henk' ? 'Henk · Ops' : 'Ferdi · Owner';
+    CURRENT_VIEW = { kind: 'door', role: role, section: section };
+    show('sMain');
+    paintDoor(section);
+  }
+  updateBackBtn();
+}
+
+function goBack(){ history.back(); }
+
+window.addEventListener('popstate', function(e){
+  // Back inside a leader's portal means signing out, and a half-typed report is
+  // not saved until Submit. Ask first, and stay put if they say no.
+  if(CURRENT_VIEW.kind === 'leader'){
+    const leaving = confirm('Sign out of your portal?\n\nAnything you have typed but not submitted will be lost.');
+    if(!leaving){
+      pushView({ kind: 'leader', leader: CURRENT_VIEW.leader });
+      return;
+    }
+  }
+  const st = e.state;
+  if(st && st.pr && st.view) paintView(st.view);
+  else paintView({ kind: 'login' });
+});
+
+// A modal adds a history step so Back closes it. Closing it by hand only hides
+// it — it must NOT step back, because several screens close one modal and open
+// the next in the same breath, and that step would arrive late and wipe the new
+// modal off the screen.
+function openModal(id){
+  $(id).classList.remove('hidden');
+  if(MODAL_STACK.indexOf(id) === -1) MODAL_STACK.push(id);
+  history.pushState({ pr: true, view: { kind: 'modal', id: id, role: CURRENT_ROLE, section: CURRENT_DOOR } }, '');
+  updateBackBtn();
+}
+function closeModal(id){
+  $(id).classList.add('hidden');
+  const i = MODAL_STACK.indexOf(id);
+  if(i !== -1) MODAL_STACK.splice(i, 1);
+  updateBackBtn();
+}
 function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : ''; }
 function fd(d){ return new Date(d).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}); }
 
@@ -905,29 +1000,24 @@ function doLogin(){
   const p = $('lPin').value;
   const e = $('lErr');
   const route = DOOR_PINS[p];
-  if(route && route.door === 1){
+  if(route && (route.door === 1 || route.door === 2)){
     $('lPin').value=''; e.textContent='';
-    CURRENT_ROLE = 'owner';
-    $('roleBadge').textContent = 'Ferdi · Owner';
-    buildNav();
-    renderDoor('overview');
-    show('sMain');
-  } else if(route && route.door === 2){
-    $('lPin').value=''; e.textContent='';
-    CURRENT_ROLE = 'henk';
-    $('roleBadge').textContent = 'Henk · Ops';
-    buildNav();
-    renderDoor('overview');
-    show('sMain');
+    const role = route.door === 2 ? 'henk' : 'owner';
+    pushView({ kind: 'door', role: role, section: 'overview' });
+    paintView({ kind: 'door', role: role, section: 'overview' });
   } else if(route && route.door === 3){
     $('lPin').value=''; e.textContent='';
+    pushView({ kind: 'leader', leader: route.leader });
     openLeaderPortal(route.leader);
   } else {
     e.textContent = 'Incorrect PIN.';
     $('lPin').value='';
   }
 }
-function logout(){ show('sLogin'); }
+function logout(){
+  pushView({ kind: 'login' });
+  paintView({ kind: 'login' });
+}
 
 // ── DOOR 3 LIVES INSIDE THIS SAME FILE ──
 // The full team-leader portal is embedded below (DOOR3_SRC) and opens
@@ -949,10 +1039,8 @@ function openLeaderPortal(leaderKey){
   show('sLeader');
 }
 function leaderSignOut(){
-  const frame = $('door3Frame');
-  frame.onload = null;
-  frame.srcdoc = '';
-  show('sLogin');
+  pushView({ kind: 'login' });
+  paintView({ kind: 'login' }); // clears the portal frame
 }
 
 function buildNav(){
@@ -963,7 +1051,14 @@ function buildNav(){
   ).join('');
 }
 
+// Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
+  pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
+  paintDoor(id);
+}
+
+// Draws a section without touching history — used when Back/Forward hands us one.
+function paintDoor(id){
   CURRENT_DOOR = id;
   buildNav();
   if(CURRENT_ROLE === 'henk'){
@@ -1784,7 +1879,7 @@ function saveSite(){
   });
 
   closeModal('modalAddSite');
-  renderDoor('sites'); // role-aware — Henk must land back on his own Sites page
+  paintDoor('sites'); // repaint in place — role-aware, so Henk lands on his own Sites page
 }
 
 function openSiteDetail(id){
@@ -2926,6 +3021,11 @@ async function saveHenkLabour(siteId){
 function renderEmpty(){
   $('pageBody').innerHTML = `<div class="empty-state"><div class="empty-state-ico">◆</div><div class="empty-state-txt">Section under construction.</div></div>`;
 }
+
+// ── START ──
+// The login screen is the first step in history, so Back from Overview lands
+// here instead of walking out of the app.
+replaceView({ kind: 'login' });
 
 
 // ═══ EMBEDDED DOOR 3 — TEAM LEADER PORTAL (base64 of the full file) ═══
