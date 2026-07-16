@@ -801,7 +801,7 @@ const NAV = [
 const NAV_HENK = [
   {id:'overview', label:'Overview', icon:'◆'},
   {id:'dailyupdates', label:'Daily Updates', icon:'📋'},
-  {id:'sites', label:'Sites & Labour', icon:'▦'},
+  {id:'sites', label:'Sites', icon:'▦'},
 ];
 
 function navFor(){ return CURRENT_ROLE === 'henk' ? NAV_HENK : NAV; }
@@ -1125,7 +1125,7 @@ function buildNav(){
 // Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
   if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
-  if(id === 'sites') SUMMARY_SITE = null;   // tapping the nav always lands on the site list
+  if(id === 'sites'){ SUMMARY_SITE = null; HENK_SITES_VIEW = 'active'; }   // tapping the nav always lands on the site list
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
   paintDoor(id);
 }
@@ -3346,12 +3346,19 @@ function duJumpToLeader(leaderKey){
   duGo('leader', null, leaderKey);
 }
 
+let HENK_SITES_VIEW = 'active';   // 'active' | 'archived'
+function henkSitesView(v){ HENK_SITES_VIEW = v; renderHenkSites(); }
+
 async function renderHenkSites(){
   if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
+  const green = HENK_SITES_VIEW === 'active';
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">Door 2 · Ops</div>
-    <div class="page-title">Sites &amp; Labour</div>
-    <button class="cta-btn" style="margin-bottom:16px" onclick="openAddSite()">+ Add new site</button>
+    <div class="page-title">Sites</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+      <button onclick="openAddSite()" style="background:#1FA24C;color:#fff;border:none;border-radius:14px;padding:22px 12px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.3);line-height:1.3">＋<br/>Add new site</button>
+      <button onclick="henkSitesView('${green?'archived':'active'}')" style="background:${green?'#D63A2E':'#8A8470'};color:#fff;border:none;border-radius:14px;padding:22px 12px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(214,58,46,0.3);line-height:1.3">🗄<br/>${green?'Site archived':'← Active sites'}</button>
+    </div>
     <div id="henkBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading live data…</div></div>`;
   await loadHenkData();
   const body = $('henkBody');
@@ -3360,10 +3367,32 @@ async function renderHenkSites(){
   const active = HENK.sites.filter(function(s){ return s.status !== 'done'; });
   const finished = HENK.sites.filter(function(s){ return s.status === 'done'; });
 
+  // The red block shows the archive (finished sites).
+  if(HENK_SITES_VIEW === 'archived'){
+    let ha = `<div class="section-lbl">Site archive (${finished.length})</div>`;
+    if(!finished.length){
+      ha += `<div class="empty-state ledger-card" style="padding:36px 20px"><div class="empty-state-ico">🗄</div><div class="empty-state-txt">No archived sites yet. When a site is finished it moves here.</div></div>`;
+    } else {
+      finished.forEach(function(s){
+        const stock = HENK.stock[s.id] || [];
+        const used = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
+        ha += `<div class="ledger-card" style="padding:14px 16px;margin-bottom:10px;background:#F7F6F3;cursor:pointer" onclick="openSiteSummary('${s.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+            <div style="font-weight:800;font-size:13.5px;color:#5C5748">${s.name}</div>
+            <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#A39E8C;white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
+          </div>
+          <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${s.client||'No client'} · started ${fd(s.started)}${s.end_date?' · finished '+fd(s.end_date):''} · ${stock.length} product${stock.length!==1?'s':''} · ${used} used</div>
+        </div>`;
+      });
+    }
+    body.innerHTML = ha;
+    return;
+  }
+
   if(!active.length && !finished.length){
     body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px">
       <div class="empty-state-ico">▦</div>
-      <div class="empty-state-txt">No sites yet.<br/>Use + Add new site above.</div></div>`;
+      <div class="empty-state-txt">No sites yet.<br/>Use the green Add new site block above.</div></div>`;
     return;
   }
 
@@ -3412,25 +3441,7 @@ async function renderHenkSites(){
     h += `</div>`;
   });
 
-  // Site archive — everything finished, kept for looking back at.
-  h += `<div class="section-lbl">Site archive (${finished.length})</div>`;
-  if(!finished.length){
-    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No finished sites yet. When a site is marked done it moves here.</div>`;
-  } else {
-    finished.forEach(function(s){
-      const stock = HENK.stock[s.id] || [];
-      const used = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
-      h += `<div class="ledger-card" style="padding:14px 16px;margin-bottom:10px;background:#F7F6F3">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-          <div style="font-weight:800;font-size:13.5px;color:#5C5748">${s.name}</div>
-          <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#A39E8C;white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
-        </div>
-        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${s.client||'No client'} · started ${fd(s.started)}${s.end_date?' · finished '+fd(s.end_date):''}</div>
-        <div style="font-size:11.5px;color:#8A8470;margin-top:7px">Labour ${R(parseFloat(s.labour_actual)||0)} of ${R(parseFloat(s.labour_budget)||0)} · ${stock.length} product${stock.length!==1?'s':''} · ${used} unit${used!==1?'s':''} used</div>
-      </div>`;
-    });
-  }
-
+  h += `<div style="font-size:11px;color:#A39E8C;margin-top:6px;text-align:center">Tap the red block above to see the site archive.</div>`;
   body.innerHTML = h;
 }
 
@@ -3510,12 +3521,17 @@ async function renderSiteSummary(siteId){
   const quote          = parseFloat(s.quote_value)||0;
   const labourBudget   = quote * LABOUR_PCT;
   const materialBudget = quote * MATERIAL_PCT;
-  const henkFee        = quote * HENK_FEE_PCT;
   const labourActual   = parseFloat(s.labour_actual)||0;
   const materialActual = sumMaterialActual();
-  const costsActual    = 0;   // additional costs + accommodation + petrol — next step
-  const totalExpenses  = labourActual + materialActual + henkFee + costsActual;
+  const additionalCosts = 0;   // cherry picker + scaffold — next step (needs Supabase table)
+  const accommodation   = 0;   // next step
+  const petrol          = 0;   // next step
+  // Henk's 10% is taken AFTER cherry picker & scaffold come off the quote, all ex-VAT.
+  const henkFeeBase    = quote - additionalCosts;
+  const henkFee        = henkFeeBase * HENK_FEE_PCT;
+  const totalExpenses  = labourActual + materialActual + additionalCosts + accommodation + petrol + henkFee;
   const netProfit      = quote - totalExpenses;
+  const netPct         = quote > 0 ? (netProfit / quote * 100) : 0;
   const days           = summaryDays(s);
   const dailyProfit    = netProfit / days;
   const leaderName     = henkLeaderName(s.team_leader);
@@ -3550,7 +3566,10 @@ async function renderSiteSummary(siteId){
     <div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>
     <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
       <div><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Net profit to date</div>
-        <div class="disp" style="font-size:17px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};margin-top:3px">${R(netProfit)}</div></div>
+        <div style="display:flex;align-items:baseline;gap:7px;margin-top:3px">
+          <span class="disp" style="font-size:17px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'}">${R(netProfit)}</span>
+          <span class="disp" style="font-size:12px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};opacity:0.85">${netPct.toFixed(0)}%</span>
+        </div></div>
       <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Days on site</div>
         <div class="disp" style="font-size:17px;font-weight:800;margin-top:3px">${days}</div></div>
     </div>
@@ -3581,13 +3600,16 @@ async function renderSiteSummary(siteId){
   h += soon('🏠', 'Team accommodation', 'Overnight / lodging');
   h += soon('⛽', 'Petrol / Diesel', 'Fuel to and on site');
 
-  // ── HENK'S FEE ──
-  h += `<div class="ledger-card" style="padding:15px 16px;margin-bottom:12px">
+  // ── HENK'S FEE — 10% after cherry picker & scaffold, paid in segments ──
+  h += `<div class="ledger-card" style="padding:15px 16px;margin-bottom:12px;cursor:pointer" onclick="henkFeePayments('${s.id}')">
     <div style="display:flex;justify-content:space-between;align-items:baseline">
       <div style="font-weight:800;font-size:13px;color:#1A1A1A">📋 Henk — project fee (10%)</div>
       <div class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A">${R(henkFee)}</div>
     </div>
-    <div style="font-size:10.5px;color:#A39E8C;margin-top:5px">10% of the ex-VAT quote (${R(quote)}) · an overhead, deducted below</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:5px">
+      <div style="font-size:10.5px;color:#A39E8C">10% of the quote after cherry picker &amp; scaffold (${R(henkFeeBase)}), ex-VAT</div>
+      <div style="font-size:10px;font-weight:800;color:#C9863A;white-space:nowrap">Outstanding: next step</div>
+    </div>
   </div>`;
 
   // ── THE FULL CALCULATION ──
@@ -3601,8 +3623,10 @@ async function renderSiteSummary(siteId){
       ${row('Total quote (ex-VAT)', quote, false)}
       ${row('Labour actual', labourActual, true)}
       ${row('Material actual', materialActual, true)}
-      ${row('Additional costs / accommodation / petrol', costsActual, true)}
-      ${row('Henk project fee (10%)', henkFee, true)}
+      ${row('Additional site costs (cherry / scaffold)', additionalCosts, true)}
+      ${row('Team accommodation', accommodation, true)}
+      ${row('Petrol / Diesel', petrol, true)}
+      ${row('Henk project fee (10% after cherry / scaffold)', henkFee, true)}
       <div style="display:flex;justify-content:space-between;padding:11px 0 4px;font-size:13.5px;border-top:2px solid #1A1A1A;margin-top:4px">
         <span style="font-weight:800">= Net profit to date</span>
         <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(netProfit)}</span></div>
@@ -3612,44 +3636,37 @@ async function renderSiteSummary(siteId){
       <div style="font-size:10.5px;color:#A39E8C;margin-top:8px">Every figure here is live — change labour, add an invoice or another day passes, and this recalculates.</div>
     </div>`;
 
-  // ── STOCK SHEET — products totalled across all invoices ──
-  h += `<div class="section-lbl">Stock sheet — total of each product invoiced</div>`;
-  const grouped = {};
-  data.invoices.forEach(function(iv){
-    (iv.line_items||[]).forEach(function(li){
-      const name = (li.product||'').trim() || 'Unnamed product';
-      const unit = (li.unit||'').trim();
-      const key = name + '||' + unit;
-      if(!grouped[key]) grouped[key] = { name: name, unit: unit, qty: 0 };
-      grouped[key].qty += (parseFloat(li.qty)||0);
-    });
-  });
-  const groups = Object.keys(grouped).map(function(k){ return grouped[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
-  if(!groups.length){
-    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 14px">No invoices captured for this site yet, so nothing on the stock sheet.</div>`;
+  // ── STOCK SHEET — total products USED so far (invoiced minus still on site) ──
+  h += `<div class="section-lbl">Stock sheet — total products used so far</div>`;
+  const stockRows = (data.stock||[]).slice().sort(function(a,b){ return String(a.product).localeCompare(String(b.product)); });
+  if(!stockRows.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 14px">No stock recorded for this site yet.</div>`;
   } else {
     h += `<div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">`;
-    groups.forEach(function(g){
-      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #EFECE3">
-        <span style="font-size:12.5px;color:#1A1A1A">${g.name}</span>
-        <span class="disp" style="font-weight:800;font-size:13px;white-space:nowrap">${g.qty} ${g.unit?'× '+g.unit:''}</span></div>`;
+    stockRows.forEach(function(r){
+      const invd = parseFloat(r.total_received)||0;
+      const onS  = parseFloat(r.qty_on_site)||0;
+      const used = Math.max(0, invd - onS);
+      h += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid #EFECE3">
+        <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</span>
+        <span style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:800;font-size:13px">${used} ${r.unit?'× '+r.unit:''}</span><br/><span style="font-size:9.5px;color:#A39E8C">of ${invd} invoiced</span></span></div>`;
     });
-    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">These come from the same invoices as the ${R(materialActual)} material total above — same source, so they always reconcile.</div></div>`;
+    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">Used = invoiced minus what is still unopened on site. Used + on-site always adds back to the amount invoiced.</div></div>`;
   }
 
   // ── PAINT ON SITE (unused) ──
   h += `<div class="section-lbl">Paint on site now — delivered but not yet used</div>`;
-  const onSite = data.stock.filter(function(r){ return (parseFloat(r.qty_on_site)||0) > 0; });
+  const onSite = stockRows.filter(function(r){ return (parseFloat(r.qty_on_site)||0) > 0; });
   if(!onSite.length){
     h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 14px">Nothing recorded as on site right now.</div>`;
   } else {
-    h += `<div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">`;
+    h += `<div style="background:#FFF6E9;border:1px solid #EAD4A8;border-radius:12px;padding:6px 16px;margin-bottom:16px">`;
     onSite.forEach(function(r){
-      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #EFECE3">
-        <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</span>
-        <span class="disp" style="font-weight:800;font-size:13px;white-space:nowrap">${parseFloat(r.qty_on_site)||0} ${r.unit?'× '+r.unit:''}</span></div>`;
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #F0E4C9">
+        <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#9C7A3A">('+r.colour+')</span>':''}</span>
+        <span class="disp" style="font-weight:800;font-size:13px;color:#8A5A16;white-space:nowrap">${parseFloat(r.qty_on_site)||0} ${r.unit?'× '+r.unit:''}</span></div>`;
     });
-    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">This is the unopened paint you should find on site — what's left to finish the job.</div></div>`;
+    h += `<div style="font-size:10.5px;color:#9C7A3A;padding:8px 0">This is the unopened paint you should find on site — what's left to finish the job.</div></div>`;
   }
 
   // Owner-only: keep client payments and complete-site reachable (the older tools).
@@ -3681,7 +3698,15 @@ function summaryLabourPayments(){
   openModal('modalSiteDetail');
   $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">Labour payments</div>
-    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Paying labour in segments as the work progresses — R80,000 in three or four payments with their dates — is the next step. It needs one small Supabase table so it saves in one place for you and Henk. For now the labour total above holds the running figure.</div>
+    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Paying labour in segments as the work progresses — R80,000 in three or four payments with their dates, and the outstanding amount shown — is the next step. It needs one small Supabase table so it saves in one place for you and Henk. For now the labour total above holds the running figure.</div>
+    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+}
+
+function henkFeePayments(){
+  openModal('modalSiteDetail');
+  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">Henk's fee — payments</div>
+    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Henk's 10% is paid in segments too, just like labour — add each amount with its date and see what's still outstanding against the calculated total. This is the next step: it needs the same small Supabase table. The full fee is shown on the summary in the meantime.</div>
     <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
 }
 
