@@ -984,7 +984,9 @@ function paintView(v){
       DU_LEADER = (v.du && v.du.leader) || null;
       DU_SELECTED = null;
     }
-    CURRENT_VIEW = { kind: 'door', role: role, section: section, du: v.du || null };
+    // The site summary is a sub-view of the sites section — restore or clear it.
+    SUMMARY_SITE = (section === 'sites') ? (v.site || null) : null;
+    CURRENT_VIEW = { kind: 'door', role: role, section: section, du: v.du || null, site: v.site || null };
     show('sMain');
     paintDoor(section);
   }
@@ -1123,6 +1125,7 @@ function buildNav(){
 // Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
   if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
+  if(id === 'sites') SUMMARY_SITE = null;   // tapping the nav always lands on the site list
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
   paintDoor(id);
 }
@@ -1846,6 +1849,7 @@ function renderOverview(){
 // SITES
 // ───────────────────────────────────────────
 function renderSites(){
+  if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Sites</div>`;
   h += `<button class="cta-btn" style="margin-bottom:16px" onclick="openAddSite()">+ Add new site</button>`;
 
@@ -1871,7 +1875,7 @@ function renderSites(){
     const ppd = siteProfitPerDay(s);
     const days = siteDaysOnSite(s);
     const extra = leaderSites.length > 1 ? ` · +${leaderSites.length-1} more` : '';
-    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteDetail('${s.id}')">
+    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteSummary('${s.id}')">
       <div class="leader-tag">${lm.name}</div>
       <div class="sb-name" style="color:#fff">${s.name}</div>
       <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Started ${fd(s.started)}</div>
@@ -1889,7 +1893,7 @@ function renderSites(){
     h += `<div class="section-lbl">Other active sites</div>`;
     others.forEach(s=>{
       const ppd = siteProfitPerDay(s);
-      h += `<div class="site-row" onclick="openSiteDetail('${s.id}')">
+      h += `<div class="site-row" onclick="openSiteSummary('${s.id}')">
         <div class="site-top">
           <div><div class="site-name">${s.name}</div><div class="site-meta">${s.client||'No client'} · ${cap(s.team)} · Started ${fd(s.started)}</div></div>
           <span class="disp" style="font-weight:800;color:${ppd>0?'#5C7A6B':'#B2342A'}">${R(ppd)}/day</span>
@@ -3282,7 +3286,7 @@ async function renderHenkOverview(){
     const labourBudget = parseFloat(s.labour_budget)||0;
     const labPct = labourBudget ? Math.round(labourActual/labourBudget*100) : 0;
     const over = labourBudget > 0 && labourActual > labourBudget;
-    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="duJumpToLeader('${lm.key}')">
+    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteSummary('${s.id}')">
       <div class="leader-tag">${lm.name}</div>
       <div class="sb-name" style="color:#fff">${s.name}</div>
       <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Started ${fd(s.started)}</div>
@@ -3343,6 +3347,7 @@ function duJumpToLeader(leaderKey){
 }
 
 async function renderHenkSites(){
+  if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">Door 2 · Ops</div>
     <div class="page-title">Sites &amp; Labour</div>
@@ -3446,6 +3451,298 @@ async function saveHenkLabour(siteId){
     showSaveToast('Labour saved — ' + R(amount));
   } else {
     showSaveToast('Could not save — check your signal and try again');
+  }
+}
+
+// ══════════════════════════════════════════
+// FULL-PAGE SITE SUMMARY — shared by Door 1 (owner) and Door 2 (Henk)
+// A live snapshot of one site, read from Supabase so both doors show the same
+// numbers. Budgets are calculated off the ex-VAT quote: labour 23%, material
+// 26%, Henk's fee 10%. Actual material and the stock sheet both come from the
+// same confirmed invoices, so they always reconcile.
+// Labour is real and mirrored today (sites.labour_actual). The site-cost blocks
+// (labour payment segments, cherry picker, accommodation, petrol) are the next
+// step — they need one small Supabase table, and show as "next step" until then.
+// ══════════════════════════════════════════
+const LABOUR_PCT = 0.23, MATERIAL_PCT = 0.26, HENK_FEE_PCT = 0.10;
+
+let SUMMARY_SITE = null;   // site id while the summary is open, else null
+let SUMMARY = null;        // the fetched bundle for the open site
+
+function openSiteSummary(siteId){
+  SUMMARY_SITE = siteId;
+  SUMMARY = null;
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', site: siteId });
+  paintDoor('sites');
+}
+function closeSiteSummary(){ history.back(); }
+
+async function loadSiteSummary(siteId){
+  const res = await Promise.all([
+    sbGetRows('sites', `id=eq.${encodeURIComponent(siteId)}`),
+    sbGetRows('invoice_inbox', `status=eq.confirmed&order=invoice_date.asc`),
+    sbGetRows('paint_stock', `site_id=eq.${encodeURIComponent(siteId)}&order=product.asc`)
+  ]);
+  const site = (Array.isArray(res[0]) && res[0][0]) ? res[0][0] : null;
+  const invoices = (Array.isArray(res[1]) ? res[1] : []).filter(function(iv){ return iv.site_guess === siteId; });
+  const stock = Array.isArray(res[2]) ? res[2] : [];
+  SUMMARY = { site: site, invoices: invoices, stock: stock };
+  return SUMMARY;
+}
+
+function summaryDays(s){
+  if(!s || !s.started) return 1;
+  const end = (s.status === 'done' && s.end_date) ? new Date(s.end_date) : new Date();
+  return Math.max(1, Math.floor((end - new Date(s.started)) / 86400000) + 1);
+}
+function sumMaterialActual(){ return (SUMMARY.invoices||[]).reduce(function(a,iv){ return a + (parseFloat(iv.total)||0); }, 0); }
+
+async function renderSiteSummary(siteId){
+  $('pageBody').innerHTML = `
+    <button onclick="closeSiteSummary()" style="background:none;border:none;color:#8A8470;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:12px">← All sites</button>
+    <div id="summaryBody"><div style="text-align:center;padding:44px;color:#8A8470">Loading site snapshot…</div></div>`;
+  const data = await loadSiteSummary(siteId);
+  if(SUMMARY_SITE !== siteId || CURRENT_DOOR !== 'sites') return;
+  const body = $('summaryBody'); if(!body) return;
+  const s = data.site;
+  if(!s){ body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px"><div class="empty-state-txt">This site isn't in the shared database yet.</div></div>`; return; }
+
+  const quote          = parseFloat(s.quote_value)||0;
+  const labourBudget   = quote * LABOUR_PCT;
+  const materialBudget = quote * MATERIAL_PCT;
+  const henkFee        = quote * HENK_FEE_PCT;
+  const labourActual   = parseFloat(s.labour_actual)||0;
+  const materialActual = sumMaterialActual();
+  const costsActual    = 0;   // additional costs + accommodation + petrol — next step
+  const totalExpenses  = labourActual + materialActual + henkFee + costsActual;
+  const netProfit      = quote - totalExpenses;
+  const days           = summaryDays(s);
+  const dailyProfit    = netProfit / days;
+  const leaderName     = henkLeaderName(s.team_leader);
+  const pos            = netProfit >= 0;
+
+  const lbl = function(t){ return `<div style="font-size:10px;font-weight:800;color:#8A8470;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:2px">${t}</div>`; };
+  const budgetLine = function(name, actual, budget, pct){
+    const over = budget > 0 && actual > budget;
+    return `<div class="ledger-card" style="padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${name}</div>
+        <div style="font-size:10.5px;color:#8A8470">budget ${Math.round(pct*100)}% · ${R(budget)}</div>
+      </div>
+      <div class="disp" style="font-size:22px;font-weight:800;color:${over?'#B2342A':'#1A1A1A'};margin-top:6px">${R(actual)}</div>
+      <div style="height:7px;background:#E6E2D8;border-radius:4px;overflow:hidden;margin-top:8px">
+        <div style="height:100%;width:${Math.min(100,budget>0?Math.round(actual/budget*100):0)}%;background:${over?'#B2342A':'#5C7A6B'}"></div>
+      </div>
+      <div style="font-size:10.5px;color:${over?'#B2342A':'#8A8470'};margin-top:5px;font-weight:${over?'800':'400'}">${over?'⚠️ OVER the '+Math.round(pct*100)+'% budget by '+R(actual-budget):(budget>0?Math.round(actual/budget*100)+'% of budget used':'No quote set — budget cannot be worked out')}</div>`;
+  };
+
+  let h = '';
+
+  // ── HEADER ──
+  h += `<div style="margin-bottom:16px">
+    <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A;line-height:1.2">${s.name}</div>
+    <div style="font-size:12px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${leaderName} · ${s.status==='done'?'finished':'active'} · Day ${days}</div>
+  </div>`;
+
+  // ── LIVE SNAPSHOT HEADLINE ──
+  h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
+    <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase;margin-bottom:10px">Live snapshot — profit per day on site</div>
+    <div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
+      <div><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Net profit to date</div>
+        <div class="disp" style="font-size:17px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};margin-top:3px">${R(netProfit)}</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Days on site</div>
+        <div class="disp" style="font-size:17px;font-weight:800;margin-top:3px">${days}</div></div>
+    </div>
+  </div>`;
+
+  // ── LABOUR ──
+  h += budgetLine('Labour', labourActual, labourBudget, LABOUR_PCT);
+  h += `<div style="display:flex;gap:8px;margin:-4px 0 16px">
+    <button class="cta-btn" style="flex:1;margin:0;height:44px;font-size:12.5px" onclick="editSummaryLabour('${s.id}')">✎ Add / edit labour</button>
+    <button class="cta-btn ghost" style="flex:1;margin:0;height:44px;font-size:12.5px" onclick="summaryLabourPayments()">Labour payments</button>
+  </div>`;
+
+  // ── MATERIAL ──
+  h += budgetLine('Material', materialActual, materialBudget, MATERIAL_PCT);
+  h += `<button class="cta-btn ghost" style="width:100%;margin:-4px 0 16px;height:44px;font-size:12.5px" onclick="summaryInvoices('${s.id}')">🧾 See the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''} behind this amount</button>`;
+
+  // ── COST BLOCKS (next step) ──
+  const soon = function(icon, name, note){
+    return `<div class="ledger-card" style="padding:15px 16px;margin-bottom:12px;background:#FAF9F5">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div style="font-weight:800;font-size:13px;color:#5C5748">${icon} ${name}</div>
+        <div class="disp" style="font-size:16px;font-weight:800;color:#C9C5BA">R 0,00</div>
+      </div>
+      <div style="font-size:10.5px;color:#A39E8C;margin-top:5px">${note} — added in the next step (needs the quick Supabase setup)</div>
+    </div>`;
+  };
+  h += soon('🚧', 'Additional site costs', 'Cherry picker, scaffold rental');
+  h += soon('🏠', 'Team accommodation', 'Overnight / lodging');
+  h += soon('⛽', 'Petrol / Diesel', 'Fuel to and on site');
+
+  // ── HENK'S FEE ──
+  h += `<div class="ledger-card" style="padding:15px 16px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div style="font-weight:800;font-size:13px;color:#1A1A1A">📋 Henk — project fee (10%)</div>
+      <div class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A">${R(henkFee)}</div>
+    </div>
+    <div style="font-size:10.5px;color:#A39E8C;margin-top:5px">10% of the ex-VAT quote (${R(quote)}) · an overhead, deducted below</div>
+  </div>`;
+
+  // ── THE FULL CALCULATION ──
+  const row = function(label, val, minus){
+    return `<div style="display:flex;justify-content:space-between;padding:7px 0;font-size:12.5px;border-bottom:1px solid #EFECE3">
+      <span style="color:#5C5748">${minus?'– ':''}${label}</span>
+      <span class="disp" style="font-weight:700;color:#1A1A1A">${R(val)}</span></div>`;
+  };
+  h += `<div class="section-lbl">How the profit is worked out</div>
+    <div class="ledger-card" style="padding:16px;margin-bottom:16px">
+      ${row('Total quote (ex-VAT)', quote, false)}
+      ${row('Labour actual', labourActual, true)}
+      ${row('Material actual', materialActual, true)}
+      ${row('Additional costs / accommodation / petrol', costsActual, true)}
+      ${row('Henk project fee (10%)', henkFee, true)}
+      <div style="display:flex;justify-content:space-between;padding:11px 0 4px;font-size:13.5px;border-top:2px solid #1A1A1A;margin-top:4px">
+        <span style="font-weight:800">= Net profit to date</span>
+        <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(netProfit)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px">
+        <span style="color:#5C5748">÷ ${days} day${days!==1?'s':''} on site</span>
+        <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(dailyProfit)} / day</span></div>
+      <div style="font-size:10.5px;color:#A39E8C;margin-top:8px">Every figure here is live — change labour, add an invoice or another day passes, and this recalculates.</div>
+    </div>`;
+
+  // ── STOCK SHEET — products totalled across all invoices ──
+  h += `<div class="section-lbl">Stock sheet — total of each product invoiced</div>`;
+  const grouped = {};
+  data.invoices.forEach(function(iv){
+    (iv.line_items||[]).forEach(function(li){
+      const name = (li.product||'').trim() || 'Unnamed product';
+      const unit = (li.unit||'').trim();
+      const key = name + '||' + unit;
+      if(!grouped[key]) grouped[key] = { name: name, unit: unit, qty: 0 };
+      grouped[key].qty += (parseFloat(li.qty)||0);
+    });
+  });
+  const groups = Object.keys(grouped).map(function(k){ return grouped[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  if(!groups.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 14px">No invoices captured for this site yet, so nothing on the stock sheet.</div>`;
+  } else {
+    h += `<div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">`;
+    groups.forEach(function(g){
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #EFECE3">
+        <span style="font-size:12.5px;color:#1A1A1A">${g.name}</span>
+        <span class="disp" style="font-weight:800;font-size:13px;white-space:nowrap">${g.qty} ${g.unit?'× '+g.unit:''}</span></div>`;
+    });
+    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">These come from the same invoices as the ${R(materialActual)} material total above — same source, so they always reconcile.</div></div>`;
+  }
+
+  // ── PAINT ON SITE (unused) ──
+  h += `<div class="section-lbl">Paint on site now — delivered but not yet used</div>`;
+  const onSite = data.stock.filter(function(r){ return (parseFloat(r.qty_on_site)||0) > 0; });
+  if(!onSite.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 14px">Nothing recorded as on site right now.</div>`;
+  } else {
+    h += `<div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">`;
+    onSite.forEach(function(r){
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #EFECE3">
+        <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</span>
+        <span class="disp" style="font-weight:800;font-size:13px;white-space:nowrap">${parseFloat(r.qty_on_site)||0} ${r.unit?'× '+r.unit:''}</span></div>`;
+    });
+    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">This is the unopened paint you should find on site — what's left to finish the job.</div></div>`;
+  }
+
+  // Owner-only: keep client payments and complete-site reachable (the older tools).
+  if(CURRENT_ROLE === 'owner'){
+    h += `<button class="cta-btn ghost" style="margin-top:6px;height:44px;font-size:12.5px" onclick="openSiteDetail('${s.id}')">⚙ Owner tools — client payments, mark complete</button>`;
+  }
+
+  body.innerHTML = h;
+}
+
+// Labour total — real and mirrored today via sites.labour_actual.
+async function editSummaryLabour(siteId){
+  const cur = SUMMARY && SUMMARY.site ? (parseFloat(SUMMARY.site.labour_actual)||0) : 0;
+  const raw = prompt('Total labour paid on this site so far (Rand):', cur || '');
+  if(raw === null) return;
+  const val = parseFloat(String(raw).replace(/[^0-9.]/g,''));
+  if(isNaN(val) || val < 0){ showSaveToast('Enter a labour amount of 0 or more'); return; }
+  const ok = await sbPatch('sites', 'id=eq.'+encodeURIComponent(siteId), { labour_actual: val });
+  if(ok){
+    if(SUMMARY && SUMMARY.site) SUMMARY.site.labour_actual = val;
+    showSaveToast('Labour saved — '+R(val));
+    renderSiteSummary(siteId);
+  } else {
+    showSaveToast('Could not save — check your signal');
+  }
+}
+
+function summaryLabourPayments(){
+  openModal('modalSiteDetail');
+  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">Labour payments</div>
+    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Paying labour in segments as the work progresses — R80,000 in three or four payments with their dates — is the next step. It needs one small Supabase table so it saves in one place for you and Henk. For now the labour total above holds the running figure.</div>
+    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+}
+
+// ── MATERIAL DRILL-IN — the invoices behind the actual material amount ──
+function summaryInvoices(siteId){
+  const invs = (SUMMARY.invoices||[]).slice().sort(function(a,b){ return String(b.invoice_date).localeCompare(String(a.invoice_date)); });
+  openModal('modalSiteDetail');
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Material invoices</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${invs.length} invoice${invs.length!==1?'s':''} · ${R(sumMaterialActual())} total. Tap one to see and rename its line items.</div>`;
+  if(!invs.length){
+    h += `<div style="font-size:12.5px;color:#A39E8C;padding:10px 0 16px">No invoices captured for this site yet. They arrive here once a supplier invoice is confirmed in the Invoice Inbox.</div>`;
+  } else {
+    invs.forEach(function(iv){
+      h += `<div class="ledger-card" style="padding:13px 15px;margin-bottom:9px;cursor:pointer" onclick="summaryInvoiceBreakdown('${iv.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13px;color:#1A1A1A">${iv.supplier||'Unknown supplier'}</div>
+          <div class="disp" style="font-weight:800;font-size:14px;white-space:nowrap">${R(parseFloat(iv.total)||0)}</div>
+        </div>
+        <div style="font-size:11px;color:#8A8470;margin-top:3px">${iv.invoice_date?fd(iv.invoice_date):'no date'}${iv.invoice_number?' · '+iv.invoice_number:''} · ${(iv.line_items||[]).length} line item${(iv.line_items||[]).length!==1?'s':''}</div>
+      </div>`;
+    });
+  }
+  h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML = h;
+}
+
+function summaryInvoiceBreakdown(invId){
+  const iv = (SUMMARY.invoices||[]).find(function(x){ return x.id === invId; });
+  if(!iv) return;
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:2px">${iv.supplier||'Invoice'}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${iv.invoice_date?fd(iv.invoice_date):''}${iv.invoice_number?' · '+iv.invoice_number:''}</div>
+    <div class="disp" style="font-size:20px;font-weight:800;margin-bottom:16px">${R(parseFloat(iv.total)||0)} <span style="font-size:11px;font-weight:600;color:#A39E8C">total — locked</span></div>
+    <div style="font-size:11.5px;color:#5C5748;line-height:1.6;margin-bottom:12px">Rename any product to add the exact colour. The invoice amount can't be changed — only the wording.</div>`;
+  (iv.line_items||[]).forEach(function(li, i){
+    h += `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:11px 12px;margin-bottom:9px">
+      <div style="font-size:10px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-bottom:6px">${li.qty||0} ${li.unit?'× '+li.unit:''}</div>
+      <input class="f-input" id="li_${i}" value="${String(li.product||'').replace(/"/g,'&quot;')}" style="margin:0;font-size:13px"/>
+    </div>`;
+  });
+  h += `<button class="cta-btn" style="margin-top:4px" onclick="saveInvoiceNames('${iv.id}')">Save names</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="summaryInvoices('${SUMMARY_SITE}')">← Back to invoices</button>`;
+  $('siteDetailContent').innerHTML = h;
+}
+
+async function saveInvoiceNames(invId){
+  const iv = (SUMMARY.invoices||[]).find(function(x){ return x.id === invId; });
+  if(!iv) return;
+  const items = (iv.line_items||[]).map(function(li, i){
+    const el = $('li_'+i);
+    return Object.assign({}, li, { product: el ? el.value.trim() : li.product });
+  });
+  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(invId), { line_items: items });
+  if(ok){
+    iv.line_items = items;   // keep the open bundle in step
+    showSaveToast('Names saved');
+    closeModal('modalSiteDetail');
+    if(SUMMARY_SITE) renderSiteSummary(SUMMARY_SITE);
+  } else {
+    showSaveToast('Could not save — check your signal');
   }
 }
 
