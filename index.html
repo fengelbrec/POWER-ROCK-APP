@@ -1357,99 +1357,168 @@ function toggleSiteSplitPaid(monthKey, siteId, splitKey){
 // ───────────────────────────────────────────
 // DAILY UPDATES — pulls live from Supabase
 // ───────────────────────────────────────────
+// The list deliberately does NOT fetch photos. Photos live inside each report
+// row, so pulling a month of history would drag tens of MB down a phone line
+// just to draw a list. Photos are fetched for one report only, when it is opened.
+const DU_COLS = 'id,site_id,site_name,leader_key,leader_name,date,done,weather,paint_used,plan_tomorrow,materials_needed,challenges,submitted_at';
+const DU_LEADERS = ['joe','costa','daniel','talent'];
+const DU_LEADER_COLOURS = { joe:'#5C7A6B', costa:'#8B1A1A', daniel:'#9C8049', talent:'#5C5748' };
+const DU_SITES = { site_greenhill:'Greenhill Village', site_firs:'The Firs', site_alljoss:'Allen Joss Mazda', site_mabepark:'Mabe Park' };
+
+let DU_CACHE = [];
+let DU_SELECTED = null;   // a date from the calendar, or null for the full archive
+let DU_CAL = null;        // which month the calendar is showing
+
 async function renderDailyUpdates(){
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">${CURRENT_ROLE === 'henk' ? 'Door 2 · Ops' : 'Door 1 · Owner'}</div>
     <div class="page-title">Daily Updates</div>
     <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading updates...</div></div>`;
 
+  const rows = await sbFetch('daily_updates', `select=${DU_COLS}&limit=400`);
+  DU_CACHE = Array.isArray(rows) ? rows : [];
+  if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
+  if(CURRENT_DOOR === 'dailyupdates') paintUpdates();
+}
+
+function duGrouped(){
+  const g = {};
+  DU_CACHE.forEach(function(u){ if(!g[u.date]) g[u.date] = []; g[u.date].push(u); });
+  return g;
+}
+function duDateStr(y, m, d){ return y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0'); }
+
+function paintUpdates(){
+  const body = $('updatesBody');
+  if(!body) return;
+
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
-
-  // Fetch last 30 days of updates from Supabase
-  const updates = await sbFetch('daily_updates', 'limit=50');
-
-  const updBody = $('updatesBody');
-  if(!updBody) return;
-
-  if(!updates || updates.length === 0){
-    updBody.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px">
-      <div class="empty-state-ico">📋</div>
-      <div class="empty-state-txt">No updates submitted yet.<br/>Once team leaders submit their daily updates, they appear here in real time.</div>
-    </div>`;
-    return;
-  }
-
-  // Group by date
-  const grouped = {};
-  updates.forEach(u=>{
-    const d = u.date;
-    if(!grouped[d]) grouped[d] = [];
-    grouped[d].push(u);
-  });
-
-  const LEADER_COLOURS = {
-    joe: '#5C7A6B', costa: '#8B1A1A', daniel: '#9C8049', talent: '#5C5748'
-  };
-
-  const SITES = {
-    site_greenhill: 'Greenhill Village',
-    site_firs: 'The Firs',
-    site_alljoss: 'Allen Joss Mazda',
-    site_mabepark: 'Mabe Park'
-  };
-
-  // Check who submitted today
+  const grouped = duGrouped();
   const todayUpdates = grouped[today] || [];
-  const allLeaders = ['joe','costa','daniel','talent'];
-  const submittedToday = todayUpdates.map(u=>u.leader_key);
-  const missingToday = allLeaders.filter(l=>!submittedToday.includes(l));
+  const submittedKeys = todayUpdates.map(function(u){ return u.leader_key; });
+  const missing = DU_LEADERS.filter(function(l){ return submittedKeys.indexOf(l) === -1; });
 
-  let h = '';
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;letter-spacing:-0.2px">${new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+    <div style="font-size:11px;color:#8A8470;margin-bottom:14px">Today's reports</div>`;
 
-  // TODAY STATUS BAR
-  h += `<div class="section-lbl">Today — ${new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'})}</div>`;
+  h += duStatusBoxes(missing, todayUpdates);
+  h += duCalendar(grouped, today);
+  h += duList(grouped, today, yesterday);
+  body.innerHTML = h;
+}
 
-  if(missingToday.length > 0){
-    h += `<div style="background:#FFF3E0;border:1px solid #D4A55A;border-radius:10px;padding:14px 16px;margin-bottom:14px">
-      <div style="font-size:11px;font-weight:800;color:#9C6000;letter-spacing:1px;margin-bottom:8px">⏳ STILL WAITING FOR</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${missingToday.map(l=>`<span style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#9C6000">${l.charAt(0).toUpperCase()+l.slice(1)}</span>`).join('')}
-      </div>
-    </div>`;
-  } else if(todayUpdates.length > 0){
-    h += `<div style="background:#EBF2EC;border:1px solid #5C7A6B;border-radius:10px;padding:12px 16px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:700;color:#5C7A6B">✓ All teams have submitted today's update</div>
+// Outstanding in orange, submitted in green, side by side on a wide screen and
+// stacked on a phone — two columns on a 375px screen would be unreadable.
+function duStatusBoxes(missing, submitted){
+  const chip = function(txt, col){
+    return `<span style="background:#fff;border:1.5px solid ${col};border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:${col}">${txt}</span>`;
+  };
+  let h = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:18px">`;
+
+  h += `<div style="background:${missing.length?'#FFF3E0':'#F7F6F3'};border:1px solid ${missing.length?'#D4A55A':'#E6E2D8'};border-radius:10px;padding:13px 15px">
+    <div style="font-size:10.5px;font-weight:800;color:${missing.length?'#9C6000':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">⏳ STILL OUTSTANDING (${missing.length})</div>
+    ${missing.length
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${missing.map(function(l){ return chip(cap(l), '#9C6000'); }).join('')}</div>`
+      : `<div style="font-size:12px;color:#A39E8C">Nobody — everyone is in</div>`}
+  </div>`;
+
+  h += `<div style="background:${submitted.length?'#EBF2EC':'#F7F6F3'};border:1px solid ${submitted.length?'#5C7A6B':'#E6E2D8'};border-radius:10px;padding:13px 15px">
+    <div style="font-size:10.5px;font-weight:800;color:${submitted.length?'#3F5A4C':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">✓ SUBMITTED TODAY (${submitted.length})</div>
+    ${submitted.length
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${submitted.map(function(u){ return chip(u.leader_name || cap(u.leader_key), '#3F5A4C'); }).join('')}</div>`
+      : `<div style="font-size:12px;color:#A39E8C">Nobody yet</div>`}
+  </div>`;
+
+  return h + `</div>`;
+}
+
+function duCalendar(grouped, today){
+  const y = DU_CAL.y, m = DU_CAL.m;
+  const first = new Date(y, m, 1);
+  const startDow = (first.getDay() + 6) % 7;           // Monday-first grid
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const arrow = 'width:34px;height:34px;border-radius:8px;border:1px solid #E6E2D8;background:#fff;font-size:16px;font-weight:800;color:#5C5748;cursor:pointer;font-family:inherit';
+
+  let h = `<div class="ledger-card" style="padding:14px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <button style="${arrow}" onclick="duCalStep(-1)" aria-label="Previous month">‹</button>
+      <div style="font-family:'Poppins',sans-serif;font-weight:800;font-size:14px">${first.toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</div>
+      <button style="${arrow}" onclick="duCalStep(1)" aria-label="Next month">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center">`;
+
+  ['M','T','W','T','F','S','S'].forEach(function(d){
+    h += `<div style="font-size:9.5px;font-weight:800;color:#A39E8C;padding-bottom:3px">${d}</div>`;
+  });
+  for(let i=0;i<startDow;i++) h += `<div></div>`;
+
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = duDateStr(y, m, d);
+    const n = (grouped[ds] || []).length;
+    const isSel = ds === DU_SELECTED;
+    const isToday = ds === today;
+    let bg = '#fff', fg = '#C9C5BA', border = '1px solid #F0EEE6', weight = '600';
+    if(n > 0){ bg = '#EBF2EC'; fg = '#3F5A4C'; border = '1px solid #5C7A6B'; weight = '800'; }
+    if(isToday) border = '2px solid #1A1A1A';
+    if(isSel){ bg = '#1A1A1A'; fg = '#fff'; border = '2px solid #1A1A1A'; }
+    h += `<div onclick="${n>0?`duSelectDate('${ds}')`:''}"
+      style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:7px;background:${bg};border:${border};font-size:12px;font-weight:${weight};color:${fg};${n>0?'cursor:pointer':''}">
+      <div>${d}</div>
+      ${n>0?`<div style="font-size:8px;font-weight:800;color:${isSel?'#8FBF9F':'#5C7A6B'};line-height:1">${n}</div>`:''}
     </div>`;
   }
 
-  // UPDATES grouped by date
-  Object.keys(grouped).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
-    const dayUpdates = grouped[date];
-    const isToday = date === today;
-    const isYesterday = date === yesterday;
-    const dateLabel = isToday ? 'Today' : isYesterday ? 'Yesterday' : new Date(date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'});
+  h += `</div>
+    <div style="font-size:10.5px;color:#A39E8C;margin-top:10px;text-align:center">Green days have reports — tap one to open that day${DU_SELECTED?` · <span onclick="duSelectDate(null)" style="color:#8B1A1A;font-weight:800;cursor:pointer">show all dates</span>`:''}</div>
+  </div>`;
+  return h;
+}
 
-    if(!isToday) h += `<div class="section-lbl">${dateLabel}</div>`;
+// Let Date do the month arithmetic — it rolls the year over correctly for any
+// step, where hand-rolled wrapping only ever works for a single month.
+function duCalStep(n){
+  const d = new Date(DU_CAL.y, DU_CAL.m + n, 1);
+  DU_CAL = { y: d.getFullYear(), m: d.getMonth() };
+  paintUpdates();
+}
+function duSelectDate(ds){
+  DU_SELECTED = (ds && ds !== DU_SELECTED) ? ds : null;
+  paintUpdates();
+}
 
-    dayUpdates.forEach(u=>{
-      const col = LEADER_COLOURS[u.leader_key] || '#8A8470';
-      const siteName = SITES[u.site_id] || u.site_name || u.site_id;
-      const photoCount = Array.isArray(u.photos) ? u.photos.length : 0;
+function duList(grouped, today, yesterday){
+  const dates = Object.keys(grouped).sort(function(a,b){ return b.localeCompare(a); });
+  const shown = DU_SELECTED ? dates.filter(function(d){ return d === DU_SELECTED; }) : dates;
+
+  if(!shown.length){
+    return `<div class="empty-state ledger-card" style="padding:40px 20px">
+      <div class="empty-state-ico">📋</div>
+      <div class="empty-state-txt">${DU_CACHE.length ? 'No reports on that day.' : 'No updates submitted yet.<br/>Once team leaders submit their daily updates, they appear here in real time.'}</div>
+    </div>`;
+  }
+
+  let h = `<div class="section-lbl">${DU_SELECTED ? 'Reports for this day' : 'Daily update archive'}</div>`;
+
+  shown.forEach(function(date){
+    const label = date === today ? 'Today' : date === yesterday ? 'Yesterday'
+      : new Date(date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    h += `<div style="font-family:'Poppins',sans-serif;font-size:13.5px;font-weight:800;color:#1A1A1A;margin:16px 0 8px;padding-bottom:5px;border-bottom:2px solid #1A1A1A">${label}
+      <span style="float:right;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;color:#8A8470">${grouped[date].length} report${grouped[date].length!==1?'s':''}</span></div>`;
+
+    grouped[date].forEach(function(u){
+      const col = DU_LEADER_COLOURS[u.leader_key] || '#8A8470';
+      const siteName = DU_SITES[u.site_id] || u.site_name || u.site_id;
       const time = u.submitted_at ? new Date(u.submitted_at).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}) : '';
-
       h += `<div class="ledger-card" style="margin-bottom:10px;cursor:pointer" onclick="viewUpdate('${u.id}')">
         <div style="height:4px;background:${col}"></div>
         <div style="padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
             <div>
               <div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A">${u.leader_name}</div>
-              <div style="font-size:11px;color:#8A8470">${siteName} · ${u.weather||''} · ${time}</div>
+              <div style="font-size:11px;color:#8A8470">${siteName}${time?' · '+time:''}</div>
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-              ${photoCount>0?`<span style="background:#FEF0EE;color:#8B1A1A;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px">📷 ${photoCount}</span>`:''}
-              ${u.challenges?`<span style="background:#FFF3E0;color:#9C6000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px">⚠️ Challenge</span>`:''}
-            </div>
+            ${u.challenges?`<span style="background:#FFF3E0;color:#9C6000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap">⚠️ Challenge</span>`:''}
           </div>
           <div style="font-size:12.5px;color:#1A1A1A;line-height:1.6;margin-bottom:6px">${(u.done||'').substring(0,120)}${(u.done||'').length>120?'...':''}</div>
           ${u.plan_tomorrow?`<div style="font-size:11px;color:#5C7A6B;font-weight:600">→ Tomorrow: ${(u.plan_tomorrow||'').substring(0,80)}${(u.plan_tomorrow||'').length>80?'...':''}</div>`:''}
@@ -1457,19 +1526,17 @@ async function renderDailyUpdates(){
       </div>`;
     });
   });
-
-  updBody.innerHTML = h;
-
-  // Store updates for detail view
-  window._updates = updates;
+  return h;
 }
 
-function viewUpdate(id){
-  const u = window._updates?.find(x=>x.id===id);
+async function viewUpdate(id){
+  const u = DU_CACHE.find(function(x){ return x.id === id; });
   if(!u) return;
 
-  const photos = Array.isArray(u.photos) ? u.photos : [];
-  const SITES = {site_greenhill:'Greenhill Village',site_firs:'The Firs',site_alljoss:'Allen Joss Mazda',site_mabepark:'Mabe Park'};
+  // Photos are not in the list data — fetch them for this one report only.
+  const rows = await sbGetRows('daily_updates', `select=photos&id=eq.${encodeURIComponent(id)}`);
+  const photos = (Array.isArray(rows) && rows[0] && Array.isArray(rows[0].photos)) ? rows[0].photos : [];
+  const SITES = DU_SITES;
 
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
   <div style="font-family:'Poppins',sans-serif;font-size:17px;font-weight:800;margin-bottom:3px">${u.leader_name} — ${new Date(u.date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'})}</div>
@@ -2208,18 +2275,21 @@ function removeStockProduct(siteId, i){
 }
 
 // ── DAILY REPORTS PER SITE — the permanent record ──
+// Photos are left out of the list fetch and loaded only when a report is opened.
+let SITE_REPORTS = [];
 async function loadSiteReports(siteId){
   const body = $('siteReportsBody'); if(!body) return;
-  const ups = await sbFetch('daily_updates', `site_id=eq.${siteId}&limit=100`);
-  if(!ups || ups.length === 0){
+  const ups = await sbFetch('daily_updates', `select=${DU_COLS}&site_id=eq.${siteId}&limit=100`);
+  SITE_REPORTS = Array.isArray(ups) ? ups : [];
+  if(!SITE_REPORTS.length){
     body.innerHTML = `<div style="padding:14px 0;font-size:12px;color:#A39E8C">No daily reports for this site yet.</div>`;
     return;
   }
-  body.innerHTML = ups.map((u,i)=>`
+  body.innerHTML = SITE_REPORTS.map((u,i)=>`
     <div style="padding:10px 0;border-bottom:0.5px solid #F0EEE6;cursor:pointer" onclick="toggleSiteReport(${i})">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:12.5px;font-weight:700;color:#1A1A1A">${fd(u.date)} — ${u.leader_name||''}</span>
-        <span style="font-size:11px;color:#8A8470">${(u.photos||[]).length} 📷 ${u.challenges?'· ⚠️':''}</span>
+        <span style="font-size:11px;color:#8A8470">${u.challenges?'⚠️ ':''}tap to open</span>
       </div>
       <div id="srep_${i}" style="display:none;font-size:12px;color:#5C5748;line-height:1.8;margin-top:6px">
         <strong>Done:</strong> ${u.done||''}<br/>
@@ -2227,11 +2297,29 @@ async function loadSiteReports(siteId){
         ${u.plan_tomorrow?`<strong>Plan:</strong> ${u.plan_tomorrow}<br/>`:''}
         ${u.materials_needed?`<strong>Materials needed:</strong> ${u.materials_needed}<br/>`:''}
         ${u.challenges?`<strong style="color:#B2342A">⚠️ Challenge:</strong> ${u.challenges}<br/>`:''}
-        ${(u.photos&&u.photos.length)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${u.photos.map(p=>`<img src="${p}" style="width:70px;height:70px;object-fit:cover;border-radius:6px"/>`).join('')}</div>`:''}
+        <div id="srepPhotos_${i}"></div>
       </div>
     </div>`).join('');
 }
-function toggleSiteReport(i){ const el = $('srep_'+i); if(el) el.style.display = el.style.display==='none' ? 'block' : 'none'; }
+
+async function toggleSiteReport(i){
+  const el = $('srep_'+i); if(!el) return;
+  const opening = el.style.display === 'none';
+  el.style.display = opening ? 'block' : 'none';
+  if(!opening) return;
+
+  const box = $('srepPhotos_'+i);
+  if(!box || box.dataset.loaded) return;
+  box.dataset.loaded = '1';
+  const u = SITE_REPORTS[i]; if(!u) return;
+
+  box.innerHTML = `<div style="font-size:11px;color:#A39E8C;margin-top:6px">Loading photos…</div>`;
+  const rows = await sbGetRows('daily_updates', `select=photos&id=eq.${encodeURIComponent(u.id)}`);
+  const photos = (Array.isArray(rows) && rows[0] && Array.isArray(rows[0].photos)) ? rows[0].photos : [];
+  box.innerHTML = photos.length
+    ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${photos.map(p=>`<img src="${p}" style="width:70px;height:70px;object-fit:cover;border-radius:6px"/>`).join('')}</div>`
+    : `<div style="font-size:11px;color:#A39E8C;margin-top:6px">No photos on this report.</div>`;
+}
 
 // ── COMPLETE / REACTIVATE — moves a site to Previous Sites, nothing is lost ──
 function completeSite(id){
@@ -2860,7 +2948,7 @@ let HENK = { sites: [], updates: [], stock: {}, usage: {} };
 async function loadHenkData(){
   const res = await Promise.all([
     sbGetRows('sites', 'order=started.desc'),
-    sbGetRows('daily_updates', 'order=date.desc&limit=100'),
+    sbGetRows('daily_updates', `select=${DU_COLS}&order=date.desc&limit=100`), // no photos — see DU_COLS
     sbGetRows('paint_stock', ''),
     sbGetRows('stock_usage', '')
   ]);
@@ -2909,20 +2997,8 @@ async function renderHenkOverview(){
   const active = HENK.sites.filter(function(s){ return s.status !== 'done'; });
   const todays = HENK.updates.filter(function(u){ return u.date === today; });
 
-  let h = `<div class="section-lbl">Today — ${new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'})}</div>`;
-
-  const waiting = active.filter(function(s){
-    return !todays.some(function(u){ return u.site_id === s.id; });
-  });
-  if(waiting.length){
-    h += `<div style="background:#FFF3E0;border:1px solid #D4A55A;border-radius:10px;padding:14px 16px;margin-bottom:14px">
-      <div style="font-size:11px;font-weight:800;color:#9C6000;letter-spacing:1px;margin-bottom:8px">⏳ STILL WAITING FOR</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${waiting.map(function(s){ return `<span style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#9C6000">${henkLeaderName(s.team_leader)} · ${s.name}</span>`; }).join('')}
-      </div></div>`;
-  } else if(active.length){
-    h += `<div style="background:#EAF1EC;border:1px solid #5C7A6B;border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:12.5px;font-weight:700;color:#3F5A4C">✓ Every site has reported today</div>`;
-  }
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;letter-spacing:-0.2px">${new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+    <div style="font-size:11px;color:#8A8470;margin-bottom:14px">Today's reports</div>`;
 
   if(!active.length){
     h += `<div class="empty-state ledger-card" style="padding:40px 20px">
@@ -2932,6 +3008,29 @@ async function renderHenkOverview(){
     body.innerHTML = h;
     return;
   }
+
+  const waiting = active.filter(function(s){ return !todays.some(function(u){ return u.site_id === s.id; }); });
+  const arrived = active.filter(function(s){ return  todays.some(function(u){ return u.site_id === s.id; }); });
+  const chip = function(txt, col){
+    return `<span style="background:#fff;border:1.5px solid ${col};border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:${col}">${txt}</span>`;
+  };
+
+  // Outstanding in orange, submitted in green — side by side on a wide screen,
+  // stacked on a phone where two columns would be unreadable.
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:18px">
+    <div style="background:${waiting.length?'#FFF3E0':'#F7F6F3'};border:1px solid ${waiting.length?'#D4A55A':'#E6E2D8'};border-radius:10px;padding:13px 15px">
+      <div style="font-size:10.5px;font-weight:800;color:${waiting.length?'#9C6000':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">⏳ STILL OUTSTANDING (${waiting.length})</div>
+      ${waiting.length
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${waiting.map(function(s){ return chip(henkLeaderName(s.team_leader), '#9C6000'); }).join('')}</div>`
+        : `<div style="font-size:12px;color:#A39E8C">Nobody — everyone is in</div>`}
+    </div>
+    <div style="background:${arrived.length?'#EBF2EC':'#F7F6F3'};border:1px solid ${arrived.length?'#5C7A6B':'#E6E2D8'};border-radius:10px;padding:13px 15px">
+      <div style="font-size:10.5px;font-weight:800;color:${arrived.length?'#3F5A4C':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">✓ SUBMITTED TODAY (${arrived.length})</div>
+      ${arrived.length
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${arrived.map(function(s){ return chip(henkLeaderName(s.team_leader), '#3F5A4C'); }).join('')}</div>`
+        : `<div style="font-size:12px;color:#A39E8C">Nobody yet</div>`}
+    </div>
+  </div>`;
 
   h += `<div class="section-lbl">Each leader — budget standing</div>`;
   active.forEach(function(s){
@@ -2985,14 +3084,17 @@ async function renderHenkSites(){
   if(!body || CURRENT_DOOR !== 'sites' || CURRENT_ROLE !== 'henk') return;
 
   const active = HENK.sites.filter(function(s){ return s.status !== 'done'; });
-  if(!active.length){
+  const finished = HENK.sites.filter(function(s){ return s.status === 'done'; });
+
+  if(!active.length && !finished.length){
     body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px">
       <div class="empty-state-ico">▦</div>
-      <div class="empty-state-txt">No active sites yet.<br/>Use + Add new site above.</div></div>`;
+      <div class="empty-state-txt">No sites yet.<br/>Use + Add new site above.</div></div>`;
     return;
   }
 
   let h = '';
+  if(active.length) h += `<div class="section-lbl">Active sites (${active.length})</div>`;
   active.forEach(function(s){
     const stock = HENK.stock[s.id] || [];
     const labourActual = parseFloat(s.labour_actual)||0;
@@ -3035,6 +3137,25 @@ async function renderHenkSites(){
 
     h += `</div>`;
   });
+
+  // Site archive — everything finished, kept for looking back at.
+  h += `<div class="section-lbl">Site archive (${finished.length})</div>`;
+  if(!finished.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 8px">No finished sites yet. When a site is marked done it moves here.</div>`;
+  } else {
+    finished.forEach(function(s){
+      const stock = HENK.stock[s.id] || [];
+      const used = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
+      h += `<div class="ledger-card" style="padding:14px 16px;margin-bottom:10px;background:#F7F6F3">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13.5px;color:#5C5748">${s.name}</div>
+          <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#A39E8C;white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
+        </div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${s.client||'No client'} · started ${fd(s.started)}${s.end_date?' · finished '+fd(s.end_date):''}</div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:7px">Labour ${R(parseFloat(s.labour_actual)||0)} of ${R(parseFloat(s.labour_budget)||0)} · ${stock.length} product${stock.length!==1?'s':''} · ${used} unit${used!==1?'s':''} used</div>
+      </div>`;
+    });
+  }
 
   body.innerHTML = h;
 }
