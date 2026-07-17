@@ -3508,6 +3508,34 @@ function summaryDays(s){
 }
 function sumMaterialActual(){ return (SUMMARY.invoices||[]).reduce(function(a,iv){ return a + (parseFloat(iv.total)||0); }, 0); }
 
+// One line of the Site Profit Sheet. Clickable when it has an onclick.
+function profitRow(o){
+  const click = o.onclick ? `onclick="${o.onclick}"` : '';
+  const cursor = o.onclick ? 'cursor:pointer;' : '';
+  const col = o.over ? '#B2342A' : '#1A1A1A';
+  return `<div ${click} style="${cursor}display:flex;justify-content:space-between;align-items:flex-start;padding:12px 2px;border-bottom:1px solid #EFECE3">
+    <div style="flex:1;min-width:0;padding-right:10px">
+      <div style="font-size:13px;color:#1A1A1A">${o.sign?o.sign+' ':''}${o.label}${o.onclick?' <span style="color:#C9C5BA;font-weight:800">›</span>':''}</div>
+      ${o.sub?`<div style="font-size:10px;color:${o.over?'#B2342A':'#A39E8C'};margin-top:3px;font-weight:${o.over?'800':'400'}">${o.sub}</div>`:''}
+    </div>
+    <div class="disp" style="font-weight:700;font-size:13.5px;color:${col};white-space:nowrap">${R(o.val)}</div>
+  </div>`;
+}
+
+// "20L drums" -> "20L". Ferdi wants the word drums dropped after the quantity.
+function unitLabel(u){
+  const t = String(u||'').replace(/\bdrums?\b/ig, '').replace(/\s+/g,' ').trim();
+  return t ? '× ' + t : '';
+}
+
+function costSoon(name){
+  openModal('modalSiteDetail');
+  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">${name}</div>
+    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Adding these costs — with the amount and date, and them feeding straight into the profit — is the next step. It needs one small Supabase table so it saves in one place for you and Henk. Once that quick setup is done, this line goes live.</div>
+    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+}
+
 async function renderSiteSummary(siteId){
   $('pageBody').innerHTML = `
     <button onclick="closeSiteSummary()" style="background:none;border:none;color:#8A8470;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:12px">← All sites</button>
@@ -3537,21 +3565,6 @@ async function renderSiteSummary(siteId){
   const leaderName     = henkLeaderName(s.team_leader);
   const pos            = netProfit >= 0;
 
-  const lbl = function(t){ return `<div style="font-size:10px;font-weight:800;color:#8A8470;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:2px">${t}</div>`; };
-  const budgetLine = function(name, actual, budget, pct){
-    const over = budget > 0 && actual > budget;
-    return `<div class="ledger-card" style="padding:16px;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-        <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${name}</div>
-        <div style="font-size:10.5px;color:#8A8470">budget ${Math.round(pct*100)}% · ${R(budget)}</div>
-      </div>
-      <div class="disp" style="font-size:22px;font-weight:800;color:${over?'#B2342A':'#1A1A1A'};margin-top:6px">${R(actual)}</div>
-      <div style="height:7px;background:#E6E2D8;border-radius:4px;overflow:hidden;margin-top:8px">
-        <div style="height:100%;width:${Math.min(100,budget>0?Math.round(actual/budget*100):0)}%;background:${over?'#B2342A':'#5C7A6B'}"></div>
-      </div>
-      <div style="font-size:10.5px;color:${over?'#B2342A':'#8A8470'};margin-top:5px;font-weight:${over?'800':'400'}">${over?'⚠️ OVER the '+Math.round(pct*100)+'% budget by '+R(actual-budget):(budget>0?Math.round(actual/budget*100)+'% of budget used':'No quote set — budget cannot be worked out')}</div>`;
-  };
-
   let h = '';
 
   // ── HEADER ──
@@ -3575,65 +3588,35 @@ async function renderSiteSummary(siteId){
     </div>
   </div>`;
 
-  // ── LABOUR ──
-  h += budgetLine('Labour', labourActual, labourBudget, LABOUR_PCT);
-  h += `<div style="display:flex;gap:8px;margin:-4px 0 16px">
-    <button class="cta-btn" style="flex:1;margin:0;height:44px;font-size:12.5px" onclick="editSummaryLabour('${s.id}')">✎ Add / edit labour</button>
-    <button class="cta-btn ghost" style="flex:1;margin:0;height:44px;font-size:12.5px" onclick="summaryLabourPayments()">Labour payments</button>
-  </div>`;
-
-  // ── MATERIAL ──
-  h += budgetLine('Material', materialActual, materialBudget, MATERIAL_PCT);
-  h += `<button class="cta-btn ghost" style="width:100%;margin:-4px 0 16px;height:44px;font-size:12.5px" onclick="summaryInvoices('${s.id}')">🧾 See the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''} behind this amount</button>`;
-
-  // ── COST BLOCKS (next step) ──
-  const soon = function(icon, name, note){
-    return `<div class="ledger-card" style="padding:15px 16px;margin-bottom:12px;background:#FAF9F5">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <div style="font-weight:800;font-size:13px;color:#5C5748">${icon} ${name}</div>
-        <div class="disp" style="font-size:16px;font-weight:800;color:#C9C5BA">R 0,00</div>
-      </div>
-      <div style="font-size:10.5px;color:#A39E8C;margin-top:5px">${note} — added in the next step (needs the quick Supabase setup)</div>
-    </div>`;
-  };
-  h += soon('🚧', 'Additional site costs', 'Cherry picker, scaffold rental');
-  h += soon('🏠', 'Team accommodation', 'Overnight / lodging');
-  h += soon('⛽', 'Petrol / Diesel', 'Fuel to and on site');
-
-  // ── HENK'S FEE — 10% after cherry picker & scaffold, paid in segments ──
-  h += `<div class="ledger-card" style="padding:15px 16px;margin-bottom:12px;cursor:pointer" onclick="henkFeePayments('${s.id}')">
-    <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <div style="font-weight:800;font-size:13px;color:#1A1A1A">📋 Henk — project fee (10%)</div>
-      <div class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A">${R(henkFee)}</div>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:5px">
-      <div style="font-size:10.5px;color:#A39E8C">10% of the quote after cherry picker &amp; scaffold (${R(henkFeeBase)}), ex-VAT</div>
-      <div style="font-size:10px;font-weight:800;color:#C9863A;white-space:nowrap">Outstanding: next step</div>
-    </div>
-  </div>`;
-
-  // ── THE FULL CALCULATION ──
-  const row = function(label, val, minus){
-    return `<div style="display:flex;justify-content:space-between;padding:7px 0;font-size:12.5px;border-bottom:1px solid #EFECE3">
-      <span style="color:#5C5748">${minus?'– ':''}${label}</span>
-      <span class="disp" style="font-weight:700;color:#1A1A1A">${R(val)}</span></div>`;
-  };
-  h += `<div class="section-lbl">How the profit is worked out</div>
-    <div class="ledger-card" style="padding:16px;margin-bottom:16px">
-      ${row('Total quote (ex-VAT)', quote, false)}
-      ${row('Labour actual', labourActual, true)}
-      ${row('Material actual', materialActual, true)}
-      ${row('Additional site costs (cherry / scaffold)', additionalCosts, true)}
-      ${row('Team accommodation', accommodation, true)}
-      ${row('Petrol / Diesel', petrol, true)}
-      ${row('Henk project fee (10% after cherry / scaffold)', henkFee, true)}
-      <div style="display:flex;justify-content:space-between;padding:11px 0 4px;font-size:13.5px;border-top:2px solid #1A1A1A;margin-top:4px">
+  // ── SITE PROFIT SHEET — one clickable list, no repeated blocks ──
+  const overLabour = labourActual > labourBudget;
+  const overMat    = materialActual > materialBudget;
+  h += `<div class="section-lbl">Site profit sheet</div>
+    <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
+      ${profitRow({ label:'Total quote (ex-VAT)', val:quote })}
+      ${profitRow({ label:'Labour actual', val:labourActual, sign:'–', over:overLabour,
+        sub:`budget 23% · ${R(labourBudget)}${overLabour?' · OVER':''} · paid in segments (next step)`,
+        onclick:`editSummaryLabour('${s.id}')` })}
+      ${profitRow({ label:'Material actual', val:materialActual, sign:'–', over:overMat,
+        sub:`budget 26% · ${R(materialBudget)} · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
+        onclick:`summaryInvoices('${s.id}')` })}
+      ${profitRow({ label:'Additional site costs (cherry / scaffold)', val:additionalCosts, sign:'–',
+        sub:'tap — next step', onclick:`costSoon('Additional site costs (cherry picker, scaffold)')` })}
+      ${profitRow({ label:'Team accommodation', val:accommodation, sign:'–',
+        sub:'tap — next step', onclick:`costSoon('Team accommodation')` })}
+      ${profitRow({ label:'Petrol / Diesel', val:petrol, sign:'–',
+        sub:'tap — next step', onclick:`costSoon('Petrol / Diesel')` })}
+      ${profitRow({ label:'Henk project fee (10% after cherry / scaffold)', val:henkFee, sign:'–',
+        sub:`on ${R(henkFeeBase)} · outstanding: next step`, onclick:`henkFeePayments('${s.id}')` })}
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 4px;font-size:13.5px;border-top:2px solid #1A1A1A;margin-top:4px">
         <span style="font-weight:800">= Net profit to date</span>
-        <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(netProfit)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px">
+        <span style="display:flex;align-items:baseline;gap:7px">
+          <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(netProfit)}</span>
+          <span class="disp" style="font-weight:800;font-size:11px;color:${pos?'#3F5A4C':'#B2342A'};opacity:0.85">${netPct.toFixed(0)}%</span></span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 2px;font-size:12.5px">
         <span style="color:#5C5748">÷ ${days} day${days!==1?'s':''} on site</span>
         <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(dailyProfit)} / day</span></div>
-      <div style="font-size:10.5px;color:#A39E8C;margin-top:8px">Every figure here is live — change labour, add an invoice or another day passes, and this recalculates.</div>
+      <div style="font-size:10.5px;color:#A39E8C;margin:8px 2px 4px">Tap any line to open or edit it. Every figure is live — change labour, add an invoice or another day passes, and this recalculates.</div>
     </div>`;
 
   // ── STOCK SHEET — total products USED so far (invoiced minus still on site) ──
@@ -3649,7 +3632,7 @@ async function renderSiteSummary(siteId){
       const used = Math.max(0, invd - onS);
       h += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid #EFECE3">
         <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</span>
-        <span style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:800;font-size:13px">${used} ${r.unit?'× '+r.unit:''}</span><br/><span style="font-size:9.5px;color:#A39E8C">of ${invd} invoiced</span></span></div>`;
+        <span style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:800;font-size:13px">${used} ${unitLabel(r.unit)}</span><br/><span style="font-size:9.5px;color:#A39E8C">of ${invd} invoiced</span></span></div>`;
     });
     h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">Used = invoiced minus what is still unopened on site. Used + on-site always adds back to the amount invoiced.</div></div>`;
   }
@@ -3664,7 +3647,7 @@ async function renderSiteSummary(siteId){
     onSite.forEach(function(r){
       h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #F0E4C9">
         <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#9C7A3A">('+r.colour+')</span>':''}</span>
-        <span class="disp" style="font-weight:800;font-size:13px;color:#8A5A16;white-space:nowrap">${parseFloat(r.qty_on_site)||0} ${r.unit?'× '+r.unit:''}</span></div>`;
+        <span class="disp" style="font-weight:800;font-size:13px;color:#8A5A16;white-space:nowrap">${parseFloat(r.qty_on_site)||0} ${unitLabel(r.unit)}</span></div>`;
     });
     h += `<div style="font-size:10.5px;color:#9C7A3A;padding:8px 0">This is the unopened paint you should find on site — what's left to finish the job.</div></div>`;
   }
