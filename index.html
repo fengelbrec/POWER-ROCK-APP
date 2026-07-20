@@ -3492,17 +3492,12 @@ async function renderHenkSites(){
         <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
         <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${henkLeaderColour(s.team_leader)};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
       </div>
-      <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${s.client||'No client'} · started ${fd(s.started)}</div>
+      <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">${s.client||'No client'} · started ${fd(s.started)}</div>
 
-      <div class="section-lbl" style="margin:0 0 8px">Labour to date — you set this</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input class="f-input" id="lab_${s.id}" type="number" step="0.01" inputmode="decimal"
-               placeholder="0.00" value="${labourActual||''}" style="flex:1;margin:0"/>
-        <button class="cta-btn" style="width:auto;padding:0 18px;margin:0;flex:0 0 auto" onclick="saveHenkLabour('${s.id}')">Save</button>
-      </div>
-      <div style="font-size:11px;color:#A39E8C;margin-top:6px">Budget ${R(labourBudget)}${labourBudget?' · '+Math.round(labourActual/labourBudget*100)+'% used':''}</div>
+      <button class="cta-btn" style="width:100%;margin:0 0 6px;height:44px;font-size:12.5px" onclick="openSiteSummary('${s.id}')">Open full summary — labour, costs &amp; profit →</button>
+      <div style="font-size:11px;color:#A39E8C;margin:0 0 8px">Labour, cherry picker, accommodation, petrol and Henk's fee are all managed on the summary now.</div>
 
-      <div class="section-lbl" style="margin:18px 0 8px">Material on site &amp; used</div>`;
+      <div class="section-lbl" style="margin:14px 0 8px">Material on site &amp; used</div>`;
 
     if(!stock.length){
       h += `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No products on this site's stock sheet yet.</div>`;
@@ -3579,13 +3574,29 @@ async function loadSiteSummary(siteId){
   const res = await Promise.all([
     sbGetRows('sites', `id=eq.${encodeURIComponent(siteId)}`),
     sbGetRows('invoice_inbox', `status=eq.confirmed&order=invoice_date.asc`),
-    sbGetRows('paint_stock', `site_id=eq.${encodeURIComponent(siteId)}&order=product.asc`)
+    sbGetRows('paint_stock', `site_id=eq.${encodeURIComponent(siteId)}&order=product.asc`),
+    sbGetRows('site_costs', `site_id=eq.${encodeURIComponent(siteId)}&order=paid_date.asc`)
   ]);
   const site = (Array.isArray(res[0]) && res[0][0]) ? res[0][0] : null;
   const invoices = (Array.isArray(res[1]) ? res[1] : []).filter(function(iv){ return iv.site_guess === siteId; });
   const stock = Array.isArray(res[2]) ? res[2] : [];
-  SUMMARY = { site: site, invoices: invoices, stock: stock };
+  const costs = Array.isArray(res[3]) ? res[3] : [];
+  SUMMARY = { site: site, invoices: invoices, stock: stock, costs: costs };
   return SUMMARY;
+}
+
+// site_costs kinds. labour & henk are paid in segments against a target
+// (so they carry an outstanding); the rest are plain running costs.
+const COST_KINDS = {
+  labour:        { label: 'Labour',                payment: true },
+  henk:          { label: "Henk's project fee",    payment: true },
+  additional:    { label: 'Additional site costs', hint: 'Cherry picker, scaffold rental — name each one' },
+  accommodation: { label: 'Team accommodation',    hint: 'Overnight / lodging' },
+  petrol:        { label: 'Petrol / Diesel',       hint: 'Fuel to and on site' }
+};
+function costSum(kind){
+  return (SUMMARY && SUMMARY.costs ? SUMMARY.costs : []).filter(function(c){ return c.kind === kind; })
+    .reduce(function(a,c){ return a + (parseFloat(c.amount)||0); }, 0);
 }
 
 function summaryDays(s){
@@ -3615,35 +3626,118 @@ function unitLabel(u){
   return t ? '× ' + t : '';
 }
 
-function costSoon(name){
+// ── COST EDITOR — add/remove dated entries for one kind, shared by both doors ──
+function openCostEditor(siteId, kind){
+  const meta = COST_KINDS[kind] || { label: kind };
+  const quote = parseFloat((SUMMARY.site||{}).quote_value)||0;
+  const entries = (SUMMARY.costs||[]).filter(function(c){ return c.kind === kind; })
+    .sort(function(a,b){ return String(b.paid_date).localeCompare(String(a.paid_date)); });
+  const total = costSum(kind);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const showNote = (kind === 'additional');
+
+  // Labour and Henk are payments against a target, so show what's outstanding.
+  let targetBox = '';
+  if(meta.payment){
+    let target = 0, targetLabel = '';
+    if(kind === 'labour'){ target = quote * LABOUR_PCT; targetLabel = 'Labour budget (23%)'; }
+    if(kind === 'henk'){ target = (quote - costSum('additional')) * HENK_FEE_PCT; targetLabel = "Henk's fee (10%)"; }
+    const outstanding = target - total;
+    targetBox = `<div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:#8A8470">${targetLabel}</span><span class="disp" style="font-weight:700">${R(target)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:#8A8470">Paid so far</span><span class="disp" style="font-weight:700">${R(total)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0 0;border-top:1px solid #E6E2D8;margin-top:5px"><span style="font-weight:800">Outstanding</span><span class="disp" style="font-weight:800;color:${outstanding>0?'#8B1A1A':'#3F5A4C'}">${R(outstanding)}</span></div>
+    </div>`;
+  }
+
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${meta.label}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${meta.hint || (meta.payment ? 'Add each payment with its date.' : 'Add each cost with its date.')}</div>
+    ${targetBox}`;
+
+  // Existing entries
+  if(entries.length){
+    h += `<div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`;
+    entries.forEach(function(c){
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #EFECE3">
+        <div style="min-width:0"><div style="font-size:12.5px;font-weight:700;color:#1A1A1A">${R(parseFloat(c.amount)||0)}</div>
+          <div style="font-size:10.5px;color:#8A8470">${c.paid_date?fd(c.paid_date):'no date'}${c.note?' · '+c.note:''}</div></div>
+        <button onclick="delCost('${c.id}','${siteId}','${kind}')" style="background:none;border:none;color:#B2342A;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>
+      </div>`;
+    });
+    h += `<div style="display:flex;justify-content:space-between;padding:10px 0 6px;font-size:13px;font-weight:800"><span>Total</span><span class="disp">${R(total)}</span></div></div>`;
+  } else {
+    h += `<div style="font-size:12px;color:#A39E8C;padding:2px 0 14px">Nothing added yet.</div>`;
+  }
+
+  // Add form
+  h += `<div class="section-lbl" style="margin-top:0">Add ${meta.payment ? 'a payment' : 'a cost'}</div>
+    <input class="f-input" id="costAmt" type="number" step="0.01" inputmode="decimal" placeholder="Amount (R)" style="margin-bottom:8px"/>
+    <input class="f-input" id="costDate" type="date" value="${todayStr}" style="margin-bottom:8px"/>
+    ${showNote ? `<input class="f-input" id="costNote" placeholder="What was it? e.g. Cherry picker — 3 days" style="margin-bottom:8px"/>` : ''}
+    <button class="cta-btn" onclick="addCost('${siteId}','${kind}')">Add</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+
+  $('siteDetailContent').innerHTML = h;
   openModal('modalSiteDetail');
-  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">${name}</div>
-    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Adding these costs — with the amount and date, and them feeding straight into the profit — is the next step. It needs one small Supabase table so it saves in one place for you and Henk. Once that quick setup is done, this line goes live.</div>
-    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+}
+
+async function addCost(siteId, kind){
+  const amt = parseFloat(String(($('costAmt')||{}).value||'').replace(/[^0-9.]/g,''));
+  if(isNaN(amt) || amt <= 0){ showSaveToast('Enter an amount more than 0'); return; }
+  const date = ($('costDate')||{}).value || new Date().toISOString().split('T')[0];
+  const note = $('costNote') ? $('costNote').value.trim() : '';
+  const row = { id: uid(), site_id: siteId, kind: kind, amount: amt, paid_date: date, note: note };
+  const ok = await sbInsert('site_costs', row);
+  if(ok){
+    if(!SUMMARY.costs) SUMMARY.costs = [];
+    SUMMARY.costs.push(row);
+    showSaveToast('Saved — ' + R(amt));
+    openCostEditor(siteId, kind);   // refresh the list + outstanding
+    paintSiteSummaryBody();          // refresh the profit sheet behind
+  } else {
+    showSaveToast('Could not save — check your signal');
+  }
+}
+
+async function delCost(id, siteId, kind){
+  await sbDelete('site_costs', 'id=eq.' + encodeURIComponent(id));
+  SUMMARY.costs = (SUMMARY.costs||[]).filter(function(c){ return c.id !== id; });
+  showSaveToast('Removed');
+  openCostEditor(siteId, kind);
+  paintSiteSummaryBody();
 }
 
 async function renderSiteSummary(siteId){
   $('pageBody').innerHTML = `
     <button onclick="closeSiteSummary()" style="background:none;border:none;color:#8A8470;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:12px">← Back</button>
     <div id="summaryBody"><div style="text-align:center;padding:44px;color:#8A8470">Loading site snapshot…</div></div>`;
-  const data = await loadSiteSummary(siteId);
+  await loadSiteSummary(siteId);
   if(SUMMARY_SITE !== siteId) return;   // user moved on while it loaded
-  const body = $('summaryBody'); if(!body) return;
+  paintSiteSummaryBody();
+}
+
+// Paints from the current SUMMARY without re-fetching, so a cost edit repaints instantly.
+function paintSiteSummaryBody(){
+  const data = SUMMARY;
+  const body = $('summaryBody');
+  if(!body || !data) return;
   const s = data.site;
   if(!s){ body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px"><div class="empty-state-txt">This site isn't in the shared database yet.</div></div>`; return; }
 
   const quote          = parseFloat(s.quote_value)||0;
   const labourBudget   = quote * LABOUR_PCT;
   const materialBudget = quote * MATERIAL_PCT;
-  const labourActual   = parseFloat(s.labour_actual)||0;
+  const labourActual   = costSum('labour');
   const materialActual = sumMaterialActual();
-  const additionalCosts = 0;   // cherry picker + scaffold — next step (needs Supabase table)
-  const accommodation   = 0;   // next step
-  const petrol          = 0;   // next step
+  const additionalCosts = costSum('additional');   // cherry picker + scaffold
+  const accommodation   = costSum('accommodation');
+  const petrol          = costSum('petrol');
   // Henk's 10% is taken AFTER cherry picker & scaffold come off the quote, all ex-VAT.
   const henkFeeBase    = quote - additionalCosts;
   const henkFee        = henkFeeBase * HENK_FEE_PCT;
+  const henkPaid       = costSum('henk');
+  const henkOutstanding = henkFee - henkPaid;
   const totalExpenses  = labourActual + materialActual + additionalCosts + accommodation + petrol + henkFee;
   const netProfit      = quote - totalExpenses;
   const netPct         = quote > 0 ? (netProfit / quote * 100) : 0;
@@ -3682,19 +3776,19 @@ async function renderSiteSummary(siteId){
     <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
       ${profitRow({ label:'Total quote (ex-VAT)', val:quote })}
       ${profitRow({ label:'Labour actual', val:labourActual, sign:'–', over:overLabour,
-        sub:`budget 23% · ${R(labourBudget)}${overLabour?' · OVER':''} · paid in segments (next step)`,
-        onclick:`editSummaryLabour('${s.id}')` })}
+        sub:`budget 23% · ${R(labourBudget)}${overLabour?' · OVER':' · '+R(Math.max(0,labourBudget-labourActual))+' left'} · tap to add a payment`,
+        onclick:`openCostEditor('${s.id}','labour')` })}
       ${profitRow({ label:'Material actual', val:materialActual, sign:'–', over:overMat,
         sub:`budget 26% · ${R(materialBudget)} · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
         onclick:`summaryInvoices('${s.id}')` })}
       ${profitRow({ label:'Additional site costs (cherry / scaffold)', val:additionalCosts, sign:'–',
-        sub:'tap — next step', onclick:`costSoon('Additional site costs (cherry picker, scaffold)')` })}
+        sub:'tap to add cherry picker, scaffold, etc.', onclick:`openCostEditor('${s.id}','additional')` })}
       ${profitRow({ label:'Team accommodation', val:accommodation, sign:'–',
-        sub:'tap — next step', onclick:`costSoon('Team accommodation')` })}
+        sub:'tap to add', onclick:`openCostEditor('${s.id}','accommodation')` })}
       ${profitRow({ label:'Petrol / Diesel', val:petrol, sign:'–',
-        sub:'tap — next step', onclick:`costSoon('Petrol / Diesel')` })}
+        sub:'tap to add', onclick:`openCostEditor('${s.id}','petrol')` })}
       ${profitRow({ label:'Henk project fee (10% after cherry / scaffold)', val:henkFee, sign:'–',
-        sub:`on ${R(henkFeeBase)} · outstanding: next step`, onclick:`henkFeePayments('${s.id}')` })}
+        sub:`on ${R(henkFeeBase)} · paid ${R(henkPaid)} · ${R(henkOutstanding)} outstanding`, onclick:`openCostEditor('${s.id}','henk')` })}
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 4px;font-size:13.5px;border-top:2px solid #1A1A1A;margin-top:4px">
         <span style="font-weight:800">= Net profit to date</span>
         <span style="display:flex;align-items:baseline;gap:7px">
@@ -3745,39 +3839,6 @@ async function renderSiteSummary(siteId){
   }
 
   body.innerHTML = h;
-}
-
-// Labour total — real and mirrored today via sites.labour_actual.
-async function editSummaryLabour(siteId){
-  const cur = SUMMARY && SUMMARY.site ? (parseFloat(SUMMARY.site.labour_actual)||0) : 0;
-  const raw = prompt('Total labour paid on this site so far (Rand):', cur || '');
-  if(raw === null) return;
-  const val = parseFloat(String(raw).replace(/[^0-9.]/g,''));
-  if(isNaN(val) || val < 0){ showSaveToast('Enter a labour amount of 0 or more'); return; }
-  const ok = await sbPatch('sites', 'id=eq.'+encodeURIComponent(siteId), { labour_actual: val });
-  if(ok){
-    if(SUMMARY && SUMMARY.site) SUMMARY.site.labour_actual = val;
-    showSaveToast('Labour saved — '+R(val));
-    renderSiteSummary(siteId);
-  } else {
-    showSaveToast('Could not save — check your signal');
-  }
-}
-
-function summaryLabourPayments(){
-  openModal('modalSiteDetail');
-  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">Labour payments</div>
-    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Paying labour in segments as the work progresses — R80,000 in three or four payments with their dates, and the outstanding amount shown — is the next step. It needs one small Supabase table so it saves in one place for you and Henk. For now the labour total above holds the running figure.</div>
-    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
-}
-
-function henkFeePayments(){
-  openModal('modalSiteDetail');
-  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">Henk's fee — payments</div>
-    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">Henk's 10% is paid in segments too, just like labour — add each amount with its date and see what's still outstanding against the calculated total. This is the next step: it needs the same small Supabase table. The full fee is shown on the summary in the meantime.</div>
-    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
 }
 
 // ── MATERIAL DRILL-IN — the invoices behind the actual material amount ──
