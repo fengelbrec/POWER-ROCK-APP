@@ -869,6 +869,22 @@ async function sbPatch(table, filters, data){
   }catch(e){ return false; }
 }
 
+// Upload a file to the site-files locker and return its public URL, or '' on fail.
+async function sbUploadFile(path, file){
+  try{
+    const clean = String(path).replace(/[^A-Za-z0-9._\/-]/g, '_');
+    const r = await fetch(`${SB_URL}/storage/v1/object/site-files/${clean}`, {
+      method:'POST',
+      headers:{ 'apikey':SB_KEY, 'Authorization':`Bearer ${SB_KEY}`,
+                'Content-Type': file.type || 'application/octet-stream',
+                'x-upsert':'true' },
+      body: file
+    });
+    if(!r.ok) return '';
+    return `${SB_URL}/storage/v1/object/public/site-files/${clean}`;
+  }catch(e){ return ''; }
+}
+
 // Products pre-loaded per manufacturer — seeded from real Power Rock specs.
 // These are starting points: tick what the spec names, rename or add freely.
 const MANUFACTURER_PRODUCTS = {
@@ -2074,30 +2090,20 @@ function onWarrantyChange(){
   $('as_warrantyby_wrap').style.display = $('as_warranty').value==='yes' ? 'block' : 'none';
 }
 
+// Keep the actual file — it is uploaded to the online locker when the site saves,
+// so any size works and it opens on any door.
 function handleSpecFile(input){
   const f = input.files && input.files[0];
   if(!f){ PENDING_SPEC = null; return; }
-  if(f.size <= 1800000){
-    const reader = new FileReader();
-    reader.onload = e=>{ PENDING_SPEC = { name:f.name, data:e.target.result }; $('as_specfile_note').textContent = '✓ '+f.name+' — will be saved inside the app.'; };
-    reader.readAsDataURL(f);
-  } else {
-    PENDING_SPEC = { name:f.name, data:'' };
-    $('as_specfile_note').textContent = '✓ '+f.name+' noted. The file is too big to store inside the app — keep it in your site folder. (Tip: drop the spec into a chat with Claude and get the product list for question 11 in seconds.)';
-  }
+  PENDING_SPEC = { name:f.name, file:f };
+  $('as_specfile_note').textContent = '✓ '+f.name+' — will be uploaded when you save the site.';
 }
 
 function handleQuoteFile(input){
   const f = input.files && input.files[0];
   if(!f){ PENDING_QUOTE = null; return; }
-  if(f.size <= 1500000){
-    const reader = new FileReader();
-    reader.onload = e=>{ PENDING_QUOTE = { name:f.name, data:e.target.result }; $('as_quotefile_note').textContent = '✓ '+f.name+' — will be saved inside the app.'; };
-    reader.readAsDataURL(f);
-  } else {
-    PENDING_QUOTE = { name:f.name, data:'' };
-    $('as_quotefile_note').textContent = '✓ '+f.name+' noted. The file is too big to store inside the app — keep it in your site folder.';
-  }
+  PENDING_QUOTE = { name:f.name, file:f };
+  $('as_quotefile_note').textContent = '✓ '+f.name+' — will be uploaded when you save the site.';
 }
 
 function prefillProducts(){
@@ -2205,7 +2211,7 @@ function recalcQuoteTotal(){
   if(mb && mb.dataset.manual!=='1') mb.value = finalTotal ? (finalTotal*DATA.materialBudgetPct).toFixed(2) : '';
 }
 
-function saveSite(){
+async function saveSite(){
   const name = $('as_name').value.trim();
   const client = $('as_client').value.trim();
   const contactPerson = $('as_contact').value.trim();
@@ -2282,8 +2288,26 @@ function saveSite(){
 
   saveData('Site saved');
 
-  // Push to Supabase so Door 3 team leaders see it
-  sbUpsert('sites', { id: siteId, name, client, team_leader: team, status, started, quote_value: totalQuote, labour_budget: labourBudget, material_budget: materialBudget });
+  // Upload the spec & quote PDFs to the online locker, then save the full details.
+  if((PENDING_SPEC && PENDING_SPEC.file) || (PENDING_QUOTE && PENDING_QUOTE.file)) showSaveToast('Uploading documents…');
+  // Unique path per upload, so a re-upload never collides (needs only insert rights).
+  const stamp = Date.now();
+  let specUrl = '', quoteUrl = '';
+  if(PENDING_SPEC && PENDING_SPEC.file) specUrl = await sbUploadFile(siteId + '/spec-' + stamp + '-' + PENDING_SPEC.name, PENDING_SPEC.file);
+  if(PENDING_QUOTE && PENDING_QUOTE.file) quoteUrl = await sbUploadFile(siteId + '/quote-' + stamp + '-' + PENDING_QUOTE.name, PENDING_QUOTE.file);
+
+  const details = {
+    contact: contactPerson, address: addressName, maps_link: mapsLinkFor(addressName),
+    has_spec: hasSpec, spec_manufacturer: hasSpec === 'yes' ? $('as_manufacturer').value : '',
+    surfaces: selectedSurfaces(), colours: colours,
+    warranty: warranty, warranty_by: warrantyBy,
+    spec_name: PENDING_SPEC ? PENDING_SPEC.name : '', spec_url: specUrl,
+    quote_name: PENDING_QUOTE ? PENDING_QUOTE.name : '', quote_url: quoteUrl,
+    scope_lines: scopeLines
+  };
+
+  // Push to Supabase so both doors (and team leaders) see it, details included.
+  await sbUpsert('sites', { id: siteId, name, client, team_leader: team, status, started, quote_value: totalQuote, labour_budget: labourBudget, material_budget: materialBudget, details: details });
   products.forEach(p=>{
     sbUpsert('paint_stock', {
       id: 'stk_'+siteId+'_'+slugId(p.product)+'_'+slugId(p.colour||''),
@@ -3708,6 +3732,66 @@ async function delCost(id, siteId, kind){
   paintSiteSummaryBody();
 }
 
+// ── SITE INFORMATION — everything captured on "add new site", plus the PDFs ──
+function openSiteInfo(siteId){
+  const s = (SUMMARY && SUMMARY.site) || {};
+  const d = s.details || {};
+  const none = '<span style="color:#C9C5BA">— not captured yet</span>';
+
+  const bullet = function(label, value){
+    return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3">
+      <div style="flex:0 0 40%;font-size:11.5px;color:#8A8470;font-weight:700">${label}</div>
+      <div style="flex:1;font-size:12.5px;color:#1A1A1A;min-width:0;word-break:break-word">${value || none}</div>
+    </div>`;
+  };
+
+  // colours object {surface:[..]} -> readable lines
+  let coloursTxt = '';
+  if(d.colours && typeof d.colours === 'object'){
+    const parts = Object.keys(d.colours).map(function(sf){
+      const cs = (d.colours[sf]||[]).filter(Boolean);
+      return cs.length ? `${sf}: ${cs.join(', ')}` : '';
+    }).filter(Boolean);
+    coloursTxt = parts.join('<br/>');
+  }
+  const surfacesTxt = Array.isArray(d.surfaces) ? d.surfaces.filter(Boolean).join(', ') : '';
+  const addressTxt = d.address ? (d.maps_link ? `${d.address} · <a href="${d.maps_link}" target="_blank" style="color:#8B1A1A;font-weight:700">map</a>` : d.address) : '';
+  const specTxt = d.has_spec === 'yes' ? (d.spec_manufacturer || 'Yes') : (d.has_spec === 'no' ? 'No spec' : '');
+  const warrantyTxt = d.warranty === 'yes' ? (d.warranty_by || 'Yes') : (d.warranty === 'no' ? 'No' : '');
+
+  const fileBtn = function(label, url, name){
+    if(url) return `<a href="${url}" target="_blank" style="display:block;background:#8B1A1A;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:13px;font-weight:800;margin-bottom:9px">📄 Open ${label}${name?' — '+name:''}</a>`;
+    if(name) return `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#8A8470;margin-bottom:9px">${label}: <strong>${name}</strong> — file not uploaded online yet.</div>`;
+    return `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#A39E8C;margin-bottom:9px">${label}: none on file. Add it when the site is next edited.</div>`;
+  };
+
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${s.name||'Site information'}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Everything captured for this site</div>
+
+    <div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
+      ${bullet('Client', s.client)}
+      ${bullet('Contact', d.contact)}
+      ${bullet('Site address', addressTxt)}
+      ${bullet('Team leader', henkLeaderName(s.team_leader))}
+      ${bullet('Started', s.started ? fd(s.started) : '')}
+      ${bullet('Quote (ex-VAT)', s.quote_value ? R(parseFloat(s.quote_value)) : '')}
+      ${bullet('Supplier spec', specTxt)}
+      ${bullet('Surfaces', surfacesTxt)}
+      ${bullet('Approved colours', coloursTxt)}
+      ${bullet('Guarantee', warrantyTxt)}
+    </div>
+
+    <div class="section-lbl" style="margin-top:0">Documents</div>
+    ${fileBtn('specification', d.spec_url, d.spec_name)}
+    ${fileBtn('quotation', d.quote_url, d.quote_name)}
+
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+
+  $('siteDetailContent').innerHTML = h;
+  openModal('modalSiteDetail');
+}
+
 async function renderSiteSummary(siteId){
   $('pageBody').innerHTML = `
     <button onclick="closeSiteSummary()" style="background:none;border:none;color:#8A8470;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:12px">← Back</button>
@@ -3756,7 +3840,10 @@ function paintSiteSummaryBody(){
 
   // ── LIVE SNAPSHOT HEADLINE ──
   h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
-    <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase;margin-bottom:10px">Live snapshot — profit per day on site</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
+      <button onclick="openSiteInfo('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;flex:0 0 auto">ⓘ Site information</button>
+    </div>
     <div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>
     <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
       <div><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Net profit to date</div>
