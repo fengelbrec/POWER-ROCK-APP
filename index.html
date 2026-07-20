@@ -984,8 +984,9 @@ function paintView(v){
       DU_LEADER = (v.du && v.du.leader) || null;
       DU_SELECTED = null;
     }
-    // The site summary is a sub-view of the sites section — restore or clear it.
-    SUMMARY_SITE = (section === 'sites') ? (v.site || null) : null;
+    // The site summary is a sub-view that can hang under Overview or Sites —
+    // restore it from the step regardless of which tab it belongs to.
+    SUMMARY_SITE = v.site || null;
     CURRENT_VIEW = { kind: 'door', role: role, section: section, du: v.du || null, site: v.site || null };
     show('sMain');
     paintDoor(section);
@@ -1125,7 +1126,8 @@ function buildNav(){
 // Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
   if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
-  if(id === 'sites'){ SUMMARY_SITE = null; HENK_SITES_VIEW = 'active'; }   // tapping the nav always lands on the site list
+  if(id === 'sites'){ HENK_SITES_VIEW = 'active'; }
+  SUMMARY_SITE = null;   // tapping any nav tab exits an open site summary
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
   paintDoor(id);
 }
@@ -3218,6 +3220,7 @@ function henkBudgetBar(pct, over){
 }
 
 async function renderHenkOverview(){
+  if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">Door 2 · Ops</div>
     <div class="page-title">Overview</div>
@@ -3483,8 +3486,11 @@ let SUMMARY = null;        // the fetched bundle for the open site
 function openSiteSummary(siteId){
   SUMMARY_SITE = siteId;
   SUMMARY = null;
-  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', site: siteId });
-  paintDoor('sites');
+  // Open the summary under WHATEVER tab you tapped from (Overview or Sites), so
+  // the top tab does not jump. The summary is a sub-page of that section.
+  const from = CURRENT_DOOR || 'sites';
+  pushView({ kind:'door', role: CURRENT_ROLE, section: from, site: siteId });
+  paintDoor(from);
 }
 function closeSiteSummary(){ history.back(); }
 
@@ -3538,10 +3544,10 @@ function costSoon(name){
 
 async function renderSiteSummary(siteId){
   $('pageBody').innerHTML = `
-    <button onclick="closeSiteSummary()" style="background:none;border:none;color:#8A8470;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:12px">← All sites</button>
+    <button onclick="closeSiteSummary()" style="background:none;border:none;color:#8A8470;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:12px">← Back</button>
     <div id="summaryBody"><div style="text-align:center;padding:44px;color:#8A8470">Loading site snapshot…</div></div>`;
   const data = await loadSiteSummary(siteId);
-  if(SUMMARY_SITE !== siteId || CURRENT_DOOR !== 'sites') return;
+  if(SUMMARY_SITE !== siteId) return;   // user moved on while it loaded
   const body = $('summaryBody'); if(!body) return;
   const s = data.site;
   if(!s){ body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px"><div class="empty-state-txt">This site isn't in the shared database yet.</div></div>`; return; }
