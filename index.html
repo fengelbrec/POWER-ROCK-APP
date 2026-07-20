@@ -197,6 +197,9 @@ input[type=password]{letter-spacing:5px}
 /* ── v11: Sites grid, wizard, stock ── */
 .sites-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 @media(min-width:760px){.sites-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+/* Archive: site list beside the calendar on a laptop, stacked on a phone */
+.du-arch{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:6px}
+@media(min-width:760px){.du-arch{grid-template-columns:1.25fr 1fr;align-items:start}}
 .site-block{min-width:0}
 .sb-ppd{overflow-wrap:anywhere;line-height:1.2}
 .site-block{background:#fff;border:1px solid #E6E2D8;border-radius:12px;padding:16px 14px 14px;cursor:pointer;position:relative}
@@ -1407,6 +1410,7 @@ let DU_LEADER = null;     // which leader, when DU_VIEW === 'leader'
 let DU_SELECTED = null;   // a date picked on a calendar
 let DU_CAL = null;        // which month a calendar is showing
 let DU_SEARCH = '';       // archive search text (site or leader)
+let DU_ARCH_LEADER = '';  // archive leader-chip filter ('' = all)
 
 async function renderDailyUpdates(){
   $('pageBody').innerHTML = `
@@ -1437,6 +1441,7 @@ function duGo(view, siteId, leaderKey){
   DU_LEADER = leaderKey || null;
   DU_SELECTED = null;
   DU_SEARCH = '';
+  DU_ARCH_LEADER = '';
   if(view === 'site'){
     const s = duSiteById(siteId);
     const start = s && s.started ? new Date(s.started) : new Date();
@@ -1477,7 +1482,7 @@ function duDateStr(y, m, d){ return y + '-' + String(m+1).padStart(2,'0') + '-' 
 function paintUpdates(){
   const body = $('updatesBody');
   if(!body) return;
-  if(DU_VIEW === 'archive')   { body.innerHTML = duPaintArchive(); if(DU_SEARCH) duRunSearch(DU_SEARCH); return; }
+  if(DU_VIEW === 'archive')   { body.innerHTML = duPaintArchive(); return; }
   if(DU_VIEW === 'leader')    { body.innerHTML = duPaintLeader();  return; }
   if(DU_VIEW === 'site')      { body.innerHTML = duPaintSite();    return; }
   body.innerHTML = duPaintToday();
@@ -1548,19 +1553,32 @@ function duPaintArchive(){
   const grouped = duGrouped();
 
   let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Daily update archive</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Search, pick a date, or pick a leader to walk their projects.</div>`;
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Find any site fast — search, filter by leader, or pick a date.</div>`;
 
-  // Search — type a site or a leader and every matching report appears.
-  h += `<div style="position:relative;margin-bottom:6px">
-      <input id="duSearchInput" value="${String(DU_SEARCH).replace(/"/g,'&quot;')}" oninput="duRunSearch(this.value)"
-        placeholder="🔍 Search a site or leader — e.g. Greenhill"
-        style="width:100%;height:46px;border:1px solid #E6E2D8;border-radius:10px;padding:0 14px;font-size:14px;font-family:inherit;background:#fff"/>
+  // Search across sites and leaders — filters the list on the left as you type.
+  h += `<input id="duSearchInput" value="${String(DU_SEARCH).replace(/"/g,'&quot;')}" oninput="duFilterSites(this.value)"
+      placeholder="🔍 Find a site or leader — e.g. Greenhill or Joe"
+      style="width:100%;height:46px;border:1px solid #E6E2D8;border-radius:10px;padding:0 14px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:10px"/>`;
+
+  // Leader colour chips — quick filter, All by default.
+  h += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">`;
+  h += duLeaderChip('All', '', '#5C5748');
+  LEADER_META.forEach(function(lm){ h += duLeaderChip(lm.name, lm.key, lm.colour); });
+  h += `</div>`;
+
+  // Two columns: the site list (left) and the calendar (right); stacks on a phone.
+  h += `<div class="du-arch">
+    <div>
+      <div class="section-lbl" style="margin-top:0">Sites — latest on top</div>
+      <div id="duSiteList">${duSiteListHtml()}</div>
     </div>
-    <div id="duSearchResults"></div>`;
+    <div>
+      <div class="section-lbl" style="margin-top:0">Pick any date</div>
+      ${duCalendar(grouped, today, null)}
+    </div>
+  </div>`;
 
-  h += `<div class="section-lbl">Pick any date</div>`;
-  h += duCalendar(grouped, today, null);
-
+  // A picked date shows full-width below, so the report cards are readable.
   if(DU_SELECTED){
     const list = grouped[DU_SELECTED] || [];
     h += `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A;margin:16px 0 3px">${new Date(DU_SELECTED+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
@@ -1568,48 +1586,71 @@ function duPaintArchive(){
     h += list.length ? duCards(list, true)
       : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">Nobody reported on this day.</div>`;
   }
-
-  h += `<div class="section-lbl">Or pick a leader</div>`;
-  h += `<div class="sites-grid">`;
-  LEADER_META.forEach(function(lm){
-    const sites = duLeaderSites(lm.key);
-    const reports = DU_CACHE.filter(function(u){ return u.leader_key === lm.key; }).length;
-    const current = sites.filter(function(s){ return s.status !== 'done'; }).length;
-    const past = sites.filter(function(s){ return s.status === 'done'; }).length;
-    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="duGo('leader', null, '${lm.key}')">
-      <div class="leader-tag">${lm.name}</div>
-      <div class="sb-name" style="color:#fff">${current} current · ${past} past</div>
-      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">project${sites.length!==1?'s':''}</div>
-      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Reports filed</div>
-      <div class="sb-ppd disp" style="color:#fff">${reports}</div>
-      <div class="sb-days" style="color:rgba(255,255,255,0.6)">Tap to open the diary</div>
-    </div>`;
-  });
-  h += `</div>`;
   return h;
+}
+
+// A leader filter chip: filled in the leader's colour when active.
+function duLeaderChip(label, key, colour){
+  const active = DU_ARCH_LEADER === key;
+  const bg = active ? colour : '#fff';
+  const fg = active ? '#fff' : colour;
+  return `<span onclick="duSetLeaderFilter('${key}')" style="background:${bg};color:${fg};border:1.5px solid ${colour};border-radius:20px;padding:6px 14px;font-size:12.5px;font-weight:800;cursor:pointer">${label}</span>`;
+}
+function duSetLeaderFilter(key){
+  DU_ARCH_LEADER = (key === DU_ARCH_LEADER) ? '' : key;
+  paintUpdates();   // re-render to update the chips and the list
+}
+
+// All sites, newest activity on top: a finished site sorts by when it finished,
+// a running site by its latest report (or start) — so the most recent is first,
+// whoever's site it is.
+function duArchiveSites(){
+  const when = function(s){
+    if(s.status === 'done' && s.end_date) return new Date(s.end_date).getTime();
+    const reps = DU_CACHE.filter(function(u){ return u.site_id === s.id; }).map(function(u){ return u.date; }).sort();
+    const latest = reps.length ? reps[reps.length-1] : s.started;
+    return latest ? new Date(latest).getTime() : 0;
+  };
+  return DU_SITELIST.slice().sort(function(a,b){ return when(b) - when(a); });
+}
+
+function duSiteListHtml(){
+  let sites = duArchiveSites();
+  if(DU_ARCH_LEADER) sites = sites.filter(function(s){ return s.team_leader === DU_ARCH_LEADER; });
+  const q = String(DU_SEARCH).trim().toLowerCase();
+  if(q) sites = sites.filter(function(s){
+    return String(s.name||'').toLowerCase().indexOf(q) !== -1
+        || String(henkLeaderName(s.team_leader)).toLowerCase().indexOf(q) !== -1;
+  });
+  if(!sites.length) return `<div style="font-size:12px;color:#A39E8C;padding:8px 2px">No sites match. Try another word, or tap All.</div>`;
+  return sites.map(function(s){
+    const done = s.status === 'done';
+    const col = (LEADER_META.find(function(l){ return l.key === s.team_leader; })||{}).colour || '#5C5748';
+    const n = DU_CACHE.filter(function(u){ return u.site_id === s.id; }).length;
+    const when = done ? ('finished ' + fd(s.end_date || s.started)) : 'running';
+    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="duGo('site','${s.id}')">
+      <div style="width:5px;background:${col};flex:0 0 auto"></div>
+      <div style="padding:12px 14px;flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13.5px;color:#1A1A1A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
+          <span style="font-size:9.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${done?'#A39E8C':'#3F5A4C'};white-space:nowrap">${done?'DONE':'ACTIVE'}</span>
+        </div>
+        <div style="font-size:11px;color:#8A8470;margin-top:3px">${henkLeaderName(s.team_leader)} · ${when} · ${n} report${n!==1?'s':''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Typing filters only the site list, so the search box keeps focus.
+function duFilterSites(v){
+  DU_SEARCH = v;
+  const box = document.getElementById('duSiteList');
+  if(box) box.innerHTML = duSiteListHtml();
 }
 
 function duLeaderSites(leaderKey){
   return DU_SITELIST.filter(function(s){ return s.team_leader === leaderKey; })
     .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
-}
-
-// Search the whole archive by site name or leader. Updates only the results box
-// so the text field keeps focus while typing.
-function duRunSearch(v){
-  DU_SEARCH = v;
-  const box = document.getElementById('duSearchResults');
-  if(!box) return;
-  const q = String(v||'').trim().toLowerCase();
-  if(!q){ box.innerHTML = ''; return; }
-  const matches = DU_CACHE.filter(function(u){
-    const site = String(duSiteName(u.site_id)||'').toLowerCase();
-    const leader = String(u.leader_name||u.leader_key||'').toLowerCase();
-    return site.indexOf(q) !== -1 || leader.indexOf(q) !== -1;
-  }).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
-  box.innerHTML = matches.length
-    ? `<div class="section-lbl">${matches.length} match${matches.length!==1?'es':''} for "${v}"</div>` + duCards(matches, true, true)
-    : `<div style="font-size:12px;color:#A39E8C;padding:6px 0 12px">No reports match "${v}" yet.</div>`;
 }
 
 // ── ONE LEADER — current projects green, past projects red ──
