@@ -1530,28 +1530,26 @@ function duPaintToday(){
   let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;letter-spacing:-0.2px">${new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
     <div style="font-size:11px;color:#8A8470;margin-bottom:14px">Today's reports</div>`;
 
-  // Top row: still outstanding (left) and the archive block (right), side by side
-  // on a laptop and stacked on a phone.
-  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px;margin-bottom:16px">
-    <div style="background:${missing.length?'#FFF3E0':'#EBF2EC'};border:1px solid ${missing.length?'#D4A55A':'#5C7A6B'};border-radius:12px;padding:14px 16px">
+  // Three equal blocks in one row — outstanding, daily archive, weekly archive.
+  // Same size, evenly spaced; they stack on a phone.
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:18px;align-items:stretch">
+    <div style="background:${missing.length?'#FFF3E0':'#EBF2EC'};border:1px solid ${missing.length?'#D4A55A':'#5C7A6B'};border-radius:12px;padding:14px 16px;min-height:112px">
       <div style="font-size:10.5px;font-weight:800;color:${missing.length?'#9C6000':'#3F5A4C'};letter-spacing:1px;margin-bottom:10px">${missing.length?'⏳ STILL OUTSTANDING ('+missing.length+')':'✓ EVERYONE IS IN'}</div>
       ${missing.length
         ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${missing.map(function(l){ return duChaseChip(l); }).join('')}</div>`
         : `<div style="font-size:12px;color:#3F5A4C">All teams have reported today.</div>`}
     </div>
-    <button onclick="duGo('archive')" style="background:#8B1A1A;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:88px">
+    <button onclick="duGo('archive')" style="background:#8B1A1A;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:112px">
       <div style="font-size:24px">📂</div>
-      <div style="font-size:13.5px;font-weight:800;letter-spacing:0.3px">DAILY UPDATE ARCHIVE</div>
-      <div style="font-size:10px;opacity:0.7">Every past report, by date or leader</div>
+      <div style="font-size:13.5px;font-weight:800;letter-spacing:0.3px;text-align:center">DAILY UPDATE ARCHIVE</div>
+      <div style="font-size:10px;opacity:0.7;text-align:center">Every past report, by date or leader</div>
+    </button>
+    <button onclick="duGo('weekly')" style="background:#3F5A4C;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:112px">
+      <div style="font-size:24px">📅</div>
+      <div style="font-size:13.5px;font-weight:800;letter-spacing:0.3px;text-align:center">WEEKLY UPDATE ARCHIVE</div>
+      <div style="font-size:10px;opacity:0.75;text-align:center">Build a client report from a week's updates</div>
     </button>
   </div>`;
-
-  // Weekly update archive — build a client report from a week's daily updates.
-  h += `<button onclick="duGo('weekly')" style="width:100%;background:#3F5A4C;color:#fff;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px">
-    <span style="font-size:22px">📅</span>
-    <span><span style="font-size:13.5px;font-weight:800;letter-spacing:0.3px">WEEKLY UPDATE ARCHIVE</span><br/>
-    <span style="font-size:10px;opacity:0.75">Build a client report from a week's updates</span></span>
-  </button>`;
 
   // Submitted today — one coloured card per leader who has sent it.
   h += `<div class="section-lbl">Submitted today (${todayUpdates.length})</div>`;
