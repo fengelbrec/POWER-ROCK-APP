@@ -2018,15 +2018,32 @@ function duPaintSite(){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <button class="cta-btn ghost" style="margin:0;height:44px;font-size:12.5px" onclick="duSiteInfoView('${s.id}')">ⓘ Site information</button>
       <button class="cta-btn ghost" style="margin:0;height:44px;font-size:12.5px" onclick="openWeek('${s.id}')">📅 Weekly report</button>
-    </div>
+    </div>`;
 
-    <div class="section-lbl" style="margin-top:0">Daily updates</div>`;
+  // Site notes — date-stamped, added by Ferdi/Henk; Add note only on active sites.
+  const notes = siteNotes(s);
+  const canNote = s.status !== 'done';
+  h += `<div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px">
+      <div class="section-lbl" style="margin:0">📝 Site notes</div>
+      ${canNote?`<button onclick="openNoteEditor('${s.id}')" style="background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer">＋ Add note</button>`:''}
+    </div>`;
+  if(notes.length){
+    h += `<div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">` + notes.map(function(n){ return noteCardHtml(n, s.id, canNote); }).join('') + `</div>`;
+  } else {
+    h += `<div style="font-size:12px;color:#A39E8C;padding:2px 2px 14px">No notes yet.${canNote?' Tap Add note for inspections, client messages or adjustments.':''}</div>`;
+  }
+
+  h += `<div class="section-lbl" style="margin-top:0">Daily updates</div>`;
 
   h += duCalendar(grouped, today, s);
 
   if(DU_SELECTED){
     const list = grouped[DU_SELECTED] || [];
+    const dayNotes = notes.filter(function(n){ return n.date === DU_SELECTED; });
     h += `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A;margin:16px 0 10px">${new Date(DU_SELECTED+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>`;
+    if(dayNotes.length){
+      h += `<div class="ledger-card" style="padding:4px 15px;margin-bottom:10px;border-left:3px solid #1A1A1A">` + dayNotes.map(function(n){ return noteCardHtml(n, s.id, canNote); }).join('') + `</div>`;
+    }
     h += list.length ? duCards(list) : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No report on this day.</div>`;
   } else {
     h += `<div class="section-lbl">Every report on this site</div>`;
@@ -2042,6 +2059,64 @@ function duSiteInfoView(siteId){
   if(!site) return;
   SUMMARY = { site: site };   // archive has no live summary; give openSiteInfo a site
   openSiteInfo(siteId, false, false);   // view only, no Edit button in the archive
+}
+
+// ── SITE NOTES — date-stamped notes Ferdi/Henk add to an active site: inspection
+// visits, info sent to the client or leaders, adjustments made. Stored in
+// details.notes (no new table) and shown on the site's diary in the archive. ──
+function siteNotes(s){
+  const list = (s && s.details && Array.isArray(s.details.notes)) ? s.details.notes.slice() : [];
+  list.sort(function(a,b){
+    const d = String(b.date||'').localeCompare(String(a.date||''));
+    return d !== 0 ? d : String(b.created||'').localeCompare(String(a.created||''));
+  });
+  return list;
+}
+function noteCardHtml(n, siteId, canEdit){
+  return `<div style="padding:11px 0;border-bottom:1px solid #EFECE3">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+      <div style="font-size:11px;font-weight:800;color:#8A8470">${n.date?fd(n.date):'no date'}${n.by?' · '+esc(n.by):''}</div>
+      ${canEdit?`<button onclick="delNote('${siteId}','${n.id}')" style="background:none;border:none;color:#B2342A;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>`:''}
+    </div>
+    <div style="font-size:12.5px;color:#1A1A1A;line-height:1.6;margin-top:3px;white-space:pre-wrap">${esc(n.text)}</div>
+  </div>`;
+}
+function openNoteEditor(siteId){
+  const todayStr = new Date().toISOString().split('T')[0];
+  const h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Add a note</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">For an inspection visit, info sent to the client or leaders, or an adjustment made. It is date-stamped and shows on this site's diary.</div>
+    <div class="section-lbl" style="margin-top:0">Date of the note</div>
+    <input class="f-input" id="noteDate" type="date" value="${todayStr}" style="margin-bottom:10px"/>
+    <div class="section-lbl" style="margin-top:0">Note</div>
+    <textarea class="f-input" id="noteText" rows="4" placeholder="e.g. Client inspected the roof — happy with progress. Asked to bring the north wall forward." style="margin-bottom:12px;min-height:96px;resize:vertical"></textarea>
+    <button class="cta-btn" onclick="saveNote('${siteId}')">Save note</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
+  $('siteDetailContent').innerHTML = h;
+  openModal('modalSiteDetail');
+}
+async function saveNote(siteId){
+  const text = String(($('noteText')||{}).value||'').trim();
+  const date = String(($('noteDate')||{}).value||'') || new Date().toISOString().split('T')[0];
+  if(!text){ showSaveToast('Type the note first'); return; }
+  const s = duSiteById(siteId) || (SUMMARY && SUMMARY.site);
+  if(!s){ showSaveToast('Site not found'); return; }
+  const d = Object.assign({}, s.details || {});
+  if(!Array.isArray(d.notes)) d.notes = [];
+  const by = CURRENT_ROLE === 'owner' ? 'Ferdi' : 'Henk';
+  d.notes.push({ id: uid(), date: date, text: text, by: by, created: new Date().toISOString().split('T')[0] });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
+  if(ok){ s.details = d; closeModal('modalSiteDetail'); showSaveToast('Note saved'); paintUpdates(); }
+  else showSaveToast('Could not save — check your signal');
+}
+async function delNote(siteId, noteId){
+  const s = duSiteById(siteId) || (SUMMARY && SUMMARY.site);
+  if(!s) return;
+  const d = Object.assign({}, s.details || {});
+  d.notes = ((d.notes)||[]).filter(function(n){ return n.id !== noteId; });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
+  if(ok){ s.details = d; showSaveToast('Note removed'); paintUpdates(); }
+  else showSaveToast('Could not remove — check your signal');
 }
 
 // An outstanding name doubles as a Chase button — Henk is already looking at
