@@ -3911,7 +3911,7 @@ async function addCost(siteId, kind){
     if(!SUMMARY.costs) SUMMARY.costs = [];
     SUMMARY.costs.push(row);
     showSaveToast('Saved — ' + R(amt));
-    openCostEditor(siteId, kind);   // refresh the list + outstanding
+    if(kind === 'labour') openLabourEditor(siteId); else openCostEditor(siteId, kind);
     paintSiteSummaryBody();          // refresh the profit sheet behind
   } else {
     showSaveToast('Could not save — check your signal');
@@ -3922,48 +3922,109 @@ async function delCost(id, siteId, kind){
   await sbDelete('site_costs', 'id=eq.' + encodeURIComponent(id));
   SUMMARY.costs = (SUMMARY.costs||[]).filter(function(c){ return c.id !== id; });
   showSaveToast('Removed');
-  openCostEditor(siteId, kind);
+  if(kind === 'labour') openLabourEditor(siteId); else openCostEditor(siteId, kind);
   paintSiteSummaryBody();
 }
 
-// ── SITE INFORMATION — everything captured on "add new site", plus the PDFs ──
-function openSiteInfo(siteId){
+// ── LABOUR — an agreed team total that stays fixed in the profit, plus dated
+// part-payments that count down from it (record only, they don't move profit) ──
+function openLabourEditor(siteId){
+  const s = SUMMARY.site || {};
+  const agreed = parseFloat(s.labour_actual)||0;
+  const payments = (SUMMARY.costs||[]).filter(function(c){ return c.kind === 'labour'; })
+    .sort(function(a,b){ return String(b.paid_date).localeCompare(String(a.paid_date)); });
+  const paid = payments.reduce(function(a,c){ return a + (parseFloat(c.amount)||0); }, 0);
+  const remaining = agreed - paid;
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Labour</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Set the agreed team total for the whole job. It stays fixed in the profit. Log part-payments as you pay the team — they count down from the total.</div>
+
+    <div class="section-lbl" style="margin-top:0">Agreed team total</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <input class="f-input" id="labAgreed" type="number" step="0.01" inputmode="decimal" value="${agreed||''}" placeholder="e.g. 100000" style="flex:1;margin:0"/>
+      <button class="cta-btn" style="width:auto;padding:0 18px;margin:0;flex:0 0 auto" onclick="saveLabourAgreed('${siteId}')">Save</button>
+    </div>
+
+    <div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:#8A8470">Agreed total (used in profit)</span><span class="disp" style="font-weight:700">${R(agreed)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:#8A8470">Paid to the team so far</span><span class="disp" style="font-weight:700">${R(paid)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0 0;border-top:1px solid #E6E2D8;margin-top:5px"><span style="font-weight:800">Still to pay</span><span class="disp" style="font-weight:800;color:${remaining>0?'#8B1A1A':'#3F5A4C'}">${R(remaining)}</span></div>
+    </div>`;
+
+  if(payments.length){
+    h += `<div class="section-lbl" style="margin-top:0">Payments made</div><div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`;
+    payments.forEach(function(c){
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #EFECE3">
+        <div><div style="font-size:12.5px;font-weight:700;color:#1A1A1A">${R(parseFloat(c.amount)||0)}</div>
+          <div style="font-size:10.5px;color:#8A8470">${c.paid_date?fd(c.paid_date):'no date'}</div></div>
+        <button onclick="delCost('${c.id}','${siteId}','labour')" style="background:none;border:none;color:#B2342A;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  h += `<div class="section-lbl" style="margin-top:0">Log a payment to the team</div>
+    <input class="f-input" id="costAmt" type="number" step="0.01" inputmode="decimal" placeholder="Amount paid (R)" style="margin-bottom:8px"/>
+    <input class="f-input" id="costDate" type="date" value="${todayStr}" style="margin-bottom:8px"/>
+    <button class="cta-btn" onclick="addCost('${siteId}','labour')">Add payment</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+
+  $('siteDetailContent').innerHTML = h;
+  openModal('modalSiteDetail');
+}
+
+async function saveLabourAgreed(siteId){
+  const raw = String(($('labAgreed')||{}).value||'').replace(/[^0-9.]/g,'');
+  const val = raw === '' ? 0 : parseFloat(raw);
+  if(isNaN(val) || val < 0){ showSaveToast('Enter a labour amount of 0 or more'); return; }
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { labour_actual: val });
+  if(ok){
+    if(SUMMARY.site) SUMMARY.site.labour_actual = val;
+    showSaveToast('Agreed labour saved — ' + R(val));
+    openLabourEditor(siteId);
+    paintSiteSummaryBody();
+  } else {
+    showSaveToast('Could not save — check your signal');
+  }
+}
+
+// ── SITE INFORMATION — everything captured on "add new site", plus the PDFs.
+// From the summary it is editable; from the archive it is read-only (readonly=true).
+function siteInfoColoursText(d){
+  if(d.colours_text) return d.colours_text;
+  if(d.colours && typeof d.colours === 'object'){
+    return Object.keys(d.colours).map(function(sf){
+      const cs = (d.colours[sf]||[]).filter(Boolean);
+      return cs.length ? sf + ': ' + cs.join(', ') : '';
+    }).filter(Boolean).join('\n');
+  }
+  return '';
+}
+function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function openSiteInfo(siteId, readonly){
   const s = (SUMMARY && SUMMARY.site) || {};
   const d = s.details || {};
   const none = '<span style="color:#C9C5BA">— not captured yet</span>';
-
-  const bullet = function(label, value){
-    return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3">
-      <div style="flex:0 0 40%;font-size:11.5px;color:#8A8470;font-weight:700">${label}</div>
-      <div style="flex:1;font-size:12.5px;color:#1A1A1A;min-width:0;word-break:break-word">${value || none}</div>
-    </div>`;
-  };
-
-  // colours object {surface:[..]} -> readable lines
-  let coloursTxt = '';
-  if(d.colours && typeof d.colours === 'object'){
-    const parts = Object.keys(d.colours).map(function(sf){
-      const cs = (d.colours[sf]||[]).filter(Boolean);
-      return cs.length ? `${sf}: ${cs.join(', ')}` : '';
-    }).filter(Boolean);
-    coloursTxt = parts.join('<br/>');
-  }
-  const surfacesTxt = Array.isArray(d.surfaces) ? d.surfaces.filter(Boolean).join(', ') : '';
-  const addressTxt = d.address ? (d.maps_link ? `${d.address} · <a href="${d.maps_link}" target="_blank" style="color:#8B1A1A;font-weight:700">map</a>` : d.address) : '';
-  const specTxt = d.has_spec === 'yes' ? (d.spec_manufacturer || 'Yes') : (d.has_spec === 'no' ? 'No spec' : '');
-  const warrantyTxt = d.warranty === 'yes' ? (d.warranty_by || 'Yes') : (d.warranty === 'no' ? 'No' : '');
-
-  const fileBtn = function(label, url, name){
-    if(url) return `<a href="${url}" target="_blank" style="display:block;background:#8B1A1A;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:13px;font-weight:800;margin-bottom:9px">📄 Open ${label}${name?' — '+name:''}</a>`;
-    if(name) return `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#8A8470;margin-bottom:9px">${label}: <strong>${name}</strong> — file not uploaded online yet.</div>`;
-    return `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#A39E8C;margin-bottom:9px">${label}: none on file. Add it when the site is next edited.</div>`;
-  };
+  const coloursTxt = siteInfoColoursText(d);
+  const surfacesTxt = Array.isArray(d.surfaces) ? d.surfaces.filter(Boolean).join(', ') : (d.surfaces_text || '');
+  const specTxt = d.spec_manufacturer || (d.has_spec === 'no' ? 'No spec' : '');
+  const warrantyTxt = d.warranty_by || (d.warranty === 'no' ? 'No' : '');
 
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${s.name||'Site information'}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Everything captured for this site</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${readonly ? 'Everything captured for this site (view only)' : 'Everything captured for this site — edit and save any of it'}</div>`;
 
-    <div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
+  if(readonly){
+    const bullet = function(label, value){
+      return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3">
+        <div style="flex:0 0 40%;font-size:11.5px;color:#8A8470;font-weight:700">${label}</div>
+        <div style="flex:1;font-size:12.5px;color:#1A1A1A;min-width:0;word-break:break-word;white-space:pre-line">${value || none}</div></div>`;
+    };
+    const addressTxt = d.address ? (d.maps_link ? `${d.address} · <a href="${d.maps_link}" target="_blank" style="color:#8B1A1A;font-weight:700">map</a>` : d.address) : '';
+    h += `<div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
       ${bullet('Client', s.client)}
       ${bullet('Contact', d.contact)}
       ${bullet('Site address', addressTxt)}
@@ -3975,15 +4036,102 @@ function openSiteInfo(siteId){
       ${bullet('Approved colours', coloursTxt)}
       ${bullet('Guarantee', warrantyTxt)}
     </div>
+    <div class="section-lbl" style="margin-top:0">Documents</div>
+    ${d.spec_url ? `<a href="${d.spec_url}" target="_blank" style="display:block;background:#8B1A1A;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:13px;font-weight:800;margin-bottom:9px">📄 Open specification${d.spec_name?' — '+d.spec_name:''}</a>` : `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#A39E8C;margin-bottom:9px">Specification: none on file.</div>`}
+    ${d.quote_url ? `<a href="${d.quote_url}" target="_blank" style="display:block;background:#8B1A1A;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:13px;font-weight:800;margin-bottom:9px">📄 Open quotation${d.quote_name?' — '+d.quote_name:''}</a>` : `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#A39E8C;margin-bottom:9px">Quotation: none on file.</div>`}
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+    $('siteDetailContent').innerHTML = h;
+    openModal('modalSiteDetail');
+    return;
+  }
+
+  // Editable form
+  const fld = function(label, id, value, hint){
+    return `<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">${label}</label>
+      <input class="f-input" id="${id}" value="${esc(value)}" ${hint?`placeholder="${hint}"`:''} style="margin:0"/></div>`;
+  };
+  const docRow = function(label, which, url, name){
+    return `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:12px;margin-bottom:9px">
+      <div style="font-size:12px;font-weight:800;color:#1A1A1A;margin-bottom:8px">${label}${name?` <span style="font-weight:400;color:#8A8470">· ${name}</span>`:''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${url?`<a href="${url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800">Open</a>`:''}
+        <label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer">${url?'Replace':'Upload'}<input type="file" accept="application/pdf,image/*" style="display:none" onchange="replaceSiteFile('${siteId}','${which}',this)"/></label>
+        ${url?`<button onclick="removeSiteFile('${siteId}','${which}')" style="background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Remove</button>`:''}
+      </div></div>`;
+  };
+
+  h += `<div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
+      ${fld('Client', 'si_client', s.client)}
+      ${fld('Contact', 'si_contact', d.contact, 'Name — number')}
+      ${fld('Site address', 'si_address', d.address, 'For the map link')}
+      ${fld('Quote (ex-VAT, R)', 'si_quote', s.quote_value||'')}
+      ${fld('Supplier spec / manufacturer', 'si_spec', specTxt)}
+      ${fld('Surfaces', 'si_surfaces', surfacesTxt, 'Comma separated')}
+      <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Approved colours</label>
+        <textarea class="f-input" id="si_colours" rows="2" style="margin:0">${esc(coloursTxt)}</textarea></div>
+      ${fld('Guarantee', 'si_guarantee', warrantyTxt)}
+      <button class="cta-btn" onclick="saveSiteInfo('${siteId}')">Save details</button>
+    </div>
 
     <div class="section-lbl" style="margin-top:0">Documents</div>
-    ${fileBtn('specification', d.spec_url, d.spec_name)}
-    ${fileBtn('quotation', d.quote_url, d.quote_name)}
+    ${docRow('Specification', 'spec', d.spec_url, d.spec_name)}
+    ${docRow('Quotation', 'quote', d.quote_url, d.quote_name)}
 
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
 
   $('siteDetailContent').innerHTML = h;
   openModal('modalSiteDetail');
+}
+
+async function saveSiteInfo(siteId){
+  const s = SUMMARY.site || {};
+  const d = Object.assign({}, s.details || {});
+  const v = function(id){ return ($(id)||{}).value || ''; };
+  const client = v('si_client').trim();
+  const quote = parseFloat(String(v('si_quote')).replace(/[^0-9.]/g,'')) || 0;
+  d.contact = v('si_contact').trim();
+  d.address = v('si_address').trim();
+  d.maps_link = d.address ? mapsLinkFor(d.address) : '';
+  d.spec_manufacturer = v('si_spec').trim();
+  d.has_spec = d.spec_manufacturer ? 'yes' : (d.has_spec || '');
+  d.surfaces = v('si_surfaces').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  d.surfaces_text = v('si_surfaces').trim();
+  d.colours_text = v('si_colours').trim();
+  d.warranty_by = v('si_guarantee').trim();
+  d.warranty = d.warranty_by ? 'yes' : (d.warranty || '');
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, details: d });
+  if(ok){
+    s.client = client; s.quote_value = quote; s.details = d;
+    showSaveToast('Site details saved');
+    openSiteInfo(siteId);
+    paintSiteSummaryBody();
+  } else {
+    showSaveToast('Could not save — check your signal');
+  }
+}
+
+async function replaceSiteFile(siteId, which, input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  showSaveToast('Uploading…');
+  const url = await sbUploadFile(siteId + '/' + which + '-' + Date.now() + '-' + f.name, f);
+  if(!url){ showSaveToast('Upload failed — check your signal'); return; }
+  const s = SUMMARY.site || {};
+  const d = Object.assign({}, s.details || {});
+  d[which + '_url'] = url; d[which + '_name'] = f.name;
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
+  if(ok){ s.details = d; showSaveToast('File uploaded'); openSiteInfo(siteId); }
+  else showSaveToast('Saved the file but could not link it — try again');
+}
+
+async function removeSiteFile(siteId, which){
+  if(!confirm('Remove this file from the site? (The link is cleared; you can upload a new one.)')) return;
+  const s = SUMMARY.site || {};
+  const d = Object.assign({}, s.details || {});
+  d[which + '_url'] = ''; d[which + '_name'] = '';
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
+  if(ok){ s.details = d; showSaveToast('File removed'); openSiteInfo(siteId); }
+  else showSaveToast('Could not remove — check your signal');
 }
 
 async function renderSiteSummary(siteId){
@@ -4006,7 +4154,10 @@ function paintSiteSummaryBody(){
   const quote          = parseFloat(s.quote_value)||0;
   const labourBudget   = quote * LABOUR_PCT;
   const materialBudget = quote * MATERIAL_PCT;
-  const labourActual   = costSum('labour');
+  // Labour in the profit is the AGREED team total (sites.labour_actual), fixed for
+  // the job. Payments (site_costs 'labour') just track what's been paid against it.
+  const labourAgreed   = parseFloat(s.labour_actual)||0;
+  const labourPaid     = costSum('labour');
   const materialActual = sumMaterialActual();
   const additionalCosts = costSum('additional');   // cherry picker + scaffold
   const accommodation   = costSum('accommodation');
@@ -4016,7 +4167,10 @@ function paintSiteSummaryBody(){
   const henkFee        = henkFeeBase * HENK_FEE_PCT;
   const henkPaid       = costSum('henk');
   const henkOutstanding = henkFee - henkPaid;
-  const totalExpenses  = labourActual + materialActual + additionalCosts + accommodation + petrol + henkFee;
+  // Henk's fee is deducted only on the owner's door; Henk never sees his 10% come off.
+  const showHenkFee    = (CURRENT_ROLE === 'owner');
+  const henkInCalc     = showHenkFee ? henkFee : 0;
+  const totalExpenses  = labourAgreed + materialActual + additionalCosts + accommodation + petrol + henkInCalc;
   const netProfit      = quote - totalExpenses;
   const netPct         = quote > 0 ? (netProfit / quote * 100) : 0;
   const days           = summaryDays(s);
@@ -4051,14 +4205,14 @@ function paintSiteSummaryBody(){
   </div>`;
 
   // ── SITE PROFIT SHEET — one clickable list, no repeated blocks ──
-  const overLabour = labourActual > labourBudget;
+  const overLabour = labourAgreed > 0 && labourPaid > labourAgreed;
   const overMat    = materialActual > materialBudget;
   h += `<div class="section-lbl">Site profit sheet</div>
     <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
       ${profitRow({ label:'Total quote (ex-VAT)', val:quote })}
-      ${profitRow({ label:'Labour actual', val:labourActual, sign:'–', over:overLabour,
-        sub:`budget 23% · ${R(labourBudget)}${overLabour?' · OVER':' · '+R(Math.max(0,labourBudget-labourActual))+' left'} · tap to add a payment`,
-        onclick:`openCostEditor('${s.id}','labour')` })}
+      ${profitRow({ label:'Labour (agreed team total)', val:labourAgreed, sign:'–',
+        sub: labourAgreed>0 ? `paid ${R(labourPaid)} · ${R(labourAgreed-labourPaid)} still to pay · tap to manage` : 'tap to set the agreed labour total',
+        onclick:`openLabourEditor('${s.id}')` })}
       ${profitRow({ label:'Material actual', val:materialActual, sign:'–', over:overMat,
         sub:`budget 26% · ${R(materialBudget)} · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
         onclick:`summaryInvoices('${s.id}')` })}
@@ -4068,8 +4222,8 @@ function paintSiteSummaryBody(){
         sub:'tap to add', onclick:`openCostEditor('${s.id}','accommodation')` })}
       ${profitRow({ label:'Petrol / Diesel', val:petrol, sign:'–',
         sub:'tap to add', onclick:`openCostEditor('${s.id}','petrol')` })}
-      ${profitRow({ label:'Henk project fee (10% after cherry / scaffold)', val:henkFee, sign:'–',
-        sub:`on ${R(henkFeeBase)} · paid ${R(henkPaid)} · ${R(henkOutstanding)} outstanding`, onclick:`openCostEditor('${s.id}','henk')` })}
+      ${showHenkFee ? profitRow({ label:'Henk project fee (10% after cherry / scaffold)', val:henkFee, sign:'–',
+        sub:`on ${R(henkFeeBase)} · paid ${R(henkPaid)} · ${R(henkOutstanding)} outstanding`, onclick:`openCostEditor('${s.id}','henk')` }) : ''}
       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 4px;font-size:13.5px;border-top:2px solid #1A1A1A;margin-top:4px">
         <span style="font-weight:800">= Net profit to date</span>
         <span style="display:flex;align-items:baseline;gap:7px">
