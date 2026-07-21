@@ -1454,7 +1454,7 @@ async function renderDailyUpdates(){
     sbGetRows('sites', 'order=started.desc')
   ]);
   DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
-  DU_SITELIST = Array.isArray(res[1]) ? res[1] : [];
+  DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
   // Coming back to a site view: the sites only arrive now, so set the month here.
   if(DU_VIEW === 'site' && DU_SITE){
@@ -1595,7 +1595,7 @@ function duPaintArchive(){
   const today = new Date().toISOString().split('T')[0];
   const grouped = duGrouped();
 
-  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Daily update archive</div>
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Site archive</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Find any site fast — search, filter by leader, or pick a date.</div>`;
 
   // Search across sites and leaders — filters the list on the left as you type.
@@ -1949,7 +1949,7 @@ function duSiteInfoView(siteId){
   const site = DU_SITELIST.find(function(s){ return s.id === siteId; });
   if(!site) return;
   SUMMARY = { site: site };   // archive has no live summary; give openSiteInfo a site
-  openSiteInfo(siteId, true);
+  openSiteInfo(siteId, false, false);   // view only, no Edit button in the archive
 }
 
 // An outstanding name doubles as a Chase button — Henk is already looking at
@@ -3501,7 +3501,7 @@ async function loadHenkData(){
     sbGetRows('invoice_inbox', 'status=eq.confirmed'),
     sbGetRows('site_costs', '')
   ]);
-  HENK.sites   = Array.isArray(res[0]) ? res[0] : [];
+  HENK.sites   = (Array.isArray(res[0]) ? res[0] : []).map(normSiteEnd);
   HENK.updates = Array.isArray(res[1]) ? res[1] : [];
   HENK.stock = {}; HENK.usage = {}; HENK.material = {}; HENK.costs = {};
   (Array.isArray(res[2]) ? res[2] : []).forEach(function(r){
@@ -3671,7 +3671,7 @@ async function renderHenkSites(){
     sbGetRows('sites', 'order=started.desc')
   ]);
   DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
-  DU_SITELIST = Array.isArray(res[1]) ? res[1] : [];
+  DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
   if(CURRENT_DOOR !== 'sites' || CURRENT_ROLE !== 'henk') return;
   if(DU_VIEW === 'weekbuild' && DU_WEEK_SITE && !DU_WEEK_DATA){ await loadWeek(); }
@@ -3731,7 +3731,7 @@ async function loadSiteSummary(siteId){
     sbGetRows('paint_stock', `site_id=eq.${encodeURIComponent(siteId)}&order=product.asc`),
     sbGetRows('site_costs', `site_id=eq.${encodeURIComponent(siteId)}&order=paid_date.asc`)
   ]);
-  const site = (Array.isArray(res[0]) && res[0][0]) ? res[0][0] : null;
+  const site = (Array.isArray(res[0]) && res[0][0]) ? normSiteEnd(res[0][0]) : null;
   const invoices = (Array.isArray(res[1]) ? res[1] : []).filter(function(iv){ return iv.site_guess === siteId; });
   const stock = Array.isArray(res[2]) ? res[2] : [];
   const costs = Array.isArray(res[3]) ? res[3] : [];
@@ -3752,6 +3752,10 @@ function costSum(kind){
   return (SUMMARY && SUMMARY.costs ? SUMMARY.costs : []).filter(function(c){ return c.kind === kind; })
     .reduce(function(a,c){ return a + (parseFloat(c.amount)||0); }, 0);
 }
+
+// The completion date is kept in details (no end_date column); mirror it onto
+// s.end_date at load so every "s.end_date" reader keeps working.
+function normSiteEnd(s){ if(s && !s.end_date && s.details && s.details.end_date) s.end_date = s.details.end_date; return s; }
 
 function summaryDays(s){
   if(!s || !s.started) return 1;
@@ -3940,20 +3944,38 @@ function siteInfoColoursText(d){
 }
 function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function openSiteInfo(siteId, readonly){
+// canEdit: whether an Edit button appears (summary yes, archive no).
+// editing: whether the form is currently editable (only after Edit is pressed).
+function openSiteInfo(siteId, canEdit, editing){
   const s = (SUMMARY && SUMMARY.site) || {};
   const d = s.details || {};
   const none = '<span style="color:#C9C5BA">— not captured yet</span>';
   const coloursTxt = siteInfoColoursText(d);
   const surfacesTxt = Array.isArray(d.surfaces) ? d.surfaces.filter(Boolean).join(', ') : (d.surfaces_text || '');
-  const specTxt = d.spec_manufacturer || (d.has_spec === 'no' ? 'No spec' : '');
-  const warrantyTxt = d.warranty_by || (d.warranty === 'no' ? 'No' : '');
 
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${s.name||'Site information'}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${readonly ? 'Everything captured for this site (view only)' : 'Everything captured for this site — edit and save any of it'}</div>`;
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:14px">
+      <div><div class="disp" style="font-size:17px;font-weight:800">${s.name||'Site information'}</div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:2px">${editing ? 'Editing — change anything, then Save' : 'Site information'}</div></div>
+      ${canEdit && !editing ? `<button onclick="openSiteInfo('${siteId}', true, true)" style="background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">✎ Edit</button>` : ''}
+    </div>`;
 
-  if(readonly){
+  // Documents block — spec, quotation, guarantee are PDFs. Open (always);
+  // Replace / Remove / Upload only while editing.
+  const docRow = function(label, which, url, name){
+    let btns = url ? `<a href="${url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800">Open</a>` : '';
+    if(editing){
+      btns += `<label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer">${url?'Replace':'Upload'}<input type="file" accept="application/pdf,image/*" style="display:none" onchange="replaceSiteFile('${siteId}','${which}',this)"/></label>`;
+      if(url) btns += `<button onclick="removeSiteFile('${siteId}','${which}')" style="background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Remove</button>`;
+    }
+    if(!url && !editing) btns = `<span style="font-size:11.5px;color:#A39E8C">none on file</span>`;
+    return `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:12px;margin-bottom:9px">
+      <div style="font-size:12px;font-weight:800;color:#1A1A1A;margin-bottom:8px">${label}${name?` <span style="font-weight:400;color:#8A8470">· ${name}</span>`:''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${btns}</div></div>`;
+  };
+
+  if(!editing){
+    // ── VIEW (read-only) ──
     const bullet = function(label, value){
       return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3">
         <div style="flex:0 0 40%;font-size:11.5px;color:#8A8470;font-weight:700">${label}</div>
@@ -3967,53 +3989,44 @@ function openSiteInfo(siteId, readonly){
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
       ${bullet('Started', s.started ? fd(s.started) : '')}
       ${bullet('Quote (ex-VAT)', s.quote_value ? R(parseFloat(s.quote_value)) : '')}
-      ${bullet('Supplier spec', specTxt)}
       ${bullet('Surfaces', surfacesTxt)}
       ${bullet('Approved colours', coloursTxt)}
-      ${bullet('Guarantee', warrantyTxt)}
     </div>
     <div class="section-lbl" style="margin-top:0">Documents</div>
-    ${d.spec_url ? `<a href="${d.spec_url}" target="_blank" style="display:block;background:#8B1A1A;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:13px;font-weight:800;margin-bottom:9px">📄 Open specification${d.spec_name?' — '+d.spec_name:''}</a>` : `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#A39E8C;margin-bottom:9px">Specification: none on file.</div>`}
-    ${d.quote_url ? `<a href="${d.quote_url}" target="_blank" style="display:block;background:#8B1A1A;color:#fff;text-decoration:none;text-align:center;border-radius:10px;padding:13px;font-size:13px;font-weight:800;margin-bottom:9px">📄 Open quotation${d.quote_name?' — '+d.quote_name:''}</a>` : `<div style="background:#F7F6F3;border:1px solid #E6E2D8;border-radius:10px;padding:12px;font-size:11.5px;color:#A39E8C;margin-bottom:9px">Quotation: none on file.</div>`}
+    ${docRow('Specification', 'spec', d.spec_url, d.spec_name)}
+    ${docRow('Quotation', 'quote', d.quote_url, d.quote_name)}
+    ${docRow('Guarantee', 'guarantee', d.guarantee_url, d.guarantee_name)}
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
     $('siteDetailContent').innerHTML = h;
     openModal('modalSiteDetail');
     return;
   }
 
-  // Editable form
+  // ── EDIT ──
   const fld = function(label, id, value, hint){
     return `<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">${label}</label>
       <input class="f-input" id="${id}" value="${esc(value)}" ${hint?`placeholder="${hint}"`:''} style="margin:0"/></div>`;
   };
-  const docRow = function(label, which, url, name){
-    return `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:12px;margin-bottom:9px">
-      <div style="font-size:12px;font-weight:800;color:#1A1A1A;margin-bottom:8px">${label}${name?` <span style="font-weight:400;color:#8A8470">· ${name}</span>`:''}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${url?`<a href="${url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800">Open</a>`:''}
-        <label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer">${url?'Replace':'Upload'}<input type="file" accept="application/pdf,image/*" style="display:none" onchange="replaceSiteFile('${siteId}','${which}',this)"/></label>
-        ${url?`<button onclick="removeSiteFile('${siteId}','${which}')" style="background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Remove</button>`:''}
-      </div></div>`;
-  };
-
+  const leaderOpts = LEADER_META.map(function(lm){ return `<option value="${lm.key}" ${s.team_leader===lm.key?'selected':''}>${lm.name}</option>`; }).join('');
   h += `<div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
       ${fld('Client', 'si_client', s.client)}
       ${fld('Contact', 'si_contact', d.contact, 'Name — number')}
       ${fld('Site address', 'si_address', d.address, 'For the map link')}
       ${fld('Quote (ex-VAT, R)', 'si_quote', s.quote_value||'')}
-      ${fld('Supplier spec / manufacturer', 'si_spec', specTxt)}
+      <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Team leader</label>
+        <select class="f-input" id="si_leader" style="margin:0">${leaderOpts}</select></div>
       ${fld('Surfaces', 'si_surfaces', surfacesTxt, 'Comma separated')}
       <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Approved colours</label>
         <textarea class="f-input" id="si_colours" rows="2" style="margin:0">${esc(coloursTxt)}</textarea></div>
-      ${fld('Guarantee', 'si_guarantee', warrantyTxt)}
-      <button class="cta-btn" onclick="saveSiteInfo('${siteId}')">Save details</button>
     </div>
 
-    <div class="section-lbl" style="margin-top:0">Documents</div>
+    <div class="section-lbl" style="margin-top:0">Documents (PDF)</div>
     ${docRow('Specification', 'spec', d.spec_url, d.spec_name)}
     ${docRow('Quotation', 'quote', d.quote_url, d.quote_name)}
+    ${docRow('Guarantee', 'guarantee', d.guarantee_url, d.guarantee_name)}
 
-    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+    <button class="cta-btn" style="margin-top:6px" onclick="saveSiteInfo('${siteId}')">Save details</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="openSiteInfo('${siteId}', true, false)">Cancel</button>`;
 
   $('siteDetailContent').innerHTML = h;
   openModal('modalSiteDetail');
@@ -4025,21 +4038,18 @@ async function saveSiteInfo(siteId){
   const v = function(id){ return ($(id)||{}).value || ''; };
   const client = v('si_client').trim();
   const quote = parseFloat(String(v('si_quote')).replace(/[^0-9.]/g,'')) || 0;
+  const leader = v('si_leader') || s.team_leader;
   d.contact = v('si_contact').trim();
   d.address = v('si_address').trim();
   d.maps_link = d.address ? mapsLinkFor(d.address) : '';
-  d.spec_manufacturer = v('si_spec').trim();
-  d.has_spec = d.spec_manufacturer ? 'yes' : (d.has_spec || '');
   d.surfaces = v('si_surfaces').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   d.surfaces_text = v('si_surfaces').trim();
   d.colours_text = v('si_colours').trim();
-  d.warranty_by = v('si_guarantee').trim();
-  d.warranty = d.warranty_by ? 'yes' : (d.warranty || '');
-  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, details: d });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, team_leader: leader, details: d });
   if(ok){
-    s.client = client; s.quote_value = quote; s.details = d;
+    s.client = client; s.quote_value = quote; s.team_leader = leader; s.details = d;
     showSaveToast('Site details saved');
-    openSiteInfo(siteId);
+    openSiteInfo(siteId, true, false);
     paintSiteSummaryBody();
   } else {
     showSaveToast('Could not save — check your signal');
@@ -4056,7 +4066,7 @@ async function replaceSiteFile(siteId, which, input){
   const d = Object.assign({}, s.details || {});
   d[which + '_url'] = url; d[which + '_name'] = f.name;
   const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
-  if(ok){ s.details = d; showSaveToast('File uploaded'); openSiteInfo(siteId); }
+  if(ok){ s.details = d; showSaveToast('File uploaded'); openSiteInfo(siteId, true, true); }
   else showSaveToast('Saved the file but could not link it — try again');
 }
 
@@ -4066,8 +4076,52 @@ async function removeSiteFile(siteId, which){
   const d = Object.assign({}, s.details || {});
   d[which + '_url'] = ''; d[which + '_name'] = '';
   const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
-  if(ok){ s.details = d; showSaveToast('File removed'); openSiteInfo(siteId); }
+  if(ok){ s.details = d; showSaveToast('File removed'); openSiteInfo(siteId, true, true); }
   else showSaveToast('Could not remove — check your signal');
+}
+
+// ── PROJECT COMPLETE — confirm and set the completion date (can be back-dated) ──
+function openCompleteProject(siteId){
+  const s = SUMMARY.site || {};
+  const todayStr = new Date().toISOString().split('T')[0];
+  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:8px">Complete this project?</div>
+    <div style="font-size:12.5px;color:#5C5748;line-height:1.7;margin-bottom:16px">This closes <strong>${s.name||'the site'}</strong> as completed and moves it to the finished sites. The profit sheet and the final figures stay saved and can be viewed any time. You can reopen it if needed.</div>
+    <label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Date completed (back-date if it finished earlier)</label>
+    <input class="f-input" id="completeDate" type="date" value="${todayStr}" max="${todayStr}" style="margin-bottom:14px"/>
+    <button class="cta-btn" style="background:#B2342A" onclick="confirmComplete('${siteId}')">Confirm — mark completed</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
+  openModal('modalSiteDetail');
+}
+
+async function confirmComplete(siteId){
+  const date = ($('completeDate')||{}).value || new Date().toISOString().split('T')[0];
+  const s = SUMMARY.site || {};
+  const d = Object.assign({}, s.details || {}); d.end_date = date;
+  // end_date lives in details (no dedicated column), status is a real column.
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { status: 'done', details: d });
+  if(ok){
+    s.status = 'done'; s.end_date = date; s.details = d;
+    showSaveToast('Project completed — ' + fd(date));
+    closeModal('modalSiteDetail');
+    paintSiteSummaryBody();
+  } else {
+    showSaveToast('Could not complete — check your signal');
+  }
+}
+
+async function reopenProject(siteId){
+  if(!confirm('Reopen this project as active again?')) return;
+  const s = SUMMARY.site || {};
+  const d = Object.assign({}, s.details || {}); d.end_date = '';
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { status: 'active', details: d });
+  if(ok){
+    s.status = 'active'; s.end_date = null; s.details = d;
+    showSaveToast('Project reopened');
+    paintSiteSummaryBody();
+  } else {
+    showSaveToast('Could not reopen — check your signal');
+  }
 }
 
 async function renderSiteSummary(siteId){
@@ -4126,7 +4180,7 @@ function paintSiteSummaryBody(){
   h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
-      <button onclick="openSiteInfo('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;flex:0 0 auto">ⓘ Site information</button>
+      <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;flex:0 0 auto">ⓘ Site information</button>
     </div>
     <div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>
     <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
@@ -4138,6 +4192,12 @@ function paintSiteSummaryBody(){
       <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Days on site</div>
         <div class="disp" style="font-size:17px;font-weight:800;margin-top:3px">${days}</div></div>
     </div>
+    ${s.status === 'done'
+      ? `<div style="background:rgba(95,122,107,0.25);border:1px solid #5C7A6B;border-radius:10px;padding:11px 14px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span style="font-size:12px;font-weight:800;color:#8FBF9F">✓ PROJECT COMPLETED${s.end_date?' · '+fd(s.end_date):''}</span>
+          <button onclick="reopenProject('${s.id}')" style="background:none;border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:7px;padding:5px 11px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">Reopen</button>
+        </div>`
+      : `<button onclick="openCompleteProject('${s.id}')" style="width:100%;background:#B2342A;color:#fff;border:none;border-radius:10px;padding:13px;font-size:13.5px;font-weight:800;letter-spacing:0.4px;cursor:pointer;font-family:inherit;margin-top:14px">✓ PROJECT COMPLETE</button>`}
   </div>`;
 
   // ── SITE PROFIT SHEET — one clickable list, no repeated blocks ──
