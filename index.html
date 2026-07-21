@@ -3474,11 +3474,13 @@ async function loadHenkData(){
     sbGetRows('sites', 'order=started.desc'),
     sbGetRows('daily_updates', `select=${DU_COLS}&order=date.desc&limit=100`), // no photos — see DU_COLS
     sbGetRows('paint_stock', ''),
-    sbGetRows('stock_usage', '')
+    sbGetRows('stock_usage', ''),
+    sbGetRows('invoice_inbox', 'status=eq.confirmed'),
+    sbGetRows('site_costs', '')
   ]);
   HENK.sites   = Array.isArray(res[0]) ? res[0] : [];
   HENK.updates = Array.isArray(res[1]) ? res[1] : [];
-  HENK.stock = {}; HENK.usage = {};
+  HENK.stock = {}; HENK.usage = {}; HENK.material = {}; HENK.costs = {};
   (Array.isArray(res[2]) ? res[2] : []).forEach(function(r){
     if(!HENK.stock[r.site_id]) HENK.stock[r.site_id] = [];
     HENK.stock[r.site_id].push(r);
@@ -3487,6 +3489,27 @@ async function loadHenkData(){
     if(!HENK.usage[r.site_id]) HENK.usage[r.site_id] = [];
     HENK.usage[r.site_id].push(r);
   });
+  (Array.isArray(res[4]) ? res[4] : []).forEach(function(iv){
+    HENK.material[iv.site_guess] = (HENK.material[iv.site_guess]||0) + (parseFloat(iv.total)||0);
+  });
+  (Array.isArray(res[5]) ? res[5] : []).forEach(function(c){
+    if(!HENK.costs[c.site_id]) HENK.costs[c.site_id] = {};
+    HENK.costs[c.site_id][c.kind] = (HENK.costs[c.site_id][c.kind]||0) + (parseFloat(c.amount)||0);
+  });
+}
+
+// Net profit per site, Henk's view — labour is the agreed total, material from
+// invoices, plus additional/accommodation/petrol. Henk's own 10% is NOT deducted
+// here (owner-only). Returns the figures the overview blocks show.
+function henkSiteProfit(s){
+  const quote = parseFloat(s.quote_value)||0;
+  const labour = parseFloat(s.labour_actual)||0;   // agreed team total
+  const material = HENK.material[s.id]||0;
+  const c = HENK.costs[s.id]||{};
+  const extras = (c.additional||0) + (c.accommodation||0) + (c.petrol||0);
+  const net = quote - labour - material - extras;
+  const days = henkDays(s);
+  return { net: net, days: days, dailyProfit: net/Math.max(1,days), margin: quote>0 ? net/quote*100 : 0 };
 }
 
 function henkLeader(key){ return LEADER_META.find(function(l){ return l.key === key; }); }
@@ -3567,9 +3590,9 @@ async function renderHenkOverview(){
     </div>
   </div>`;
 
-  // Same four blocks as Ferdi's Sites page, but headlined with labour against
-  // budget — that is Henk's job. No profit per day: that is owner territory.
-  h += `<div class="section-lbl">The four teams — labour against budget</div>`;
+  // Four teams — today's profit per day, days on site, net profit, margin.
+  // Labour comes off the blocks; tap a block for the full detail.
+  h += `<div class="section-lbl">The four teams — today's profit per day</div>`;
   h += `<div class="sites-grid">`;
   LEADER_META.forEach(function(lm){
     const mine = active.filter(function(s){ return s.team_leader === lm.key; })
@@ -3584,58 +3607,18 @@ async function renderHenkOverview(){
     }
     const s = mine[0];
     const extra = mine.length > 1 ? ` · +${mine.length-1} more` : '';
-    const labourActual = parseFloat(s.labour_actual)||0;
-    const labourBudget = parseFloat(s.labour_budget)||0;
-    const labPct = labourBudget ? Math.round(labourActual/labourBudget*100) : 0;
-    const over = labourBudget > 0 && labourActual > labourBudget;
+    const p = henkSiteProfit(s);
+    const ppdCol = p.dailyProfit >= 0 ? '#fff' : '#FFC9C4';
     h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteSummary('${s.id}')">
       <div class="leader-tag">${lm.name}</div>
       <div class="sb-name" style="color:#fff">${s.name}</div>
-      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Started ${fd(s.started)}</div>
-      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Labour used</div>
-      <div class="sb-ppd disp" style="color:${over?'#FFC9C4':'#fff'}">${R(labourActual)}</div>
-      <div class="sb-days" style="color:rgba(255,255,255,0.6)">of ${R(labourBudget)}${labourBudget?' · '+labPct+'%':''} · Day ${henkDays(s)}${extra}</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Day ${p.days} on site${extra}</div>
+      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Profit / day</div>
+      <div class="sb-ppd disp" style="color:${ppdCol}">${R(p.dailyProfit)}</div>
+      <div class="sb-days" style="color:rgba(255,255,255,0.6)">Net ${R(p.net)} · ${p.margin.toFixed(0)}%</div>
     </div>`;
   });
   h += `</div>`;
-
-  h += `<div class="section-lbl">Every active site — the detail</div>`;
-  active.forEach(function(s){
-    const stock = HENK.stock[s.id] || [];
-    const unitsUsed = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
-    const labourActual = parseFloat(s.labour_actual)||0;
-    const labourBudget = parseFloat(s.labour_budget)||0;
-    const matBudget = parseFloat(s.material_budget)||0;
-    const matSpend = henkMaterialSpend(s.id);
-    const labPct = labourBudget ? Math.round(labourActual/labourBudget*100) : 0;
-    const labOver = labourBudget > 0 && labourActual > labourBudget;
-    const last = HENK.updates.find(function(u){ return u.site_id === s.id; });
-
-    h += `<div class="ledger-card" style="padding:16px;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-        <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
-        <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${henkLeaderColour(s.team_leader)};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
-      </div>
-      <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">${s.client||'No client'} · Day ${henkDays(s)} on site${last?' · last report '+fd(last.date):' · no reports yet'}</div>
-
-      <div style="font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:1px">LABOUR</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span class="disp" style="font-size:16px;font-weight:800;color:${labOver?'#B2342A':'#1A1A1A'}">${R(labourActual)}</span>
-        <span style="font-size:11.5px;color:#8A8470">of ${R(labourBudget)} budget${labourBudget?' · '+labPct+'%':''}</span>
-      </div>
-      ${henkBudgetBar(labPct, labOver)}
-
-      <div style="font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-top:14px">MATERIAL</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A">${R(matSpend)}</span>
-        <span style="font-size:11.5px;color:#8A8470">of ${R(matBudget)} budget</span>
-      </div>
-      ${henkBudgetBar(matBudget?Math.round(matSpend/matBudget*100):0, false)}
-      <div style="font-size:10.5px;color:#A39E8C;margin-top:5px">Material spend shows R0 until invoices are captured in the app</div>
-
-      <div style="font-size:11.5px;color:#8A8470;margin-top:12px">🎨 ${stock.length} product${stock.length!==1?'s':''} on the stock sheet · ${unitsUsed} unit${unitsUsed!==1?'s':''} used so far</div>
-    </div>`;
-  });
 
   body.innerHTML = h;
 }
