@@ -274,6 +274,7 @@ input[type=password]{letter-spacing:5px}
           <option value="4444">Talent</option>
         </select>
         <button class="cta-btn dark" onclick="testOpen()">Open →</button>
+        <div id="testErr" style="text-align:center;color:#B2342A;font-size:12.5px;font-weight:700;margin-top:10px;min-height:16px"></div>
       </div>
 
       <div class="login-foot" id="loginFoot">One app — your PIN opens your door</div>
@@ -1067,6 +1068,13 @@ const DOOR_PINS = {
   '4444': { door: 3, leader: 'talent' },     // Talent
 };
 
+// LOCKED DOORS — a door listed here as true is closed: picking it shows a
+// "locked" message instead of opening. Nothing is deleted; set a door back to
+// false to reopen it. Door 1 = Ferdi (owner), 2 = Henk (ops), 3 = team leaders.
+const LOCKED_DOORS = {
+  1: true,     // Ferdi's door — locked for now so Henk only tests his own side
+};
+
 // Door 1 and Door 2 share the same shell. The role decides which sections
 // appear and which numbers are shown — Henk runs operations, so he sees
 // stock, labour and the daily reports, but not the owner financials.
@@ -1090,7 +1098,15 @@ function applyTestMode(){
 
 function testOpen(){
   if(!TEST_MODE) return;
-  $('lPin').value = $('testWho').value;
+  const p = $('testWho').value;
+  const route = DOOR_PINS[p];
+  const te = $('testErr');
+  if(route && LOCKED_DOORS[route.door]){
+    if(te) te.textContent = '🔒 This door is locked for now.';
+    return;
+  }
+  if(te) te.textContent = '';
+  $('lPin').value = p;
   doLogin();
 }
 
@@ -1098,6 +1114,11 @@ function doLogin(){
   const p = $('lPin').value;
   const e = $('lErr');
   const route = DOOR_PINS[p];
+  if(route && LOCKED_DOORS[route.door]){
+    $('lPin').value='';
+    e.textContent = '🔒 This door is locked for now.';
+    return;
+  }
   if(route && (route.door === 1 || route.door === 2)){
     $('lPin').value=''; e.textContent='';
     const role = route.door === 2 ? 'henk' : 'owner';
