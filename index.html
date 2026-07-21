@@ -1439,9 +1439,12 @@ let DU_CAL = null;        // which month a calendar is showing
 let DU_SEARCH = '';       // archive search text (site or leader)
 let DU_ARCH_LEADER = '';  // archive leader-chip filter ('' = all)
 let DU_WEEK_SITE = null;  // site for the weekly builder
-let DU_WEEK_START = null; // Monday (YYYY-MM-DD) of the shown week
-let DU_WEEK_DATA = null;  // the week's reports (with photos) once loaded
+let DU_WEEK_START = null; // chosen start date (YYYY-MM-DD)
+let DU_WEEK_END = null;   // chosen end date (YYYY-MM-DD)
+let DU_WEEK_DATA = null;  // the range's reports (with photos) once loaded
 let DU_WEEK_SEL = {};     // photos ticked for the client report
+const WEEKLY_VIEWS = ['weeklyhome','weekly','weekbuild'];
+let LETTERHEAD = (function(){ try { return localStorage.getItem('pr_letterhead') || ''; } catch(e){ return ''; } })();
 
 async function renderDailyUpdates(){
   $('pageBody').innerHTML = `
@@ -1493,6 +1496,10 @@ function duGo(view, siteId, leaderKey){
   paintUpdates();
 }
 
+// Henk's Daily/Weekly tab switch — set the view, then re-render the whole Sites
+// shell so the highlighted tab moves with it.
+function henkSitesTab(view){ duGo(view); renderHenkSites(); }
+
 function duSiteById(id){ return DU_SITELIST.find(function(s){ return s.id === id; }); }
 function duSiteName(id){ const s = duSiteById(id); return s ? s.name : (DU_SITES[id] || id); }
 
@@ -1521,6 +1528,7 @@ function paintUpdates(){
   if(DU_VIEW === 'archive')   { body.innerHTML = duPaintArchive(); return; }
   if(DU_VIEW === 'leader')    { body.innerHTML = duPaintLeader();  return; }
   if(DU_VIEW === 'site')      { body.innerHTML = duPaintSite();    return; }
+  if(DU_VIEW === 'weeklyhome'){ body.innerHTML = duPaintWeeklyHome(); return; }
   if(DU_VIEW === 'weekly')    { body.innerHTML = duPaintWeekly();  return; }
   if(DU_VIEW === 'weekbuild') { body.innerHTML = duPaintWeekBuild(); return; }
   body.innerHTML = duPaintToday();
@@ -1713,12 +1721,13 @@ function duWeekLabel(monday){
   return a.toLocaleDateString('en-ZA',{day:'numeric',month:'short'}) + ' – ' + b.toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'});
 }
 
-// Landing — pick a site to build its weekly client report.
+// Create step — pick a CURRENT site to build a client report for.
 function duPaintWeekly(){
-  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Weekly updates</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Pick a site to build a client report from its week's daily updates.</div>`;
-  const sites = duArchiveSites();
-  if(!sites.length){ return h + `<div style="font-size:12px;color:#A39E8C">No sites yet.</div>`; }
+  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('weeklyhome')">← Weekly archive</button>
+    <div style="font-family:'Poppins',sans-serif;font-size:18px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Create weekly update</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">Pick a current site, then choose the dates to include.</div>`;
+  const sites = duArchiveSites().filter(function(s){ return s.status !== 'done'; });
+  if(!sites.length){ return h + `<div style="font-size:12px;color:#A39E8C">No current sites.</div>`; }
   h += sites.map(function(s){
     const col = (LEADER_META.find(function(l){ return l.key === s.team_leader; })||{}).colour || '#5C5748';
     return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openWeek('${s.id}')">
@@ -1733,31 +1742,109 @@ function duPaintWeekly(){
   return h;
 }
 
-async function openWeek(siteId, monday){
+function weeklyRangeLabel(start, end){
+  const a = new Date(start + 'T12:00:00'), b = new Date(end + 'T12:00:00');
+  return a.toLocaleDateString('en-ZA',{day:'numeric',month:'short'}) + ' – ' + b.toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'});
+}
+
+// ── WEEKLY HOME — Create button, search, and the reports you've saved ──
+function duPaintWeeklyHome(){
+  const active = DU_SITELIST.filter(function(s){ return s.status !== 'done'; });
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Weekly archive</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Create a client report for a site over any dates you choose. Saved reports are listed below.</div>
+
+    <button onclick="duGo('weekly')" style="width:100%;background:#3F5A4C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;margin-bottom:12px">＋ Create weekly update</button>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:16px;font-size:11px;color:#8A8470">
+      <span>Letterhead: ${LETTERHEAD ? '✓ uploaded (on every report)' : 'none yet'}</span>
+      <label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:7px 12px;font-weight:800;cursor:pointer">${LETTERHEAD?'Replace':'Upload'} letterhead<input type="file" accept="image/*" style="display:none" onchange="uploadLetterhead(this)"/></label>
+    </div>`;
+
+  // Saved reports across all sites' details.weekly_reports
+  const saved = [];
+  DU_SITELIST.forEach(function(s){
+    ((s.details && s.details.weekly_reports) || []).forEach(function(w){ saved.push(Object.assign({ site: s }, w)); });
+  });
+  saved.sort(function(a,b){ return String(b.created||'').localeCompare(String(a.created||'')); });
+
+  h += `<input id="wkSearch" value="${esc(WK_SEARCH)}" oninput="wkFilter(this.value)" placeholder="🔍 Search a saved report by site" style="width:100%;height:44px;border:1px solid #E6E2D8;border-radius:10px;padding:0 14px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:12px"/>
+    <div class="section-lbl" style="margin-top:0">Saved weekly reports</div>
+    <div id="wkList">${wkListHtml(saved)}</div>`;
+  return h;
+}
+
+let WK_SEARCH = '';
+function wkListHtml(saved){
+  const q = String(WK_SEARCH).trim().toLowerCase();
+  const list = q ? saved.filter(function(w){ return String(w.site.name||'').toLowerCase().indexOf(q) !== -1; }) : saved;
+  if(!list.length) return `<div style="font-size:12px;color:#A39E8C;padding:6px 2px">${saved.length ? 'No saved report matches.' : "None yet. Tap Create weekly update to make one — it'll appear here once saved."}</div>`;
+  return list.map(function(w){
+    return `<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px;cursor:pointer" onclick="openWeek('${w.site.id}','${w.start}','${w.end}')">
+      <div style="font-weight:800;font-size:13px;color:#1A1A1A">${w.site.name}</div>
+      <div style="font-size:11px;color:#8A8470;margin-top:3px">${weeklyRangeLabel(w.start, w.end)}${w.created?' · saved '+fd(w.created):''}</div>
+    </div>`;
+  }).join('');
+}
+function wkFilter(v){ WK_SEARCH = v; const box = document.getElementById('wkList'); if(!box) return;
+  const saved = []; DU_SITELIST.forEach(function(s){ ((s.details&&s.details.weekly_reports)||[]).forEach(function(w){ saved.push(Object.assign({site:s}, w)); }); });
+  saved.sort(function(a,b){ return String(b.created||'').localeCompare(String(a.created||'')); });
+  box.innerHTML = wkListHtml(saved);
+}
+
+async function openWeek(siteId, start, end){
   DU_VIEW = 'weekbuild';
   DU_WEEK_SITE = siteId;
-  DU_WEEK_START = monday || duLastCompleteMonday();
+  // default range: the last 7 days ending today
+  if(!start){ const e = new Date(); const s = new Date(); s.setDate(s.getDate()-6);
+    DU_WEEK_END = e.toISOString().split('T')[0]; DU_WEEK_START = s.toISOString().split('T')[0]; }
+  else { DU_WEEK_START = start; DU_WEEK_END = end || start; }
   DU_WEEK_SEL = {};
   pushView({ kind:'door', role: CURRENT_ROLE, section:duSection(), du:{ view:'weekbuild', site:siteId } });
   const body = $('updatesBody');
-  if(body) body.innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Building the week…</div>`;
+  if(body) body.innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Loading…</div>`;
   await loadWeek();
   if(DU_VIEW === 'weekbuild') paintUpdates();
 }
 async function loadWeek(){
-  const start = DU_WEEK_START, end = duWeekEnd(start);
   const rows = await sbGetRows('daily_updates',
-    `select=id,site_id,leader_name,date,done,plan_tomorrow,photos&site_id=eq.${encodeURIComponent(DU_WEEK_SITE)}&date=gte.${start}&date=lte.${end}&order=date.asc`);
+    `select=id,site_id,leader_name,date,done,plan_tomorrow,photos&site_id=eq.${encodeURIComponent(DU_WEEK_SITE)}&date=gte.${DU_WEEK_START}&date=lte.${DU_WEEK_END}&order=date.asc`);
   DU_WEEK_DATA = Array.isArray(rows) ? rows : [];
 }
-async function duWeekStep(n){
-  const d = new Date(DU_WEEK_START + 'T12:00:00'); d.setDate(d.getDate() + n*7);
-  DU_WEEK_START = d.toISOString().split('T')[0];
+async function duWeekSetDates(){
+  const st = ($('wkStart')||{}).value, en = ($('wkEnd')||{}).value;
+  if(st) DU_WEEK_START = st;
+  if(en) DU_WEEK_END = en;
+  if(new Date(DU_WEEK_START) > new Date(DU_WEEK_END)){ const t = DU_WEEK_START; DU_WEEK_START = DU_WEEK_END; DU_WEEK_END = t; }
   DU_WEEK_SEL = {};
   const body = $('updatesBody');
-  if(body) body.innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Building the week…</div>`;
+  if(body) body.innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Loading…</div>`;
   await loadWeek();
   paintUpdates();
+}
+
+function uploadLetterhead(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    LETTERHEAD = e.target.result;
+    try { localStorage.setItem('pr_letterhead', LETTERHEAD); } catch(err){}
+    showSaveToast('Letterhead saved — it will sit on top of every report');
+    paintUpdates();
+  };
+  reader.readAsDataURL(f);
+}
+
+async function saveWeeklyToArchive(siteId){
+  const s = duSiteById(siteId);
+  if(!s) return;
+  const d = Object.assign({}, s.details || {});
+  if(!Array.isArray(d.weekly_reports)) d.weekly_reports = [];
+  const created = new Date().toISOString().split('T')[0];
+  d.weekly_reports.push({ id: uid(), start: DU_WEEK_START, end: DU_WEEK_END, created: created });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { details: d });
+  if(ok){ s.details = d; showSaveToast('Saved to the weekly archive'); }
+  else showSaveToast('Could not save — check your signal');
 }
 
 // Flatten the week's photos into a tick list; key = reportId + '#' + index.
@@ -1781,23 +1868,27 @@ function duPaintWeekBuild(){
   const photos = duWeekPhotos();
   const selCount = Object.keys(DU_WEEK_SEL).length;
 
-  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('weekly')">← All sites</button>
+  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('weekly')">← Pick another site</button>
     <div style="font-family:'Poppins',sans-serif;font-size:18px;font-weight:800;color:#1A1A1A">${s.name||''}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">${s.client||'No client'} · weekly client report</div>
 
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px">
-      <button class="cta-btn ghost" style="width:auto;padding:0 14px;margin:0;height:40px" onclick="duWeekStep(-1)">‹ Prev</button>
-      <div style="font-family:'Poppins',sans-serif;font-weight:800;font-size:13.5px;text-align:center">${duWeekLabel(DU_WEEK_START)}</div>
-      <button class="cta-btn ghost" style="width:auto;padding:0 14px;margin:0;height:40px" onclick="duWeekStep(1)">Next ›</button>
-    </div>`;
+    <div class="ledger-card" style="padding:12px 14px;margin-bottom:16px">
+      <div style="font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-bottom:8px">CHOOSE THE DATES TO INCLUDE</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label style="font-size:10.5px;color:#8A8470">From</label><input class="f-input" id="wkStart" type="date" value="${DU_WEEK_START}" style="margin:0"/></div>
+        <div><label style="font-size:10.5px;color:#8A8470">To</label><input class="f-input" id="wkEnd" type="date" value="${DU_WEEK_END}" style="margin:0"/></div>
+      </div>
+      <button class="cta-btn" style="margin-top:10px;height:42px" onclick="duWeekSetDates()">Compile these dates</button>
+    </div>
+    <div style="font-family:'Poppins',sans-serif;font-weight:800;font-size:13.5px;margin-bottom:12px">${weeklyRangeLabel(DU_WEEK_START, DU_WEEK_END)}</div>`;
 
   if(!reports.length){
-    h += `<div class="empty-state ledger-card" style="padding:36px 20px"><div class="empty-state-ico">📅</div><div class="empty-state-txt">No daily updates on this site for this week.<br/>Use Prev / Next to find a week with reports.</div></div>`;
+    h += `<div class="empty-state ledger-card" style="padding:36px 20px"><div class="empty-state-ico">📅</div><div class="empty-state-txt">No daily updates on this site for these dates.<br/>Adjust the From / To dates above.</div></div>`;
     return h;
   }
 
   // Work done — one line per day, client-safe (no paint, no costs)
-  h += `<div class="section-lbl">Work done this week</div><div class="ledger-card" style="padding:6px 15px;margin-bottom:14px">`;
+  h += `<div class="section-lbl">Work done over these dates</div><div class="ledger-card" style="padding:6px 15px;margin-bottom:14px">`;
   reports.forEach(function(u){
     h += `<div style="padding:9px 0;border-bottom:1px solid #EFECE3">
       <div style="font-size:11px;font-weight:800;color:#8A8470">${new Date(u.date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'short'})}</div>
@@ -1826,7 +1917,8 @@ function duPaintWeekBuild(){
   }
 
   h += `<button class="cta-btn" onclick="downloadWeeklyDoc()">📄 Download as Word (to edit)</button>
-    <div style="font-size:11px;color:#A39E8C;margin:8px 2px 0;line-height:1.6">Opens in Word so you can polish the wording, then Save As → PDF and send it to the client. Everything money, paint and stock is left out — the client sees only the work and the photos.</div>`;
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="saveWeeklyToArchive('${DU_WEEK_SITE}')">Save to weekly archive</button>
+    <div style="font-size:11px;color:#A39E8C;margin:8px 2px 0;line-height:1.6">The Word doc opens with your letterhead on top so you can polish the wording, then Save As → PDF and send it to the client. Money, paint and stock are left out. "Save to archive" keeps a record of this report on the Weekly tab.</div>`;
   return h;
 }
 
@@ -1839,10 +1931,10 @@ function downloadWeeklyDoc(){
   const esc = function(t){ return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
 
   let inner = `<div style="font-family:Calibri,Arial,sans-serif;color:#1A1A1A">
-    <h2 style="color:#8B1A1A;margin:0 0 2px">Power Rock Painting — Weekly Update</h2>
+    ${LETTERHEAD ? `<div style="text-align:center;margin:0 0 14px"><img src="${LETTERHEAD}" style="max-width:520px;max-height:150px"/></div>` : `<h2 style="color:#8B1A1A;margin:0 0 2px">Power Rock Painting — Weekly Update</h2>`}
     <p style="margin:0 0 2px;font-size:14px"><b>${esc(s.name)}</b></p>
-    <p style="margin:0 0 14px;color:#666">${esc(s.client||'')} &nbsp;·&nbsp; ${duWeekLabel(DU_WEEK_START)}</p>
-    <h3 style="color:#3F5A4C;margin:0 0 6px">Work done this week</h3><ul>`;
+    <p style="margin:0 0 14px;color:#666">${esc(s.client||'')} &nbsp;·&nbsp; ${weeklyRangeLabel(DU_WEEK_START, DU_WEEK_END)}</p>
+    <h3 style="color:#3F5A4C;margin:0 0 6px">Work done</h3><ul>`;
   reports.forEach(function(u){
     const day = new Date(u.date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'short'});
     inner += `<li style="margin-bottom:5px"><b>${day}:</b> ${esc(u.done)}</li>`;
@@ -3659,12 +3751,20 @@ function henkSitesView(v){ HENK_SITES_VIEW = v; renderHenkSites(); }
 
 async function renderHenkSites(){
   if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
-  const archiveViews = ['archive','site','leader','weekly','weekbuild'];
+  const archiveViews = ['archive','site','leader','weeklyhome','weekly','weekbuild'];
   if(archiveViews.indexOf(DU_VIEW) === -1) DU_VIEW = 'archive';
+  const onWeekly = WEEKLY_VIEWS.indexOf(DU_VIEW) !== -1;
+  const tabBtn = function(on){ return on
+    ? 'flex:1;padding:11px;border:none;border-radius:9px;background:#1A1A1A;color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer'
+    : 'flex:1;padding:11px;border:none;border-radius:9px;background:transparent;color:#8A8470;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer'; };
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">Door 2 · Ops</div>
     <div class="page-title">Sites</div>
-    <button onclick="openAddSite()" style="width:100%;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28);margin-bottom:16px">＋ Add new site</button>
+    <button onclick="openAddSite()" style="width:100%;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28);margin-bottom:14px">＋ Add new site</button>
+    <div style="display:flex;gap:4px;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:16px">
+      <button style="${tabBtn(!onWeekly)}" onclick="henkSitesTab('archive')">📋 Daily archive</button>
+      <button style="${tabBtn(onWeekly)}" onclick="henkSitesTab('weeklyhome')">📅 Weekly archive</button>
+    </div>
     <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading sites…</div></div>`;
   const res = await Promise.all([
     sbFetch('daily_updates', `select=${DU_COLS}&limit=400`),
