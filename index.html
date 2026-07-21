@@ -803,7 +803,6 @@ const NAV = [
 // Henk's door — operations only. Deliberately no financials, splits or VAT.
 const NAV_HENK = [
   {id:'overview', label:'Overview', icon:'◆'},
-  {id:'dailyupdates', label:'Site Updates', icon:'📋'},
   {id:'sites', label:'Sites', icon:'▦'},
 ];
 
@@ -996,8 +995,9 @@ function paintView(v){
     CURRENT_ROLE = role;
     const badge = $('roleBadge');
     if(badge) badge.textContent = role === 'henk' ? 'Henk · Ops' : 'Ferdi · Owner';
-    // Daily Updates has its own screens inside it — restore which one this step was.
-    if(section === 'dailyupdates'){
+    // The archive has its own screens inside it (owner: Daily Updates section;
+    // Henk: the Sites section) — restore which one this step was.
+    if(v.du){
       DU_VIEW   = (v.du && v.du.view) || 'today';
       DU_SITE   = (v.du && v.du.site) || null;
       DU_LEADER = (v.du && v.du.leader) || null;
@@ -1152,7 +1152,11 @@ function buildNav(){
 // Tapping a section in the nav — records a step so Back returns to where you were.
 function renderDoor(id){
   if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
-  if(id === 'sites'){ HENK_SITES_VIEW = 'active'; }
+  if(id === 'sites'){
+    HENK_SITES_VIEW = 'active';
+    // Henk's Sites tab hosts the archive — land on the finder each time.
+    if(CURRENT_ROLE === 'henk'){ DU_VIEW = 'archive'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; DU_SEARCH = ''; DU_ARCH_LEADER = ''; }
+  }
   SUMMARY_SITE = null;   // tapping any nav tab exits an open site summary
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
   paintDoor(id);
@@ -1462,6 +1466,10 @@ async function renderDailyUpdates(){
 
 // Archive views are proper history steps, so the phone's Back button walks
 // site -> archive -> today instead of jumping out of the section.
+// Henk's daily-update archive lives under his single "Sites" tab; the owner's
+// lives under a separate "Daily Updates" section.
+function duSection(){ return CURRENT_ROLE === 'henk' ? 'sites' : 'dailyupdates'; }
+
 function duGo(view, siteId, leaderKey){
   DU_VIEW = view;
   DU_SITE = siteId || null;
@@ -1480,7 +1488,7 @@ function duGo(view, siteId, leaderKey){
     const n = new Date();
     DU_CAL = { y: n.getFullYear(), m: n.getMonth() };
   }
-  pushView({ kind:'door', role: CURRENT_ROLE, section:'dailyupdates',
+  pushView({ kind:'door', role: CURRENT_ROLE, section:duSection(),
              du: { view: view, site: siteId || null, leader: leaderKey || null } });
   paintUpdates();
 }
@@ -1730,7 +1738,7 @@ async function openWeek(siteId, monday){
   DU_WEEK_SITE = siteId;
   DU_WEEK_START = monday || duLastCompleteMonday();
   DU_WEEK_SEL = {};
-  pushView({ kind:'door', role: CURRENT_ROLE, section:'dailyupdates', du:{ view:'weekbuild', site:siteId } });
+  pushView({ kind:'door', role: CURRENT_ROLE, section:duSection(), du:{ view:'weekbuild', site:siteId } });
   const body = $('updatesBody');
   if(body) body.innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Building the week…</div>`;
   await loadWeek();
@@ -1913,7 +1921,14 @@ function duPaintSite(){
 
   let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${s.name}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${mine.length} report${mine.length!==1?'s':''}</div>`;
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${mine.length} report${mine.length!==1?'s':''}</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+      <button class="cta-btn ghost" style="margin:0;height:44px;font-size:12.5px" onclick="duSiteInfoView('${s.id}')">ⓘ Site information</button>
+      <button class="cta-btn ghost" style="margin:0;height:44px;font-size:12.5px" onclick="openWeek('${s.id}')">📅 Weekly report</button>
+    </div>
+
+    <div class="section-lbl" style="margin-top:0">Daily updates</div>`;
 
   h += duCalendar(grouped, today, s);
 
@@ -1927,6 +1942,14 @@ function duPaintSite(){
       : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No reports on this site yet.</div>`;
   }
   return h;
+}
+
+// View-only site information from the archive (no summary loaded there).
+function duSiteInfoView(siteId){
+  const site = DU_SITELIST.find(function(s){ return s.id === siteId; });
+  if(!site) return;
+  SUMMARY = { site: site };   // archive has no live summary; give openSiteInfo a site
+  openSiteInfo(siteId, true);
 }
 
 // An outstanding name doubles as a Chase button — Henk is already looking at
@@ -3636,93 +3659,23 @@ function henkSitesView(v){ HENK_SITES_VIEW = v; renderHenkSites(); }
 
 async function renderHenkSites(){
   if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
-  const green = HENK_SITES_VIEW === 'active';
+  const archiveViews = ['archive','site','leader','weekly','weekbuild'];
+  if(archiveViews.indexOf(DU_VIEW) === -1) DU_VIEW = 'archive';
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">Door 2 · Ops</div>
     <div class="page-title">Sites</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
-      <button onclick="openAddSite()" style="background:#1FA24C;color:#fff;border:none;border-radius:14px;padding:22px 12px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.3);line-height:1.3">＋<br/>Add new site</button>
-      <button onclick="henkSitesView('${green?'archived':'active'}')" style="background:${green?'#D63A2E':'#8A8470'};color:#fff;border:none;border-radius:14px;padding:22px 12px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(214,58,46,0.3);line-height:1.3">🗄<br/>${green?'Site archived':'← Active sites'}</button>
-    </div>
-    <div id="henkBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading live data…</div></div>`;
-  await loadHenkData();
-  const body = $('henkBody');
-  if(!body || CURRENT_DOOR !== 'sites' || CURRENT_ROLE !== 'henk') return;
-
-  const active = HENK.sites.filter(function(s){ return s.status !== 'done'; });
-  const finished = HENK.sites.filter(function(s){ return s.status === 'done'; });
-
-  // The red block shows the archive (finished sites).
-  if(HENK_SITES_VIEW === 'archived'){
-    let ha = `<div class="section-lbl">Site archive (${finished.length})</div>`;
-    if(!finished.length){
-      ha += `<div class="empty-state ledger-card" style="padding:36px 20px"><div class="empty-state-ico">🗄</div><div class="empty-state-txt">No archived sites yet. When a site is finished it moves here.</div></div>`;
-    } else {
-      finished.forEach(function(s){
-        const stock = HENK.stock[s.id] || [];
-        const used = stock.reduce(function(a,r){ return a + (parseFloat(r.total_used)||0); }, 0);
-        ha += `<div class="ledger-card" style="padding:14px 16px;margin-bottom:10px;background:#F7F6F3;cursor:pointer" onclick="openSiteSummary('${s.id}')">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-            <div style="font-weight:800;font-size:13.5px;color:#5C5748">${s.name}</div>
-            <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#A39E8C;white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
-          </div>
-          <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${s.client||'No client'} · started ${fd(s.started)}${s.end_date?' · finished '+fd(s.end_date):''} · ${stock.length} product${stock.length!==1?'s':''} · ${used} used</div>
-        </div>`;
-      });
-    }
-    body.innerHTML = ha;
-    return;
-  }
-
-  if(!active.length && !finished.length){
-    body.innerHTML = `<div class="empty-state ledger-card" style="padding:40px 20px">
-      <div class="empty-state-ico">▦</div>
-      <div class="empty-state-txt">No sites yet.<br/>Use the green Add new site block above.</div></div>`;
-    return;
-  }
-
-  let h = '';
-  if(active.length) h += `<div class="section-lbl">Active sites (${active.length})</div>`;
-  active.forEach(function(s){
-    const stock = HENK.stock[s.id] || [];
-    const labourActual = parseFloat(s.labour_actual)||0;
-    const labourBudget = parseFloat(s.labour_budget)||0;
-
-    h += `<div class="ledger-card" style="padding:16px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-        <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
-        <span style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:${henkLeaderColour(s.team_leader)};white-space:nowrap">${henkLeaderName(s.team_leader)}</span>
-      </div>
-      <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">${s.client||'No client'} · started ${fd(s.started)}</div>
-
-      <button class="cta-btn" style="width:100%;margin:0 0 6px;height:44px;font-size:12.5px" onclick="openSiteSummary('${s.id}')">Open full summary — labour, costs &amp; profit →</button>
-      <div style="font-size:11px;color:#A39E8C;margin:0 0 8px">Labour, cherry picker, accommodation, petrol and Henk's fee are all managed on the summary now.</div>
-
-      <div class="section-lbl" style="margin:14px 0 8px">Material on site &amp; used</div>`;
-
-    if(!stock.length){
-      h += `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No products on this site's stock sheet yet.</div>`;
-    } else {
-      h += `<table class="snap-table"><thead><tr>
-        <th>Product</th><th>Received</th><th>Used</th><th>On site</th>
-      </tr></thead><tbody>`;
-      stock.forEach(function(r){
-        h += `<tr>
-          <td>${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</td>
-          <td>${parseFloat(r.total_received)||0}</td>
-          <td>${parseFloat(r.total_used)||0}</td>
-          <td><strong>${parseFloat(r.qty_on_site)||0}</strong></td>
-        </tr>`;
-      });
-      h += `</tbody></table>
-      <div style="font-size:10.5px;color:#A39E8C;margin-top:6px">Counted in each product's own unit — drums, tubes, bags. Prices appear here once invoices are captured in the app.</div>`;
-    }
-
-    h += `</div>`;
-  });
-
-  h += `<div style="font-size:11px;color:#A39E8C;margin-top:6px;text-align:center">Tap the red block above to see the site archive.</div>`;
-  body.innerHTML = h;
+    <button onclick="openAddSite()" style="width:100%;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28);margin-bottom:16px">＋ Add new site</button>
+    <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading sites…</div></div>`;
+  const res = await Promise.all([
+    sbFetch('daily_updates', `select=${DU_COLS}&limit=400`),
+    sbGetRows('sites', 'order=started.desc')
+  ]);
+  DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
+  DU_SITELIST = Array.isArray(res[1]) ? res[1] : [];
+  if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
+  if(CURRENT_DOOR !== 'sites' || CURRENT_ROLE !== 'henk') return;
+  if(DU_VIEW === 'weekbuild' && DU_WEEK_SITE && !DU_WEEK_DATA){ await loadWeek(); }
+  paintUpdates();
 }
 
 async function saveHenkLabour(siteId){
