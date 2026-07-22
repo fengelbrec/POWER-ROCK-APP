@@ -4038,6 +4038,8 @@ async function renderHenkSites(){
     <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
     <div class="page-title">Sites</div>
     <button onclick="openAddSite()" style="width:100%;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28);margin-bottom:14px">＋ Add new site</button>
+    <div id="liveSites"></div>
+    <div class="section-lbl" style="margin-top:0">Archive</div>
     <div style="display:flex;gap:4px;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:16px">
       <button style="${tabBtn(!onWeekly)}" onclick="henkSitesTab('archive')">📋 Daily archive</button>
       <button style="${tabBtn(onWeekly)}" onclick="henkSitesTab('weeklyhome')">📅 Weekly archive</button>
@@ -4051,8 +4053,33 @@ async function renderHenkSites(){
   DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
   if(CURRENT_DOOR !== 'sites') return;
+  if($('liveSites')) $('liveSites').innerHTML = henkLiveSitesHtml();
   if(DU_VIEW === 'weekbuild' && DU_WEEK_SITE && !DU_WEEK_DATA){ await loadWeek(); }
   paintUpdates();
+}
+
+// Live sites at the top of the Sites tab: the current (not-done) jobs, newest
+// first, tap one to open its full summary. The archive sits below.
+function henkLiveSitesHtml(){
+  const active = (DU_SITELIST||[]).filter(function(s){ return s.status !== 'done'; })
+    .sort(function(a,b){ return new Date(b.started||0) - new Date(a.started||0); });
+  if(!active.length){
+    return `<div style="font-size:12px;color:#A39E8C;padding:2px 2px 14px">No current sites. Tap ＋ Add new site to start one.</div>`;
+  }
+  let h = `<div class="section-lbl" style="margin-top:0">Current sites — live now (${active.length})</div>`;
+  h += active.map(function(s){
+    const col = henkLeaderColour(s.team_leader);
+    const days = henkDays(s);
+    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openSiteSummary('${s.id}')">
+      <div style="width:6px;background:${col};flex:0 0 auto"></div>
+      <div style="padding:13px 15px;flex:1;min-width:0">
+        <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}${days?' · Day '+days:''}</div>
+      </div>
+      <div style="align-self:center;padding-right:14px;color:#C9C5BA;font-weight:800">›</div>
+    </div>`;
+  }).join('');
+  return h;
 }
 
 async function saveHenkLabour(siteId){
