@@ -3439,6 +3439,18 @@ function renderSuppliers(){
 // Ferdi confirms → material cost + stock update automatically
 // ───────────────────────────────────────────
 let INBOX_CACHE = [];
+let INBOX_RECENT = [];       // every confirmed invoice, for the tabbed history + detail view
+let INBOX_TAB = 'All';       // All | Prominent | Plascon | Protech | Other
+
+// Which supplier tab an invoice belongs to (matches on the supplier name).
+function invoiceSupplierTab(supplier){
+  const s = String(supplier||'').toLowerCase();
+  if(s.indexOf('prominent') !== -1) return 'Prominent';
+  if(s.indexOf('plascon')   !== -1) return 'Plascon';
+  if(s.indexOf('protech') !== -1 || s.indexOf('protective technical') !== -1) return 'Protech';
+  return 'Other';
+}
+const INBOX_TABS = ['All','Prominent','Plascon','Protech','Other'];
 
 async function renderInvoiceInbox(){
   $('pageBody').innerHTML = `
@@ -3448,8 +3460,9 @@ async function renderInvoiceInbox(){
     <div id="inboxBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading…</div></div>`;
 
   const pending = await sbGetRows('invoice_inbox', 'status=eq.pending&order=received_at.desc');
-  const recent = await sbGetRows('invoice_inbox', 'status=eq.confirmed&order=processed_at.desc&limit=8');
+  const recent = await sbGetRows('invoice_inbox', 'status=eq.confirmed&order=invoice_date.desc.nullslast&limit=500');
   INBOX_CACHE = pending || [];
+  INBOX_RECENT = recent || [];
   const body = $('inboxBody'); if(!body) return;
 
   let h = '';
@@ -3483,17 +3496,82 @@ async function renderInvoiceInbox(){
     });
   }
 
-  if(recent && recent.length){
-    h += `<div class="section-lbl">Recently processed</div><div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
-    recent.forEach(inv=>{
-      h += `<div class="snap-expense-line" style="padding:9px 0">
-        <span>${inv.supplier||''} ${inv.invoice_number?'· '+inv.invoice_number:''} · ${inv.processed_at?fd(inv.processed_at):''}</span>
-        <span class="disp" style="font-weight:700">${R(inv.total)}</span>
-      </div>`;
-    });
-    h += `</div>`;
-  }
+  h += `<div id="inboxRecent">${inboxRecentHtml()}</div>`;
   body.innerHTML = h;
+}
+
+// The processed-invoice history: supplier tabs, newest first, each row shows the
+// site and opens the full detail. Repaints in place when a tab is tapped.
+function inboxRecentHtml(){
+  const all = INBOX_RECENT || [];
+  if(!all.length) return '';
+  const counts = { All: all.length, Prominent:0, Plascon:0, Protech:0, Other:0 };
+  all.forEach(inv=>{ counts[invoiceSupplierTab(inv.supplier)]++; });
+  const list = INBOX_TAB === 'All' ? all : all.filter(inv=>invoiceSupplierTab(inv.supplier) === INBOX_TAB);
+
+  let h = `<div class="section-lbl">Recently processed</div>`;
+  h += `<div style="display:flex;gap:4px;overflow-x:auto;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:12px;-webkit-overflow-scrolling:touch">`;
+  INBOX_TABS.forEach(t=>{
+    const on = t === INBOX_TAB;
+    h += `<button onclick="inboxSetTab('${t}')" style="flex:1 0 auto;white-space:nowrap;padding:9px 13px;border:none;border-radius:9px;background:${on?'#1A1A1A':'transparent'};color:${on?'#fff':'#8A8470'};font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">${t}${counts[t]?` <span style="opacity:.65">${counts[t]}</span>`:''}</button>`;
+  });
+  h += `</div>`;
+
+  if(!list.length){ return h + `<div style="font-size:12px;color:#A39E8C;padding:8px 2px 14px">No invoices from this supplier yet.</div>`; }
+
+  h += `<div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
+  list.forEach(inv=>{
+    const site = siteById(inv.site_guess);
+    const siteName = site ? site.name : (inv.reference || '');
+    const dateStr = inv.invoice_date ? fd(inv.invoice_date) : (inv.processed_at?fd(inv.processed_at):'');
+    h += `<div onclick="openInvoiceDetail('${inv.id}')" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid #EFECE3;cursor:pointer">
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:700;color:#1A1A1A">${inv.supplier||'Unknown'}${inv.invoice_number?` · ${inv.invoice_number}`:''}</div>
+        <div style="font-size:11px;color:#8A8470;margin-top:2px">${dateStr}${siteName?` · 📍 ${siteName}`:' · 📍 no site'}</div>
+      </div>
+      <div style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:700">${R(inv.total)}</span><div style="font-size:10px;color:#C9C5BA;font-weight:800">view ›</div></div>
+    </div>`;
+  });
+  h += `</div>`;
+  return h;
+}
+
+function inboxSetTab(tab){
+  INBOX_TAB = tab;
+  const box = document.getElementById('inboxRecent');
+  if(box) box.innerHTML = inboxRecentHtml();
+}
+
+// Full detail for one processed invoice — everything the app captured, plus a
+// link to the original document if one is ever stored.
+function openInvoiceDetail(id){
+  const inv = (INBOX_RECENT||[]).find(x=>x.id===id) || (INBOX_CACHE||[]).find(x=>x.id===id);
+  if(!inv) return;
+  const site = siteById(inv.site_guess);
+  const items = Array.isArray(inv.line_items) ? inv.line_items : [];
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:2px">
+      <div class="disp" style="font-size:17px;font-weight:800">${esc(inv.supplier||'Unknown supplier')}</div>
+      <div class="disp" style="font-size:18px;font-weight:800">${R(inv.total)}</div>
+    </div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${inv.invoice_number?'#'+esc(inv.invoice_number)+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${site?' · 📍 '+esc(site.name):(inv.reference?' · Ref: '+esc(inv.reference):'')}</div>`;
+
+  if(items.length){
+    h += `<div class="section-lbl" style="margin-top:0">What was on the invoice</div><div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:#5C5748;line-height:1.9">${items.map(it=>`${esc(it.product||'?')}${it.colour?' ('+esc(it.colour)+')':''} — <strong>${it.qty||0} × ${esc(it.unit||'')}</strong>`).join('<br/>')}</div>`;
+  }
+  if(inv.raw_summary){
+    h += `<div class="section-lbl" style="margin-top:0">Summary</div><div style="font-size:12.5px;color:#1A1A1A;line-height:1.6;margin-bottom:14px">${esc(inv.raw_summary)}</div>`;
+  }
+
+  h += `<div class="section-lbl" style="margin-top:0">Original invoice</div>`;
+  if(inv.file_url){
+    h += `<a href="${inv.file_url}" target="_blank" rel="noopener" class="cta-btn" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px">📄 Open the original invoice</a>`;
+  } else {
+    h += `<div style="background:#FFF6E9;border:1px solid #E9D8B8;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:11.5px;color:#8A6D2F;line-height:1.6">The original PDF isn't saved in the app yet — only the details above, read from the email. The PDF is still in the invoices mailbox (<strong>powerrock.invoices@gmail.com</strong>). Ask me to switch on PDF saving and it will open right here.</div>`;
+  }
+  h += `<button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML = h;
+  openModal('modalSiteDetail');
 }
 
 function guessSiteId(text){
