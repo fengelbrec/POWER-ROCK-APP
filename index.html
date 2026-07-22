@@ -792,7 +792,6 @@ function uid(){ return 'id_' + Date.now() + '_' + Math.floor(Math.random()*10000
 
 const NAV = [
   {id:'overview', label:'Overview', icon:'◆'},
-  {id:'dailyupdates', label:'Site Updates', icon:'📋'},
   {id:'sites', label:'Sites', icon:'▦'},
   {id:'financials', label:'Financials', icon:'▤'},
   {id:'splitengine', label:'Payment Split', icon:'◫'},
@@ -809,6 +808,7 @@ const NAV = [
 const NAV_HENK = [
   {id:'overview', label:'Overview', icon:'◆'},
   {id:'sites', label:'Sites', icon:'▦'},
+  {id:'invoiceinbox', label:'Invoice Inbox', icon:'📥'},
 ];
 
 function navFor(){ return CURRENT_ROLE === 'henk' ? NAV_HENK : NAV; }
@@ -1207,8 +1207,8 @@ function renderDoor(id){
   if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
   if(id === 'sites'){
     HENK_SITES_VIEW = 'active';
-    // Henk's Sites tab hosts the archive — land on the finder each time.
-    if(CURRENT_ROLE === 'henk'){ DU_VIEW = 'archive'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; DU_SEARCH = ''; DU_ARCH_LEADER = ''; }
+    // The Sites tab hosts the archive (both doors now) — land on the finder each time.
+    DU_VIEW = 'archive'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; DU_SEARCH = ''; DU_ARCH_LEADER = '';
   }
   SUMMARY_SITE = null;   // tapping any nav tab exits an open site summary
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
@@ -1223,13 +1223,14 @@ function paintDoor(id){
     // Henk can only ever reach his own three sections, whatever id arrives.
     const henkRenderers = {
       overview: renderHenkOverview, dailyupdates: renderDailyUpdates, sites: renderHenkSites,
+      invoiceinbox: renderInvoiceInbox,
     };
     (henkRenderers[id] || renderHenkOverview)();
     return;
   }
   const renderers = {
     overview: renderOverview, dailyupdates: renderDailyUpdates,
-    sites: renderSites, financials: renderFinancials,
+    sites: renderHenkSites, financials: renderFinancials,
     splitengine: renderSplitEngine, vat: renderVAT, cashflow: renderCashflow,
     suppliers: renderSuppliers, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
   };
@@ -1524,7 +1525,7 @@ async function renderDailyUpdates(){
 // site -> archive -> today instead of jumping out of the section.
 // Henk's daily-update archive lives under his single "Sites" tab; the owner's
 // lives under a separate "Daily Updates" section.
-function duSection(){ return CURRENT_ROLE === 'henk' ? 'sites' : 'dailyupdates'; }
+function duSection(){ return 'sites'; }   // both doors host the archive under Sites now
 
 function duGo(view, siteId, leaderKey){
   DU_VIEW = view;
@@ -3097,7 +3098,7 @@ function completeSite(id){
   saveData('Site moved to Previous Sites');
   sbUpsert('sites', { id:s.id, name:s.name, client:s.client, team_leader:s.team, status:'done', started:s.started });
   closeModal('modalSiteDetail');
-  renderSites();
+  renderDoor('sites');
 }
 function reactivateSite(id){
   const s = siteById(id);
@@ -3106,7 +3107,7 @@ function reactivateSite(id){
   saveData('Site reactivated');
   sbUpsert('sites', { id:s.id, name:s.name, client:s.client, team_leader:s.team, status:'active', started:s.started });
   closeModal('modalSiteDetail');
-  renderSites();
+  renderDoor('sites');
 }
 
 function setLabourActual(siteId){
@@ -3200,7 +3201,7 @@ function deleteSite(id){
   DATA.payments = DATA.payments.filter(p=>p.siteId!==id);
   saveData('Site deleted');
   closeModal('modalSiteDetail');
-  renderSites();
+  renderDoor('sites');
 }
 
 // ───────────────────────────────────────────
@@ -3441,6 +3442,11 @@ function renderSuppliers(){
 let INBOX_CACHE = [];
 let INBOX_RECENT = [];       // every confirmed invoice, for the tabbed history + detail view
 let INBOX_TAB = 'All';       // All | Prominent | Plascon | Protech | Other
+let INBOX_SITES = [];        // sites read from the shared DB, so both doors match
+
+// The inbox reads sites from Supabase (not the owner's device), so the site
+// picker and site labels work the same on Ferdi's and Henk's doors.
+function inboxSiteById(id){ return (INBOX_SITES||[]).find(function(s){ return s.id===id; }) || siteById(id); }
 
 // Which supplier tab an invoice belongs to (matches on the supplier name).
 function invoiceSupplierTab(supplier){
@@ -3454,15 +3460,20 @@ const INBOX_TABS = ['All','Prominent','Plascon','Protech','Other'];
 
 async function renderInvoiceInbox(){
   $('pageBody').innerHTML = `
-    <div class="page-eyebrow">Door 1 · Owner</div>
+    <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
     <div class="page-title">Invoice Inbox</div>
     <div style="font-size:12px;color:#8A8470;margin-bottom:16px;line-height:1.7">Invoices emailed to <strong>powerrock.invoices@gmail.com</strong> land here. Check what was read, pick the site if the guess is wrong, and tap Confirm — the material cost and paint stock update automatically. Nothing changes without your tap.</div>
     <div id="inboxBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading…</div></div>`;
 
-  const pending = await sbGetRows('invoice_inbox', 'status=eq.pending&order=received_at.desc');
-  const recent = await sbGetRows('invoice_inbox', 'status=eq.confirmed&order=invoice_date.desc.nullslast&limit=500');
-  INBOX_CACHE = pending || [];
-  INBOX_RECENT = recent || [];
+  const res = await Promise.all([
+    sbGetRows('invoice_inbox', 'status=eq.pending&order=received_at.desc'),
+    sbGetRows('invoice_inbox', 'status=eq.confirmed&order=invoice_date.desc.nullslast&limit=500'),
+    sbGetRows('sites', 'order=started.desc')
+  ]);
+  INBOX_CACHE = Array.isArray(res[0]) ? res[0] : [];
+  INBOX_RECENT = Array.isArray(res[1]) ? res[1] : [];
+  INBOX_SITES = (Array.isArray(res[2]) ? res[2] : []).map(normSiteEnd);
+  if(CURRENT_DOOR !== 'invoiceinbox') return;   // moved on while loading
   const body = $('inboxBody'); if(!body) return;
 
   let h = '';
@@ -3487,7 +3498,7 @@ async function renderInvoiceInbox(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${editProductsBtn(inv)}${invoiceFileBtn(inv)}</div>
         <label class="f-label">Which site is this for?</label>
         <select class="f-select" id="inbsite_${idx}">
-          ${DATA.sites.filter(s=>s.status!=='done').map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}</option>`).join('')}
+          ${INBOX_SITES.filter(s=>s.status!=='done').map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}</option>`).join('')}
         </select>
         <div style="display:flex;gap:8px">
           <button class="cta-btn" style="flex:1" onclick="confirmInboxInvoice(${idx})">✓ Confirm — update cost &amp; stock</button>
@@ -3522,7 +3533,7 @@ function inboxRecentHtml(){
 
   h += `<div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
   list.forEach(inv=>{
-    const site = siteById(inv.site_guess);
+    const site = inboxSiteById(inv.site_guess);
     const siteName = site ? site.name : (inv.reference || '');
     const dateStr = inv.invoice_date ? fd(inv.invoice_date) : (inv.processed_at?fd(inv.processed_at):'');
     h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #EFECE3">
@@ -3635,7 +3646,7 @@ function guessSiteId(text){
   const t = slugId(text||'');
   if(!t) return '';
   let hit = '';
-  DATA.sites.filter(s=>s.status!=='done').forEach(s=>{
+  (INBOX_SITES||[]).filter(s=>s.status!=='done').forEach(s=>{
     if(hit) return;
     const tokens = slugId(s.name).split('_').filter(w=>w.length>3);
     if(tokens.some(w=>t.includes(w))) hit = s.id;
@@ -3665,14 +3676,18 @@ function matchStockRow(rows, name){
 async function confirmInboxInvoice(idx){
   const inv = INBOX_CACHE[idx]; if(!inv) return;
   const siteId = $('inbsite_'+idx) ? $('inbsite_'+idx).value : '';
-  const s = siteById(siteId);
-  if(!s){ alert('Please choose a site first.'); return; }
+  const siteMeta = inboxSiteById(siteId);
+  if(!siteId || !siteMeta){ alert('Please choose a site first.'); return; }
+  const s = siteById(siteId);   // owner's local copy (may be absent on Henk's device)
 
-  // 1. Material cost onto the site
-  if(!s.materialEntries) s.materialEntries = [];
-  s.materialEntries.push({ id: uid(), date: inv.invoice_date || new Date().toISOString().split('T')[0], supplier: inv.supplier||'', invNo: inv.invoice_number||'', amount: parseFloat(inv.total)||0 });
+  // 1. Material cost onto the owner's local record (only if this device has the site).
+  //    The shared material figure comes from the confirmed invoice total itself.
+  if(s){
+    if(!s.materialEntries) s.materialEntries = [];
+    s.materialEntries.push({ id: uid(), date: inv.invoice_date || new Date().toISOString().split('T')[0], supplier: inv.supplier||'', invNo: inv.invoice_number||'', amount: parseFloat(inv.total)||0 });
+  }
 
-  // 2. Stock: add received quantities per line item (matched to the sheet, or added as new)
+  // 2. Stock (shared, in Supabase): add received quantities per line item.
   const rows = await sbGetRows('paint_stock', `site_id=eq.${siteId}`);
   const items = Array.isArray(inv.line_items) ? inv.line_items : [];
   for(const it of items){
@@ -3682,15 +3697,14 @@ async function confirmInboxInvoice(idx){
     if(!r){
       r = { id:'stk_'+siteId+'_'+slugId(it.product)+'_'+slugId(it.colour||''), site_id:siteId, product:it.product, colour:it.colour||'', unit:it.unit||'20L drums', qty_on_site:0, total_received:0, total_used:0 };
       rows.push(r);
-      if(!s.products) s.products = [];
-      s.products.push({ product: it.product, colour: it.colour||'', unit: it.unit||'20L drums' });
+      if(s){ if(!s.products) s.products = []; s.products.push({ product: it.product, colour: it.colour||'', unit: it.unit||'20L drums' }); }
     }
     r.qty_on_site = (parseFloat(r.qty_on_site)||0) + qty;
     r.total_received = (parseFloat(r.total_received)||0) + qty;
     await sbUpsert('paint_stock', { id:r.id, site_id:siteId, product:r.product, colour:r.colour||'', unit:r.unit||'20L drums', qty_on_site:r.qty_on_site, total_received:r.total_received, total_used:r.total_used||0, updated_at:new Date().toISOString() });
   }
 
-  saveData('Invoice confirmed — cost & stock updated');
+  if(s) saveData('Invoice confirmed — cost & stock updated'); else showSaveToast('Invoice confirmed — cost & stock updated');
   await sbPatch('invoice_inbox', `id=eq.${encodeURIComponent(inv.id)}`, { status:'confirmed', site_guess:siteId, processed_at:new Date().toISOString() });
   renderInvoiceInbox();
 }
@@ -4005,7 +4019,7 @@ async function renderHenkOverview(){
 // renderDoor starts the fetch; duGo switches the view straight away and the
 // fetch repaints when it lands — no timer to guess at.
 function duJumpToLeader(leaderKey){
-  renderDoor('dailyupdates');
+  renderDoor('sites');
   duGo('leader', null, leaderKey);
 }
 
@@ -4021,7 +4035,7 @@ async function renderHenkSites(){
     ? 'flex:1;padding:11px;border:none;border-radius:9px;background:#1A1A1A;color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer'
     : 'flex:1;padding:11px;border:none;border-radius:9px;background:transparent;color:#8A8470;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer'; };
   $('pageBody').innerHTML = `
-    <div class="page-eyebrow">Door 2 · Ops</div>
+    <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
     <div class="page-title">Sites</div>
     <button onclick="openAddSite()" style="width:100%;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28);margin-bottom:14px">＋ Add new site</button>
     <div style="display:flex;gap:4px;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:16px">
@@ -4036,7 +4050,7 @@ async function renderHenkSites(){
   DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
   DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
-  if(CURRENT_DOOR !== 'sites' || CURRENT_ROLE !== 'henk') return;
+  if(CURRENT_DOOR !== 'sites') return;
   if(DU_VIEW === 'weekbuild' && DU_WEEK_SITE && !DU_WEEK_DATA){ await loadWeek(); }
   paintUpdates();
 }
