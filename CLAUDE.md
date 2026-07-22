@@ -37,13 +37,20 @@ for review in the app.
 
 | PIN | Person | Notes |
 |------|---------|-------|
-| 0000 | Ferdi | Door 1, owner financials |
+| 1010 | Ferdi | Door 1, owner financials — access code for the locked owner door |
+| 5555 | Henk | Door 2, ops manager |
 | 1111 | Joe | |
 | 2222 | Costa | |
 | 3333 | Daniel | |
 | 4444 | Talent | |
 
+**Owner door locked:** Door 1 is closed (`LOCKED_DOORS = { 1: true }` in `index.html`)
+so Henk can test his side without wandering into the owner financials. It opens only
+with Ferdi's code **1010** (`DOOR_UNLOCK = { 1: '1010' }`). The old `0000` no longer
+opens it. Set `LOCKED_DOORS[1]` to `false` to reopen the door for everyone.
+
 **Known issue:** PINs are visible in the public code — proper logins are a future task.
+The 1010 lock deters casual scrolling but is not truly secret for the same reason.
 
 ## How to work with Ferdi
 

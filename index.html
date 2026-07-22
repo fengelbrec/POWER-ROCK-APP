@@ -265,7 +265,7 @@ input[type=password]{letter-spacing:5px}
           <div style="font-size:11px;color:#9C6000;margin-top:3px">Not the live app. Your team is unaffected.</div>
         </div>
         <label class="login-lbl">Open as</label>
-        <select class="login-input" id="testWho" style="height:52px">
+        <select class="login-input" id="testWho" style="height:52px" onchange="onTestWhoChange()">
           <option value="0000">Ferdi</option>
           <option value="5555">Henk</option>
           <option value="1111">Joe</option>
@@ -273,7 +273,11 @@ input[type=password]{letter-spacing:5px}
           <option value="3333">Daniel</option>
           <option value="4444">Talent</option>
         </select>
-        <button class="cta-btn dark" onclick="testOpen()">Open →</button>
+        <div id="testCodeRow" style="display:none;margin-top:12px">
+          <label class="login-lbl">Your access code</label>
+          <input class="login-input" id="testCode" type="password" inputmode="numeric" maxlength="6" placeholder="Enter code" onkeydown="if(event.key==='Enter')testOpen()" style="height:52px"/>
+        </div>
+        <button class="cta-btn dark" style="margin-top:12px" onclick="testOpen()">Open →</button>
         <div id="testErr" style="text-align:center;color:#B2342A;font-size:12.5px;font-weight:700;margin-top:10px;min-height:16px"></div>
       </div>
 
@@ -1060,7 +1064,8 @@ function fd(d){ return new Date(d).toLocaleDateString('en-ZA',{day:'numeric',mon
 // ── ONE FRONT DOOR — each PIN opens the right side of the app ──
 // Change these PINs any time (they are test PINs for now).
 const DOOR_PINS = {
-  '0000': { door: 1 },                       // Ferdi — full owner access
+  '0000': { door: 1 },                       // Ferdi — legacy code, now blocked by the lock
+  '1010': { door: 1 },                       // Ferdi — private access code (opens the locked door)
   '5555': { door: 2 },                       // Henk — ops manager
   '1111': { door: 3, leader: 'joe'    },     // Joe
   '2222': { door: 3, leader: 'costa'  },     // Costa
@@ -1068,11 +1073,16 @@ const DOOR_PINS = {
   '4444': { door: 3, leader: 'talent' },     // Talent
 };
 
-// LOCKED DOORS — a door listed here as true is closed: picking it shows a
-// "locked" message instead of opening. Nothing is deleted; set a door back to
-// false to reopen it. Door 1 = Ferdi (owner), 2 = Henk (ops), 3 = team leaders.
+// LOCKED DOORS — a door listed here as true is closed to everyone EXCEPT someone
+// who enters its private access code in DOOR_UNLOCK below. Nothing is deleted;
+// set a door back to false to reopen it for all. Door 1 = Ferdi (owner),
+// 2 = Henk (ops), 3 = team leaders.
 const LOCKED_DOORS = {
-  1: true,     // Ferdi's door — locked for now so Henk only tests his own side
+  1: true,     // Ferdi's door — locked so Henk only tests his own side
+};
+// A locked door opens only when this exact code is entered. Ferdi's door needs 1010.
+const DOOR_UNLOCK = {
+  1: '1010',
 };
 
 // Door 1 and Door 2 share the same shell. The role decides which sections
@@ -1101,20 +1111,42 @@ function testOpen(){
   const p = $('testWho').value;
   const route = DOOR_PINS[p];
   const te = $('testErr');
+  const codeRow = $('testCodeRow');
   if(route && LOCKED_DOORS[route.door]){
-    if(te) te.textContent = '🔒 This door is locked for now.';
+    const unlock = DOOR_UNLOCK[route.door];
+    if(!unlock){ if(te) te.textContent = '🔒 This door is locked for now.'; return; }
+    // Locked door with a private code: reveal the code box and require the code.
+    const code = String(($('testCode')||{}).value||'').trim();
+    if(code !== unlock){
+      if(codeRow) codeRow.style.display = 'block';
+      if(te) te.textContent = code ? 'That code is not right.' : '🔒 Locked — enter your access code to open your door.';
+      return;
+    }
+    // Correct code — open by handing the unlock code to doLogin (which lets it past the lock).
+    if(te) te.textContent = '';
+    if(codeRow) codeRow.style.display = 'none';
+    $('lPin').value = unlock;
+    doLogin();
     return;
   }
   if(te) te.textContent = '';
+  if(codeRow) codeRow.style.display = 'none';
   $('lPin').value = p;
   doLogin();
+}
+// Hide/reset the code box whenever the person picker changes.
+function onTestWhoChange(){
+  const codeRow = $('testCodeRow');
+  if(codeRow) codeRow.style.display = 'none';
+  if($('testCode')) $('testCode').value = '';
+  if($('testErr')) $('testErr').textContent = '';
 }
 
 function doLogin(){
   const p = $('lPin').value;
   const e = $('lErr');
   const route = DOOR_PINS[p];
-  if(route && LOCKED_DOORS[route.door]){
+  if(route && LOCKED_DOORS[route.door] && p !== DOOR_UNLOCK[route.door]){
     $('lPin').value='';
     e.textContent = '🔒 This door is locked for now.';
     return;
