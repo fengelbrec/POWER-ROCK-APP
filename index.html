@@ -3484,6 +3484,7 @@ async function renderInvoiceInbox(){
         <div style="font-size:11px;color:#8A8470;margin-bottom:10px">${inv.invoice_number?'#'+inv.invoice_number+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${inv.reference?' · Ref: '+inv.reference:''}</div>
         ${items.length?`<div style="background:#F7F6F3;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#5C5748;line-height:1.9">${items.map(it=>`${it.product||'?'}${it.colour?' ('+it.colour+')':''} — <strong>${it.qty||0} × ${it.unit||''}</strong>`).join('<br/>')}</div>`:''}
         ${inv.raw_summary?`<div style="font-size:11px;color:#A39E8C;margin-bottom:10px">${inv.raw_summary}</div>`:''}
+        <div style="margin-bottom:12px">${invoiceFileBtn(inv)}</div>
         <label class="f-label">Which site is this for?</label>
         <select class="f-select" id="inbsite_${idx}">
           ${DATA.sites.filter(s=>s.status!=='done').map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}</option>`).join('')}
@@ -3524,12 +3525,15 @@ function inboxRecentHtml(){
     const site = siteById(inv.site_guess);
     const siteName = site ? site.name : (inv.reference || '');
     const dateStr = inv.invoice_date ? fd(inv.invoice_date) : (inv.processed_at?fd(inv.processed_at):'');
-    h += `<div onclick="openInvoiceDetail('${inv.id}')" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid #EFECE3;cursor:pointer">
-      <div style="min-width:0">
+    h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #EFECE3">
+      <div style="min-width:0;flex:1">
         <div style="font-size:13px;font-weight:700;color:#1A1A1A">${inv.supplier||'Unknown'}${inv.invoice_number?` · ${inv.invoice_number}`:''}</div>
         <div style="font-size:11px;color:#8A8470;margin-top:2px">${dateStr}${siteName?` · 📍 ${siteName}`:' · 📍 no site'}</div>
       </div>
-      <div style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:700">${R(inv.total)}</span><div style="font-size:10px;color:#C9C5BA;font-weight:800">view ›</div></div>
+      <div style="text-align:right;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+        <span class="disp" style="font-weight:700">${R(inv.total)}</span>
+        ${invoiceFileBtn(inv)}
+      </div>
     </div>`;
   });
   h += `</div>`;
@@ -3542,36 +3546,29 @@ function inboxSetTab(tab){
   if(box) box.innerHTML = inboxRecentHtml();
 }
 
-// Full detail for one processed invoice — everything the app captured, plus a
-// link to the original document if one is ever stored.
-function openInvoiceDetail(id){
-  const inv = (INBOX_RECENT||[]).find(x=>x.id===id) || (INBOX_CACHE||[]).find(x=>x.id===id);
-  if(!inv) return;
-  const site = siteById(inv.site_guess);
-  const items = Array.isArray(inv.line_items) ? inv.line_items : [];
-  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:2px">
-      <div class="disp" style="font-size:17px;font-weight:800">${esc(inv.supplier||'Unknown supplier')}</div>
-      <div class="disp" style="font-size:18px;font-weight:800">${R(inv.total)}</div>
-    </div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${inv.invoice_number?'#'+esc(inv.invoice_number)+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${site?' · 📍 '+esc(site.name):(inv.reference?' · Ref: '+esc(inv.reference):'')}</div>`;
-
-  if(items.length){
-    h += `<div class="section-lbl" style="margin-top:0">What was on the invoice</div><div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:#5C5748;line-height:1.9">${items.map(it=>`${esc(it.product||'?')}${it.colour?' ('+esc(it.colour)+')':''} — <strong>${it.qty||0} × ${esc(it.unit||'')}</strong>`).join('<br/>')}</div>`;
-  }
-  if(inv.raw_summary){
-    h += `<div class="section-lbl" style="margin-top:0">Summary</div><div style="font-size:12.5px;color:#1A1A1A;line-height:1.6;margin-bottom:14px">${esc(inv.raw_summary)}</div>`;
-  }
-
-  h += `<div class="section-lbl" style="margin-top:0">Original invoice</div>`;
+// The button next to an invoice: opens the stored PDF, or lets you attach one.
+function invoiceFileBtn(inv){
   if(inv.file_url){
-    h += `<a href="${inv.file_url}" target="_blank" rel="noopener" class="cta-btn" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px">📄 Open the original invoice</a>`;
-  } else {
-    h += `<div style="background:#FFF6E9;border:1px solid #E9D8B8;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:11.5px;color:#8A6D2F;line-height:1.6">The original PDF isn't saved in the app yet — only the details above, read from the email. The PDF is still in the invoices mailbox (<strong>powerrock.invoices@gmail.com</strong>). Ask me to switch on PDF saving and it will open right here.</div>`;
+    return `<a href="${inv.file_url}" target="_blank" rel="noopener" style="display:inline-block;background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800">📄 Invoice</a>`;
   }
-  h += `<button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
-  $('siteDetailContent').innerHTML = h;
-  openModal('modalSiteDetail');
+  return `<label style="display:inline-block;background:#F0EEE6;color:#5C5748;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800;cursor:pointer">＋ Attach PDF<input type="file" accept="application/pdf,image/*" style="display:none" onchange="attachInvoicePdf('${inv.id}',this)"/></label>`;
+}
+
+// Attach the original invoice file to a row: upload to the locker, save the link.
+async function attachInvoicePdf(id, input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  showSaveToast('Uploading invoice…');
+  const safe = String(f.name||'invoice.pdf').replace(/[^A-Za-z0-9._-]+/g,'_');
+  const path = 'invoices/' + id + '_' + Date.now() + '_' + safe;
+  const url = await sbUploadFile(path, f);
+  if(!url){ showSaveToast('Upload failed — check your signal'); return; }
+  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(id), { file_url: url });
+  if(!ok){ showSaveToast('Uploaded, but could not link it — is the file_url column added?'); return; }
+  const inv = (INBOX_RECENT||[]).find(x=>x.id===id) || (INBOX_CACHE||[]).find(x=>x.id===id);
+  if(inv) inv.file_url = url;
+  showSaveToast('Invoice attached');
+  const box = document.getElementById('inboxRecent'); if(box) box.innerHTML = inboxRecentHtml();
 }
 
 function guessSiteId(text){
