@@ -3484,7 +3484,7 @@ async function renderInvoiceInbox(){
         <div style="font-size:11px;color:#8A8470;margin-bottom:10px">${inv.invoice_number?'#'+inv.invoice_number+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${inv.reference?' · Ref: '+inv.reference:''}</div>
         ${items.length?`<div style="background:#F7F6F3;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#5C5748;line-height:1.9">${items.map(it=>`${it.product||'?'}${it.colour?' ('+it.colour+')':''} — <strong>${it.qty||0} × ${it.unit||''}</strong>`).join('<br/>')}</div>`:''}
         ${inv.raw_summary?`<div style="font-size:11px;color:#A39E8C;margin-bottom:10px">${inv.raw_summary}</div>`:''}
-        <div style="margin-bottom:12px">${invoiceFileBtn(inv)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${editProductsBtn(inv)}${invoiceFileBtn(inv)}</div>
         <label class="f-label">Which site is this for?</label>
         <select class="f-select" id="inbsite_${idx}">
           ${DATA.sites.filter(s=>s.status!=='done').map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}</option>`).join('')}
@@ -3532,7 +3532,7 @@ function inboxRecentHtml(){
       </div>
       <div style="text-align:right;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-end;gap:5px">
         <span class="disp" style="font-weight:700">${R(inv.total)}</span>
-        ${invoiceFileBtn(inv)}
+        <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">${editProductsBtn(inv)}${invoiceFileBtn(inv)}</div>
       </div>
     </div>`;
   });
@@ -3546,29 +3546,89 @@ function inboxSetTab(tab){
   if(box) box.innerHTML = inboxRecentHtml();
 }
 
-// The button next to an invoice: opens the stored PDF, or lets you attach one.
+// The 📄 button opens the stored PDF. Nothing shows if no PDF was saved.
 function invoiceFileBtn(inv){
   if(inv.file_url){
     return `<a href="${inv.file_url}" target="_blank" rel="noopener" style="display:inline-block;background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800">📄 Invoice</a>`;
   }
-  return `<label style="display:inline-block;background:#F0EEE6;color:#5C5748;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800;cursor:pointer">＋ Attach PDF<input type="file" accept="application/pdf,image/*" style="display:none" onchange="attachInvoicePdf('${inv.id}',this)"/></label>`;
+  return '';
 }
 
-// Attach the original invoice file to a row: upload to the locker, save the link.
-async function attachInvoicePdf(id, input){
-  const f = input.files && input.files[0];
-  if(!f) return;
-  showSaveToast('Uploading invoice…');
-  const safe = String(f.name||'invoice.pdf').replace(/[^A-Za-z0-9._-]+/g,'_');
-  const path = 'invoices/' + id + '_' + Date.now() + '_' + safe;
-  const url = await sbUploadFile(path, f);
-  if(!url){ showSaveToast('Upload failed — check your signal'); return; }
-  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(id), { file_url: url });
-  if(!ok){ showSaveToast('Uploaded, but could not link it — is the file_url column added?'); return; }
-  const inv = (INBOX_RECENT||[]).find(x=>x.id===id) || (INBOX_CACHE||[]).find(x=>x.id===id);
-  if(inv) inv.file_url = url;
-  showSaveToast('Invoice attached');
-  const box = document.getElementById('inboxRecent'); if(box) box.innerHTML = inboxRecentHtml();
+// The ✏️ button opens the items read off the invoice so the names can be edited.
+function editProductsBtn(inv){
+  const n = Array.isArray(inv.line_items) ? inv.line_items.length : 0;
+  if(!n) return '';
+  return `<button onclick="openInvoiceProducts('${inv.id}')" style="display:inline-block;background:#F0EEE6;color:#5C5748;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800;font-family:inherit;cursor:pointer">✏️ Edit products</button>`;
+}
+
+function invoiceById(id){
+  return (INBOX_RECENT||[]).find(function(x){ return x.id===id; }) || (INBOX_CACHE||[]).find(function(x){ return x.id===id; });
+}
+
+// Show the items bought and let the names (not amounts) be edited. Saved names
+// flow to the site's stock sheet and the leaders' product picker.
+function openInvoiceProducts(id){
+  const inv = invoiceById(id);
+  if(!inv) return;
+  const items = Array.isArray(inv.line_items) ? inv.line_items : [];
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:2px">${esc(inv.supplier||'Invoice')}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${inv.invoice_number?'#'+esc(inv.invoice_number)+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}</div>
+    <div class="disp" style="font-size:18px;font-weight:800;margin-bottom:14px">${R(parseFloat(inv.total)||0)} <span style="font-size:11px;font-weight:600;color:#A39E8C">total — locked</span></div>
+    <div style="font-size:11.5px;color:#5C5748;line-height:1.6;margin-bottom:12px">These are the items bought. Rename any product so it reads the way you want on your stock and the leaders' product list. The amounts can't be changed — only the wording.</div>`;
+  if(!items.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:6px 2px 12px">No product lines were read on this invoice.</div>`;
+  } else {
+    items.forEach(function(li, i){
+      h += `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:11px 12px;margin-bottom:9px">
+        <div style="font-size:10px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-bottom:6px">${li.qty||0}${li.unit?' × '+esc(li.unit):''}${li.colour?' · '+esc(li.colour):''}</div>
+        <input class="f-input" id="ip_${i}" value="${String(li.product||'').replace(/"/g,'&quot;')}" style="margin:0;font-size:13px"/>
+      </div>`;
+    });
+  }
+  h += `<button class="cta-btn" style="margin-top:4px" onclick="saveInvoiceProducts('${inv.id}')">Save names</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
+  $('siteDetailContent').innerHTML = h;
+  openModal('modalSiteDetail');
+}
+
+async function saveInvoiceProducts(id){
+  const inv = invoiceById(id);
+  if(!inv) return;
+  const oldItems = Array.isArray(inv.line_items) ? inv.line_items : [];
+  const newItems = oldItems.map(function(li, i){
+    const el = $('ip_'+i);
+    const name = el ? String(el.value||'').trim() : li.product;
+    return Object.assign({}, li, { product: name || li.product });
+  });
+  // 1) Save the renamed lines on the invoice itself.
+  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(id), { line_items: newItems });
+  if(!ok){ showSaveToast('Could not save — check your signal'); return; }
+
+  // 2) If this invoice was already confirmed into a site, rename it in the stock
+  //    (Supabase) and the owner's local product list so it shows everywhere.
+  if(inv.status === 'confirmed' && inv.site_guess){
+    const siteId = inv.site_guess;
+    let rows = await sbGetRows('paint_stock', 'site_id=eq.'+encodeURIComponent(siteId));
+    rows = Array.isArray(rows) ? rows : [];
+    const s = siteById(siteId);
+    for(let i=0;i<oldItems.length;i++){
+      const oldName = String(oldItems[i].product||'').trim();
+      const newName = String(newItems[i].product||'').trim();
+      if(!oldName || oldName === newName) continue;
+      // Use the same matcher the confirm step uses, so we rename the exact row
+      // this invoice line was folded into (names aren't always identical).
+      const match = matchStockRow(rows, oldName);
+      if(match){ await sbPatch('paint_stock', 'id=eq.'+encodeURIComponent(match.id), { product: newName }); match.product = newName; }
+      if(s && Array.isArray(s.products)){ s.products.forEach(function(p){ if(String(p.product||'').trim() === oldName) p.product = newName; }); }
+    }
+    if(s && Array.isArray(s.products)){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); }catch(e){} }
+  }
+
+  inv.line_items = newItems;   // keep the open list in step
+  showSaveToast('Product names saved');
+  closeModal('modalSiteDetail');
+  renderInvoiceInbox();
 }
 
 function guessSiteId(text){
