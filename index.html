@@ -4646,11 +4646,12 @@ function paintSiteSummaryBody(){
       const invd = parseFloat(r.total_received)||0;
       const onS  = parseFloat(r.qty_on_site)||0;
       const used = Math.max(0, invd - onS);
-      h += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid #EFECE3">
-        <span style="font-size:12.5px;color:#1A1A1A">${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</span>
-        <span style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:800;font-size:13px">${used} ${unitLabel(r.unit)}</span><br/><span style="font-size:9.5px;color:#A39E8C">of ${invd} invoiced</span></span></div>`;
+      h += `<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #EFECE3">
+        <span style="font-size:12.5px;color:#1A1A1A;flex:1;min-width:0">${r.product}${r.colour?' <span style="color:#8A8470">('+r.colour+')</span>':''}</span>
+        <span style="text-align:right;white-space:nowrap"><span class="disp" style="font-weight:800;font-size:13px">${used} ${unitLabel(r.unit)}</span><br/><span style="font-size:9.5px;color:#A39E8C">of ${invd} invoiced</span></span>
+        <button onclick="deleteStockItem('${r.id}')" title="Remove this item (samples / once-off)" style="background:none;border:none;color:#C4A0A0;font-size:15px;cursor:pointer;flex:0 0 auto;padding:2px 4px;line-height:1">🗑</button></div>`;
     });
-    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">Used = invoiced minus what is still unopened on site. Used + on-site always adds back to the amount invoiced.</div></div>`;
+    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">Used = invoiced minus what is still unopened on site. Tap 🗑 to remove a sample or once-off buy from the list.</div></div>`;
   }
 
   // ── PAINT ON SITE (unused) ──
@@ -4674,6 +4675,29 @@ function paintSiteSummaryBody(){
   }
 
   body.innerHTML = h;
+}
+
+// Remove a stock line (samples, once-off buys). Clears it from Supabase so it
+// also drops off the leaders' paint list. Invoices and money are untouched.
+async function deleteStockItem(stockId){
+  const row = (SUMMARY && Array.isArray(SUMMARY.stock) ? SUMMARY.stock : []).find(function(r){ return r.id === stockId; });
+  const name = row ? row.product : 'this item';
+  if(!confirm('Remove "'+name+'" from this site\'s stock?\n\nUse this for samples and once-off buys. It also clears from the leaders\' paint list. It does not change any invoice or money.')) return;
+  let ok = false;
+  try{
+    const res = await fetch(SB_URL + '/rest/v1/paint_stock?id=eq.' + encodeURIComponent(stockId), {
+      method:'DELETE',
+      headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Prefer':'return=minimal' }
+    });
+    ok = res.ok;
+  }catch(e){ ok = false; }
+  if(ok){
+    if(SUMMARY && Array.isArray(SUMMARY.stock)) SUMMARY.stock = SUMMARY.stock.filter(function(x){ return x.id !== stockId; });
+    showSaveToast('Removed from stock');
+    paintSiteSummaryBody();
+  } else {
+    showSaveToast('Could not remove — check your signal');
+  }
 }
 
 // ── MATERIAL DRILL-IN — the invoices behind the actual material amount ──
