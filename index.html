@@ -1207,8 +1207,8 @@ function renderDoor(id){
   if(id === 'dailyupdates'){ DU_VIEW = 'today'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; }
   if(id === 'sites'){
     HENK_SITES_VIEW = 'active';
-    // The Sites tab hosts the archive (both doors now) — land on the finder each time.
-    DU_VIEW = 'archive'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; DU_SEARCH = ''; DU_ARCH_LEADER = '';
+    // Land on the Sites home (live sites) each time; archives are one tap away.
+    DU_VIEW = 'siteshome'; DU_SITE = null; DU_LEADER = null; DU_SELECTED = null; DU_SEARCH = ''; DU_ARCH_LEADER = '';
   }
   SUMMARY_SITE = null;   // tapping any nav tab exits an open site summary
   pushView({ kind: 'door', role: CURRENT_ROLE, section: id });
@@ -1585,7 +1585,7 @@ function paintUpdates(){
   if(DU_VIEW === 'weeklyhome'){ body.innerHTML = duPaintWeeklyHome(); return; }
   if(DU_VIEW === 'weekly')    { body.innerHTML = duPaintWeekly();  return; }
   if(DU_VIEW === 'weekbuild') { body.innerHTML = duPaintWeekBuild(); return; }
-  body.innerHTML = duPaintToday();
+  body.innerHTML = duPaintSitesHome();   // 'siteshome' — live sites + Add / Archives
 }
 
 // ── TODAY — outstanding (orange) beside the archive (maroon); submitted leaders
@@ -1657,8 +1657,9 @@ function duPaintArchive(){
   const today = new Date().toISOString().split('T')[0];
   const grouped = duGrouped();
 
-  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Site archive</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Find any site fast — search, filter by leader, or pick a date.</div>`;
+  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('siteshome')">← Back to sites</button>
+    <div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Site archives</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Completed sites only — search, filter by leader, or pick a date.</div>`;
 
   // Search across sites and leaders — filters the list on the left as you type.
   h += `<input id="duSearchInput" value="${String(DU_SEARCH).replace(/"/g,'&quot;')}" oninput="duFilterSites(this.value)"
@@ -1720,7 +1721,7 @@ function duArchiveSites(){
 }
 
 function duSiteListHtml(){
-  let sites = duArchiveSites();
+  let sites = duArchiveSites().filter(function(s){ return s.status === 'done'; });   // archives = completed sites only
   if(DU_ARCH_LEADER) sites = sites.filter(function(s){ return s.team_leader === DU_ARCH_LEADER; });
   const q = String(DU_SEARCH).trim().toLowerCase();
   if(q) sites = sites.filter(function(s){
@@ -4028,22 +4029,11 @@ function henkSitesView(v){ HENK_SITES_VIEW = v; renderHenkSites(); }
 
 async function renderHenkSites(){
   if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
-  const archiveViews = ['archive','site','leader','weeklyhome','weekly','weekbuild'];
-  if(archiveViews.indexOf(DU_VIEW) === -1) DU_VIEW = 'archive';
-  const onWeekly = WEEKLY_VIEWS.indexOf(DU_VIEW) !== -1;
-  const tabBtn = function(on){ return on
-    ? 'flex:1;padding:11px;border:none;border-radius:9px;background:#1A1A1A;color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer'
-    : 'flex:1;padding:11px;border:none;border-radius:9px;background:transparent;color:#8A8470;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer'; };
+  const views = ['siteshome','archive','site','leader','weeklyhome','weekly','weekbuild'];
+  if(views.indexOf(DU_VIEW) === -1) DU_VIEW = 'siteshome';
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
     <div class="page-title">Sites</div>
-    <button onclick="openAddSite()" style="width:100%;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28);margin-bottom:14px">＋ Add new site</button>
-    <div id="liveSites"></div>
-    <div class="section-lbl" style="margin-top:0">Archive</div>
-    <div style="display:flex;gap:4px;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:16px">
-      <button style="${tabBtn(!onWeekly)}" onclick="henkSitesTab('archive')">📋 Daily archive</button>
-      <button style="${tabBtn(onWeekly)}" onclick="henkSitesTab('weeklyhome')">📅 Weekly archive</button>
-    </div>
     <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading sites…</div></div>`;
   const res = await Promise.all([
     sbFetch('daily_updates', `select=${DU_COLS}&limit=400`),
@@ -4053,13 +4043,21 @@ async function renderHenkSites(){
   DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
   if(CURRENT_DOOR !== 'sites') return;
-  if($('liveSites')) $('liveSites').innerHTML = henkLiveSitesHtml();
   if(DU_VIEW === 'weekbuild' && DU_WEEK_SITE && !DU_WEEK_DATA){ await loadWeek(); }
   paintUpdates();
 }
 
-// Live sites at the top of the Sites tab: the current (not-done) jobs, newest
-// first, tap one to open its full summary. The archive sits below.
+// Top of the Sites tab: Add new site + Site archives, then only the live sites.
+function duPaintSitesHome(){
+  let h = `<div style="display:flex;gap:10px;margin-bottom:18px">
+    <button onclick="openAddSite()" style="flex:1;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:14px 10px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28)">＋ Add new site</button>
+    <button onclick="duGo('archive')" style="flex:1;background:#8B1A1A;color:#fff;border:none;border-radius:12px;padding:14px 10px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(139,26,26,0.28)">📁 Site archives</button>
+  </div>`;
+  h += henkLiveSitesHtml();
+  return h;
+}
+
+// Live sites: the current (not-done) jobs, newest first, tap one for its summary.
 function henkLiveSitesHtml(){
   const active = (DU_SITELIST||[]).filter(function(s){ return s.status !== 'done'; })
     .sort(function(a,b){ return new Date(b.started||0) - new Date(a.started||0); });
@@ -4127,6 +4125,15 @@ function openSiteSummary(siteId){
   paintDoor(from);
 }
 function closeSiteSummary(){ history.back(); }
+
+// From a live site's summary → its weekly-report builder (on the Sites tab).
+function openSiteWeekly(siteId){
+  SUMMARY_SITE = null;
+  DU_WEEK_SITE = siteId; DU_WEEK_START = null; DU_WEEK_DATA = null; DU_WEEK_SEL = {};
+  DU_VIEW = 'weekbuild';
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', du:{ view:'weekbuild', site:siteId } });
+  renderHenkSites();
+}
 
 async function loadSiteSummary(siteId){
   const res = await Promise.all([
@@ -4629,7 +4636,10 @@ function paintSiteSummaryBody(){
   h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
-      <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;flex:0 0 auto">ⓘ Site information</button>
+      <div style="display:flex;gap:6px;flex:0 0 auto">
+        <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
+        <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
+      </div>
     </div>
     <div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>
     <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
