@@ -4471,6 +4471,8 @@ function openSiteInfo(siteId, canEdit, editing){
       ${fld('Quote (ex-VAT, R)', 'si_quote', s.quote_value||'')}
       <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Team leader</label>
         <select class="f-input" id="si_leader" style="margin:0">${leaderOpts}</select></div>
+      <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Started</label>
+        <input class="f-input" id="si_started" type="date" value="${s.started||''}" style="margin:0"/></div>
       ${fld('Surfaces', 'si_surfaces', surfacesTxt, 'Comma separated')}
       <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Approved colours</label>
         <textarea class="f-input" id="si_colours" rows="2" style="margin:0">${esc(coloursTxt)}</textarea></div>
@@ -4495,15 +4497,16 @@ async function saveSiteInfo(siteId){
   const client = v('si_client').trim();
   const quote = parseFloat(String(v('si_quote')).replace(/[^0-9.]/g,'')) || 0;
   const leader = v('si_leader') || s.team_leader;
+  const started = v('si_started') || s.started || '';
   d.contact = v('si_contact').trim();
   d.address = v('si_address').trim();
   d.maps_link = d.address ? mapsLinkFor(d.address) : '';
   d.surfaces = v('si_surfaces').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   d.surfaces_text = v('si_surfaces').trim();
   d.colours_text = v('si_colours').trim();
-  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, team_leader: leader, details: d });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, team_leader: leader, started: started, details: d });
   if(ok){
-    s.client = client; s.quote_value = quote; s.team_leader = leader; s.details = d;
+    s.client = client; s.quote_value = quote; s.team_leader = leader; s.started = started; s.details = d;
     showSaveToast('Site details saved');
     openSiteInfo(siteId, true, false);
     paintSiteSummaryBody();
