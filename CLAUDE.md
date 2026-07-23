@@ -12,10 +12,21 @@ Ferdi is non-technical. Always explain in plain language, no jargon, one step at
 
 ## Branches — read this before touching anything
 
-- `main` = the LIVE app Ferdi's painting team leaders use on their phones every day.
-- Never commit to `main` without explicit approval from Ferdi.
-- All work happens on the `agent-work` branch.
-- Changes only go to `main` when Ferdi says the words: **"approved, make it live"**.
+- `main` = the LIVE app (https://fengelbrec.github.io/POWER-ROCK-APP/).
+  `agent-work` = where changes are built.
+- **Standing approval (set 2026-07-23):** while it is just Ferdi and Henk using the
+  app, tested changes go **straight to `main` (live)** in the same step — no separate
+  "make it live" round-trip. Ferdi prefers to test on the live app, because testing
+  edits off-line is impractical for him.
+- Still required every time before pushing live: build on `agent-work`, **test the
+  change** (browser check + `node --check`/syntax), and only then fast-forward `main`
+  and push. Never push untested code live.
+- For a **big or risky change** (data migrations, financial logic, the embedded
+  leader portal, anything that could break what Henk or Ferdi rely on daily),
+  describe the plan in plain words and get a "yes" before deploying.
+- **When the four team leaders come onto the app for real** (so it is no longer just
+  Ferdi and Henk), revisit this and return to explicit per-change approval, since a
+  live break would then hit the whole crew.
 
 ## Data
 
