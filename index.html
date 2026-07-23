@@ -4272,33 +4272,74 @@ async function delCost(id, siteId, kind){
 
 // ── LABOUR — an agreed team total that stays fixed in the profit, plus dated
 // part-payments that count down from it (record only, they don't move profit) ──
+// Labour is now a breakdown of areas (description + amount). The agreed team
+// total used in the profit is the SUM of the lines, kept in sites.labour_actual
+// so every profit reader stays correct; the lines live in details.labour_lines.
+let LABOUR_LINES = [];
+
 function openLabourEditor(siteId){
   const s = SUMMARY.site || {};
-  const agreed = parseFloat(s.labour_actual)||0;
+  const d = s.details || {};
+  let lines = Array.isArray(d.labour_lines)
+    ? d.labour_lines.map(function(l){ return { id: l.id||uid(), desc: l.desc||'', amount: l.amount }; })
+    : [];
+  if(!lines.length){
+    const old = parseFloat(s.labour_actual)||0;   // migrate an old single total into one line
+    lines = [ old>0 ? { id: uid(), desc:'Labour', amount: old } : { id: uid(), desc:'', amount:'' } ];
+  }
+  LABOUR_LINES = lines;
+  $('siteDetailContent').innerHTML = labourEditorHtml(siteId);
+  openModal('modalSiteDetail');
+}
+
+function repaintLabour(siteId){ $('siteDetailContent').innerHTML = labourEditorHtml(siteId); }
+
+function labourReadInputs(){
+  LABOUR_LINES = LABOUR_LINES.map(function(l, i){
+    const de = $('lbl_desc_'+i), ae = $('lbl_amt_'+i);
+    const amt = ae ? (String(ae.value).trim()===''? '' : parseFloat(String(ae.value).replace(/[^0-9.]/g,''))) : l.amount;
+    return { id: l.id, desc: de ? de.value : l.desc, amount: amt };
+  });
+}
+function labourLinesTotal(){ return LABOUR_LINES.reduce(function(a,l){ return a + (parseFloat(l.amount)||0); }, 0); }
+function labourAddLine(siteId){ labourReadInputs(); LABOUR_LINES.push({ id: uid(), desc:'', amount:'' }); repaintLabour(siteId); }
+function labourRemoveLine(siteId, idx){ labourReadInputs(); LABOUR_LINES.splice(idx,1); if(!LABOUR_LINES.length) LABOUR_LINES.push({ id: uid(), desc:'', amount:'' }); repaintLabour(siteId); }
+function labourLiveTotal(){ labourReadInputs(); const el=$('labTotalLive'); if(el) el.textContent = R(labourLinesTotal()); }
+
+function labourEditorHtml(siteId){
   const payments = (SUMMARY.costs||[]).filter(function(c){ return c.kind === 'labour'; })
     .sort(function(a,b){ return String(b.paid_date).localeCompare(String(a.paid_date)); });
   const paid = payments.reduce(function(a,c){ return a + (parseFloat(c.amount)||0); }, 0);
-  const remaining = agreed - paid;
+  const total = labourLinesTotal();
+  const remaining = total - paid;
   const todayStr = new Date().toISOString().split('T')[0];
 
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Labour</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Set the agreed team total for the whole job. It stays fixed in the profit. Log part-payments as you pay the team — they count down from the total.</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Add a line for each area — a description and its price (e.g. Exterior labour, Interior labour). The total of all the lines is the agreed team labour used in the profit. Log part-payments below as you pay the team.</div>
 
-    <div class="section-lbl" style="margin-top:0">Agreed team total</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <input class="f-input" id="labAgreed" type="number" step="0.01" inputmode="decimal" value="${agreed||''}" placeholder="e.g. 100000" style="flex:1;margin:0"/>
-      <button class="cta-btn" style="width:auto;padding:0 18px;margin:0;flex:0 0 auto" onclick="saveLabourAgreed('${siteId}')">Save</button>
-    </div>
+    <div class="section-lbl" style="margin-top:0">Labour by area</div>`;
 
-    <div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:#8A8470">Agreed total (used in profit)</span><span class="disp" style="font-weight:700">${R(agreed)}</span></div>
+  LABOUR_LINES.forEach(function(l, i){
+    h += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+      <input class="f-input" id="lbl_desc_${i}" value="${String(l.desc||'').replace(/"/g,'&quot;')}" placeholder="Area / description" style="flex:1;min-width:0;margin:0;font-size:13px"/>
+      <input class="f-input" id="lbl_amt_${i}" type="number" step="0.01" inputmode="decimal" value="${(l.amount===''||l.amount==null)?'':l.amount}" placeholder="Amount" oninput="labourLiveTotal()" style="width:100px;flex:0 0 auto;margin:0;font-size:13px"/>
+      <button onclick="labourRemoveLine('${siteId}',${i})" title="Remove this line" style="background:none;border:none;color:#B2342A;font-size:16px;cursor:pointer;flex:0 0 auto;padding:2px 3px">✕</button>
+    </div>`;
+  });
+
+  h += `<button class="cta-btn ghost" style="height:42px;font-size:12.5px;margin-bottom:12px" onclick="labourAddLine('${siteId}')">＋ Add another area</button>
+
+    <div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0"><span style="font-weight:800">Total labour (used in profit)</span><span class="disp" id="labTotalLive" style="font-weight:800">${R(total)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:#8A8470">Paid to the team so far</span><span class="disp" style="font-weight:700">${R(paid)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0 0;border-top:1px solid #E6E2D8;margin-top:5px"><span style="font-weight:800">Still to pay</span><span class="disp" style="font-weight:800;color:${remaining>0?'#8B1A1A':'#3F5A4C'}">${R(remaining)}</span></div>
-    </div>`;
+    </div>
+
+    <button class="cta-btn" onclick="saveLabour('${siteId}')">Save labour</button>`;
 
   if(payments.length){
-    h += `<div class="section-lbl" style="margin-top:0">Payments made</div><div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`;
+    h += `<div class="section-lbl">Payments made</div><div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`;
     payments.forEach(function(c){
       h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #EFECE3">
         <div><div style="font-size:12.5px;font-weight:700;color:#1A1A1A">${R(parseFloat(c.amount)||0)}</div>
@@ -4309,25 +4350,29 @@ function openLabourEditor(siteId){
     h += `</div>`;
   }
 
-  h += `<div class="section-lbl" style="margin-top:0">Log a payment to the team</div>
+  h += `<div class="section-lbl">Log a payment to the team</div>
     <input class="f-input" id="costAmt" type="number" step="0.01" inputmode="decimal" placeholder="Amount paid (R)" style="margin-bottom:8px"/>
     <input class="f-input" id="costDate" type="date" value="${todayStr}" style="margin-bottom:8px"/>
     <button class="cta-btn" onclick="addCost('${siteId}','labour')">Add payment</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
 
-  $('siteDetailContent').innerHTML = h;
-  openModal('modalSiteDetail');
+  return h;
 }
 
-async function saveLabourAgreed(siteId){
-  const raw = String(($('labAgreed')||{}).value||'').replace(/[^0-9.]/g,'');
-  const val = raw === '' ? 0 : parseFloat(raw);
-  if(isNaN(val) || val < 0){ showSaveToast('Enter a labour amount of 0 or more'); return; }
-  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { labour_actual: val });
+async function saveLabour(siteId){
+  labourReadInputs();
+  const clean = LABOUR_LINES
+    .map(function(l){ return { id: l.id||uid(), desc: String(l.desc||'').trim(), amount: parseFloat(l.amount)||0 }; })
+    .filter(function(l){ return l.desc || l.amount; });
+  const total = clean.reduce(function(a,l){ return a + l.amount; }, 0);
+  const s = SUMMARY.site || {};
+  const nd = Object.assign({}, s.details||{}, { labour_lines: clean });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { labour_actual: total, details: nd });
   if(ok){
-    if(SUMMARY.site) SUMMARY.site.labour_actual = val;
-    showSaveToast('Agreed labour saved — ' + R(val));
-    openLabourEditor(siteId);
+    if(SUMMARY.site){ SUMMARY.site.labour_actual = total; SUMMARY.site.details = nd; }
+    LABOUR_LINES = clean.length ? clean.slice() : [{ id: uid(), desc:'', amount:'' }];
+    showSaveToast('Labour saved — ' + R(total));
+    repaintLabour(siteId);
     paintSiteSummaryBody();
   } else {
     showSaveToast('Could not save — check your signal');
