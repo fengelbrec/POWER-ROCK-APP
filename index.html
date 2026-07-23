@@ -1536,6 +1536,7 @@ function duGo(view, siteId, leaderKey){
   DU_ARCH_LEADER = '';
   if(view !== 'weekbuild'){ DU_WEEK_SITE = null; DU_WEEK_START = null; DU_WEEK_DATA = null; DU_WEEK_SEL = {}; }
   if(view === 'site'){
+    DU_SITE_TAB = 'daily';   // land on the daily diary each time you open a site
     const s = duSiteById(siteId);
     const start = s && s.started ? new Date(s.started) : new Date();
     const last = duSiteLastMonth(s);
@@ -2057,28 +2058,40 @@ function duPaintLeader(){
 }
 
 // ── ONE SITE — its own diary, calendar bounded by the job's own dates ──
+let DU_SITE_TAB = 'daily';   // 'info' | 'daily' | 'weekly'
+function duSetSiteTab(t){ DU_SITE_TAB = t; paintUpdates(); }
+
 function duPaintSite(){
   const s = duSiteById(DU_SITE);
   if(!s) return `<div style="font-size:12px;color:#A39E8C">Site not found.</div>`;
-
   const mine = DU_CACHE.filter(function(u){ return u.site_id === DU_SITE; });
+
+  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('archive')">← Back to archives</button>
+    <div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${s.name}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${mine.length} report${mine.length!==1?'s':''}</div>`;
+
+  const tab = function(id, label){ const on = DU_SITE_TAB === id;
+    return `<button onclick="duSetSiteTab('${id}')" style="flex:1;padding:10px 6px;border:none;border-radius:9px;background:${on?'#1A1A1A':'transparent'};color:${on?'#fff':'#8A8470'};font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer">${label}</button>`; };
+  h += `<div style="display:flex;gap:4px;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:16px">
+    ${tab('info','ⓘ Info')}${tab('daily','📋 Daily')}${tab('weekly','📅 Weekly')}
+  </div>`;
+
+  if(DU_SITE_TAB === 'info')        h += duSiteInfoTab(s);
+  else if(DU_SITE_TAB === 'weekly') h += duSiteWeeklyTab(s);
+  else                              h += duSiteDailyTab(s, mine);
+  return h;
+}
+
+// DAILY tab — the site's notes + calendar + daily reports.
+function duSiteDailyTab(s, mine){
   const grouped = {};
   mine.forEach(function(u){ if(!grouped[u.date]) grouped[u.date] = []; grouped[u.date].push(u); });
   const today = new Date().toISOString().split('T')[0];
-
-  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${s.name}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${mine.length} report${mine.length!==1?'s':''}</div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
-      <button class="cta-btn ghost" style="margin:0;height:44px;font-size:12.5px" onclick="duSiteInfoView('${s.id}')">ⓘ Site information</button>
-      <button class="cta-btn ghost" style="margin:0;height:44px;font-size:12.5px" onclick="openWeek('${s.id}')">📅 Weekly report</button>
-    </div>`;
-
-  // Site notes — date-stamped, added by Ferdi/Henk; Add note only on active sites.
   const notes = siteNotes(s);
   const canNote = s.status !== 'done';
-  h += `<div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px">
+
+  let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px">
       <div class="section-lbl" style="margin:0">📝 Site notes</div>
       ${canNote?`<button onclick="openNoteEditor('${s.id}')" style="background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer">＋ Add note</button>`:''}
     </div>`;
@@ -2087,11 +2100,8 @@ function duPaintSite(){
   } else {
     h += `<div style="font-size:12px;color:#A39E8C;padding:2px 2px 14px">No notes yet.${canNote?' Tap Add note for inspections, client messages or adjustments.':''}</div>`;
   }
-
   h += `<div class="section-lbl" style="margin-top:0">Daily updates</div>`;
-
   h += duCalendar(grouped, today, s);
-
   if(DU_SELECTED){
     const list = grouped[DU_SELECTED] || [];
     const dayNotes = notes.filter(function(n){ return n.date === DU_SELECTED; });
@@ -2104,6 +2114,60 @@ function duPaintSite(){
     h += `<div class="section-lbl">Every report on this site</div>`;
     h += mine.length ? duCards(mine, false, true)
       : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No reports on this site yet.</div>`;
+  }
+  return h;
+}
+
+// INFO tab — the site information, read-only, with an Edit button (modal editor).
+function duSiteInfoTab(s){
+  const d = s.details || {};
+  const none = '<span style="color:#C9C5BA">— not captured yet</span>';
+  const coloursTxt = siteInfoColoursText(d);
+  const surfacesTxt = Array.isArray(d.surfaces) ? d.surfaces.filter(Boolean).join(', ') : (d.surfaces_text || '');
+  const addressTxt = d.address ? (d.maps_link ? `${d.address} · <a href="${d.maps_link}" target="_blank" style="color:#8B1A1A;font-weight:700">map</a>` : d.address) : '';
+  const bullet = function(label, value){ return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3"><div style="flex:0 0 40%;font-size:11.5px;color:#8A8470;font-weight:700">${label}</div><div style="flex:1;font-size:12.5px;color:#1A1A1A;min-width:0;word-break:break-word;white-space:pre-line">${value || none}</div></div>`; };
+  const docRow = function(label, url, name){
+    const right = url ? `<a href="${url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:800">Open</a>` : `<span style="font-size:11.5px;color:#A39E8C">none on file</span>`;
+    return `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:12px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:12px;font-weight:800;color:#1A1A1A">${label}${name?` <span style="font-weight:400;color:#8A8470">· ${name}</span>`:''}</div>${right}</div>`;
+  };
+  return `<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="duEditSiteInfo('${s.id}')" style="background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button></div>
+    <div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
+      ${bullet('Client', s.client)}
+      ${bullet('Contact', d.contact)}
+      ${bullet('Site address', addressTxt)}
+      ${bullet('Team leader', henkLeaderName(s.team_leader))}
+      ${bullet('Started', s.started ? fd(s.started) : '')}
+      ${bullet('Quote (ex-VAT)', s.quote_value ? R(parseFloat(s.quote_value)) : '')}
+      ${bullet('Surfaces', surfacesTxt)}
+      ${bullet('Approved colours', coloursTxt)}
+    </div>
+    <div class="section-lbl" style="margin-top:0">Documents</div>
+    ${docRow('Specification', d.spec_url, d.spec_name)}
+    ${docRow('Quotation', d.quote_url, d.quote_name)}
+    ${docRow('Guarantee', d.guarantee_url, d.guarantee_name)}`;
+}
+function duEditSiteInfo(siteId){
+  const site = DU_SITELIST.find(function(x){ return x.id === siteId; });
+  if(!site) return;
+  SUMMARY = { site: site };   // give the modal editor a site to work on
+  openSiteInfo(siteId, true, true);
+}
+
+// WEEKLY tab — this site's saved weekly reports, plus a Create button.
+function duSiteWeeklyTab(s){
+  const reports = (((s.details && s.details.weekly_reports) || [])).slice()
+    .sort(function(a,b){ return String(b.created||'').localeCompare(String(a.created||'')); });
+  let h = `<button class="cta-btn" onclick="openWeek('${s.id}')">＋ Create weekly report</button>
+    <div class="section-lbl">Saved weekly reports</div>`;
+  if(!reports.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:6px 2px">None yet. Tap Create weekly report to compile one for the dates you choose.</div>`;
+  } else {
+    h += reports.map(function(w){
+      return `<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px;cursor:pointer" onclick="openWeek('${s.id}','${w.start}','${w.end}')">
+        <div style="font-weight:800;font-size:13px;color:#1A1A1A">${weeklyRangeLabel(w.start, w.end)}</div>
+        <div style="font-size:11px;color:#8A8470;margin-top:3px">${w.created?'saved '+fd(w.created):''}</div>
+      </div>`;
+    }).join('');
   }
   return h;
 }
@@ -4507,9 +4571,12 @@ async function saveSiteInfo(siteId){
   const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, team_leader: leader, started: started, details: d });
   if(ok){
     s.client = client; s.quote_value = quote; s.team_leader = leader; s.started = started; s.details = d;
+    // keep the archive's own copy of the site in step, if this was opened from there
+    const du = (DU_SITELIST||[]).find(function(x){ return x.id === siteId; });
+    if(du && du !== s){ du.client = client; du.quote_value = quote; du.team_leader = leader; du.started = started; du.details = d; }
     showSaveToast('Site details saved');
     openSiteInfo(siteId, true, false);
-    paintSiteSummaryBody();
+    if(SUMMARY_SITE) paintSiteSummaryBody(); else paintUpdates();
   } else {
     showSaveToast('Could not save — check your signal');
   }
