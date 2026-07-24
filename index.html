@@ -3595,16 +3595,33 @@ function inboxRecentHtml(){
   const all = INBOX_RECENT || [];
   if(!all.length) return '';
   const counts = { All: all.length, Prominent:0, Plascon:0, Protech:0, Other:0 };
-  all.forEach(inv=>{ counts[invoiceSupplierTab(inv.supplier)]++; });
+  const totals = { All: 0, Prominent:0, Plascon:0, Protech:0, Other:0 };
+  all.forEach(function(inv){
+    const t = invoiceSupplierTab(inv.supplier);
+    const amt = parseFloat(inv.total)||0;
+    counts[t]++; totals[t] += amt; totals.All += amt;
+  });
+  const shortR = function(n){ return 'R ' + Math.round(n||0).toLocaleString('en-ZA'); };
   const list = INBOX_TAB === 'All' ? all : all.filter(inv=>invoiceSupplierTab(inv.supplier) === INBOX_TAB);
 
   let h = `<div class="section-lbl">Recently processed</div>`;
   h += `<div style="display:flex;gap:4px;overflow-x:auto;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:12px;-webkit-overflow-scrolling:touch">`;
   INBOX_TABS.forEach(t=>{
     const on = t === INBOX_TAB;
-    h += `<button onclick="inboxSetTab('${t}')" style="flex:1 0 auto;white-space:nowrap;padding:9px 13px;border:none;border-radius:9px;background:${on?'#1A1A1A':'transparent'};color:${on?'#fff':'#8A8470'};font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">${t}${counts[t]?` <span style="opacity:.65">${counts[t]}</span>`:''}</button>`;
+    h += `<button onclick="inboxSetTab('${t}')" style="flex:1 0 auto;white-space:nowrap;padding:7px 13px;border:none;border-radius:9px;background:${on?'#1A1A1A':'transparent'};color:${on?'#fff':'#8A8470'};font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.25">
+      <span>${t}${counts[t]?` <span style="opacity:.65">${counts[t]}</span>`:''}</span>
+      <span style="font-size:9.5px;font-weight:800;opacity:${on?'0.85':'0.7'}">${shortR(totals[t])}</span>
+    </button>`;
   });
   h += `</div>`;
+
+  // The green total for whichever tab is open, sitting above the invoices.
+  h += `<div style="display:flex;margin-bottom:12px">
+    <div style="background:#1FA24C;color:#fff;border-radius:10px;padding:10px 16px;box-shadow:0 2px 8px rgba(31,162,76,0.25)">
+      <div style="font-size:9.5px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;opacity:0.85">${INBOX_TAB} total</div>
+      <div class="disp" style="font-size:19px;font-weight:800;line-height:1.15;margin-top:2px">${R(totals[INBOX_TAB])}</div>
+    </div>
+  </div>`;
 
   if(!list.length){ return h + `<div style="font-size:12px;color:#A39E8C;padding:8px 2px 14px">No invoices from this supplier yet.</div>`; }
 
