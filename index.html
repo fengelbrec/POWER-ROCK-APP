@@ -3556,6 +3556,21 @@ function inboxDateOf(inv){
   if(inv.processed_at) return String(inv.processed_at).slice(0,10);
   return '';
 }
+// A misread year quietly hides an invoice from its month, so flag any invoice
+// whose date lands in a different year to the one it actually arrived in.
+// (A few weeks either side of New Year is normal and is not flagged.)
+function invoiceDateSuspect(inv){
+  const d = inv.invoice_date ? String(inv.invoice_date).slice(0,10) : '';
+  const r = inv.received_at  ? String(inv.received_at).slice(0,10)  : '';
+  if(!d || !r) return false;
+  if(d.slice(0,4) === r.slice(0,4)) return false;
+  return Math.abs(new Date(d) - new Date(r)) / 86400000 > 45;
+}
+function invoiceDateFlag(inv){
+  if(!invoiceDateSuspect(inv)) return '';
+  return `<span title="This invoice is dated in a different year to when it arrived — the date may have been misread. Open Edit products to correct it." style="display:inline-block;background:#FFF3E0;border:1px solid #E9C88F;color:#9C6000;border-radius:6px;padding:1px 6px;font-size:9.5px;font-weight:800;margin-left:6px;white-space:nowrap">⚠️ check date</span>`;
+}
+
 function inboxInPeriod(inv){
   if(INBOX_MONTH === 'all') return true;
   const d = inboxDateOf(inv);
@@ -3620,7 +3635,7 @@ async function renderInvoiceInbox(){
           <div style="font-size:14px;font-weight:800;color:#1A1A1A">${inv.supplier||'Unknown supplier'}</div>
           <div class="disp" style="font-size:16px;font-weight:800">${R(inv.total)}</div>
         </div>
-        <div style="font-size:11px;color:#8A8470;margin-bottom:10px">${inv.invoice_number?'#'+inv.invoice_number+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${inv.reference?' · Ref: '+inv.reference:''}</div>
+        <div style="font-size:11px;color:#8A8470;margin-bottom:10px">${inv.invoice_number?'#'+inv.invoice_number+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}${inv.reference?' · Ref: '+inv.reference:''}${invoiceDateFlag(inv)}</div>
         ${items.length?`<div style="background:#F7F6F3;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#5C5748;line-height:1.9">${items.map(it=>`${it.product||'?'}${it.colour?' ('+it.colour+')':''} — <strong>${it.qty||0} × ${it.unit||''}</strong>`).join('<br/>')}</div>`:''}
         ${inv.raw_summary?`<div style="font-size:11px;color:#A39E8C;margin-bottom:10px">${inv.raw_summary}</div>`:''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${editProductsBtn(inv)}${invoiceFileBtn(inv)}</div>
@@ -3707,7 +3722,7 @@ function inboxRecentHtml(){
     h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #EFECE3">
       <div style="min-width:0;flex:1">
         <div style="font-size:13px;font-weight:700;color:#1A1A1A">${inv.supplier||'Unknown'}${inv.invoice_number?` · ${inv.invoice_number}`:''}</div>
-        <div style="font-size:11px;color:#8A8470;margin-top:2px">${dateStr}${siteName?` · 📍 ${siteName}`:' · 📍 no site'}</div>
+        <div style="font-size:11px;color:#8A8470;margin-top:2px">${dateStr}${siteName?` · 📍 ${siteName}`:' · 📍 no site'}${invoiceDateFlag(inv)}</div>
       </div>
       <div style="text-align:right;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-end;gap:5px">
         <span class="disp" style="font-weight:700">${R(inv.total)}</span>
@@ -3754,7 +3769,13 @@ function openInvoiceProducts(id){
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:2px">${esc(inv.supplier||'Invoice')}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${inv.invoice_number?'#'+esc(inv.invoice_number)+' · ':''}${inv.invoice_date?fd(inv.invoice_date):''}</div>
     <div class="disp" style="font-size:18px;font-weight:800;margin-bottom:14px">${R(parseFloat(inv.total)||0)} <span style="font-size:11px;font-weight:600;color:#A39E8C">total — locked</span></div>
-    <div style="font-size:11.5px;color:#5C5748;line-height:1.6;margin-bottom:12px">These are the items bought. Rename any product so it reads the way you want on your stock and the leaders' product list. The amounts can't be changed — only the wording.</div>`;
+    <div style="font-size:11.5px;color:#5C5748;line-height:1.6;margin-bottom:12px">These are the items bought. Rename any product so it reads the way you want on your stock and the leaders' product list. The amounts can't be changed — only the wording.</div>
+    <div class="section-lbl" style="margin-top:0">Invoice date</div>
+    <input class="f-input" id="ip_date" type="date" value="${inv.invoice_date||''}" style="margin-bottom:4px"/>
+    <div style="font-size:10.5px;color:${invoiceDateSuspect(inv)?'#9C6000':'#A39E8C'};margin-bottom:12px;line-height:1.5">${invoiceDateSuspect(inv)
+      ? '⚠️ This is dated in a different year to when it arrived — it was probably misread. Correct it here so the invoice lands in the right month.'
+      : 'The date decides which month this invoice counts in.'}</div>
+    <div class="section-lbl" style="margin-top:0">Products</div>`;
   if(!items.length){
     h += `<div style="font-size:12px;color:#A39E8C;padding:6px 2px 12px">No product lines were read on this invoice.</div>`;
   } else {
@@ -3780,9 +3801,14 @@ async function saveInvoiceProducts(id){
     const name = el ? String(el.value||'').trim() : li.product;
     return Object.assign({}, li, { product: name || li.product });
   });
-  // 1) Save the renamed lines on the invoice itself.
-  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(id), { line_items: newItems });
+  // 1) Save the renamed lines (and any corrected date) on the invoice itself.
+  const dateEl = $('ip_date');
+  const newDate = dateEl ? String(dateEl.value||'').trim() : '';
+  const patch = { line_items: newItems };
+  if(newDate && newDate !== inv.invoice_date) patch.invoice_date = newDate;
+  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(id), patch);
   if(!ok){ showSaveToast('Could not save — check your signal'); return; }
+  if(patch.invoice_date) inv.invoice_date = newDate;
 
   // 2) If this invoice was already confirmed into a site, rename it in the stock
   //    (Supabase) and the owner's local product list so it shows everywhere.
