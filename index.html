@@ -4217,7 +4217,7 @@ async function saveHenkLabour(siteId){
 // (labour payment segments, cherry picker, accommodation, petrol) are the next
 // step — they need one small Supabase table, and show as "next step" until then.
 // ══════════════════════════════════════════
-const LABOUR_PCT = 0.23, MATERIAL_PCT = 0.26, HENK_FEE_PCT = 0.10;
+const LABOUR_PCT = 0.25, MATERIAL_PCT = 0.26, HENK_FEE_PCT = 0.10;
 
 let SUMMARY_SITE = null;   // site id while the summary is open, else null
 let SUMMARY = null;        // the fetched bundle for the open site
@@ -4328,7 +4328,7 @@ function openCostEditor(siteId, kind){
   let targetBox = '';
   if(meta.payment){
     let target = 0, targetLabel = '';
-    if(kind === 'labour'){ target = quote * LABOUR_PCT; targetLabel = 'Labour budget (23%)'; }
+    if(kind === 'labour'){ target = quote * LABOUR_PCT; targetLabel = 'Labour budget ('+Math.round(LABOUR_PCT*100)+'%)'; }
     if(kind === 'henk'){ target = (quote - costSum('additional')) * HENK_FEE_PCT; targetLabel = "Henk's fee (10%)"; }
     const outstanding = target - total;
     targetBox = `<div style="background:#F7F6F3;border-radius:10px;padding:12px 14px;margin-bottom:14px">
@@ -4793,10 +4793,10 @@ function paintSiteSummaryBody(){
       ${profitRow({ label:'Total quote (ex-VAT)', val:quote, bg:'#E4F3E8', strong:true, sub:'the income for this job' })}
       ${profitRow({ label:'Total site overheads', val:totalExpenses, sign:'–', bg:'#FCEBD8', strong:true, sub:'every cost below, added together' })}
       ${profitRow({ label:'Labour (agreed team total)', val:labourAgreed, sign:'–',
-        sub: labourAgreed>0 ? `paid ${R(labourPaid)} · ${R(labourAgreed-labourPaid)} still to pay · tap to manage` : 'tap to set the agreed labour total',
+        sub: `budget ${Math.round(LABOUR_PCT*100)}% · ${R(labourBudget)} · ` + (labourAgreed>0 ? `paid ${R(labourPaid)} · ${R(labourAgreed-labourPaid)} still to pay · tap to manage` : 'tap to set the agreed labour total'),
         onclick:`openLabourEditor('${s.id}')` })}
       ${profitRow({ label:'Material actual', val:materialActual, sign:'–', over:overMat,
-        sub:`budget 26% · ${R(materialBudget)} · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
+        sub:`budget ${Math.round(MATERIAL_PCT*100)}% · ${R(materialBudget)} · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
         onclick:`summaryInvoices('${s.id}')` })}
       ${profitRow({ label:'Additional site costs (cherry / scaffold)', val:additionalCosts, sign:'–',
         sub:'tap to add cherry picker, scaffold, etc.', onclick:`openCostEditor('${s.id}','additional')` })}
