@@ -2066,7 +2066,8 @@ function duPaintSite(){
   if(!s) return `<div style="font-size:12px;color:#A39E8C">Site not found.</div>`;
   const mine = DU_CACHE.filter(function(u){ return u.site_id === DU_SITE; });
 
-  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('archive')">← Back to archives</button>
+  const backDone = s.status === 'done';
+  let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('${backDone?'archive':'siteshome'}')">← Back to ${backDone?'archives':'sites'}</button>
     <div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${s.name}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${fd(s.started)} → ${s.status==='done'&&s.end_date?fd(s.end_date):'still running'} · ${mine.length} report${mine.length!==1?'s':''}</div>`;
@@ -2111,8 +2112,10 @@ function duSiteDailyTab(s, mine){
     }
     h += list.length ? duCards(list) : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No report on this day.</div>`;
   } else {
-    h += `<div class="section-lbl">Every report on this site</div>`;
-    h += mine.length ? duCards(mine, false, true)
+    // Newest report on top (the fetch itself is unordered).
+    const newestFirst = mine.slice().sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); });
+    h += `<div class="section-lbl">Every report on this site — latest first</div>`;
+    h += newestFirst.length ? duCards(newestFirst, false, true)
       : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">No reports on this site yet.</div>`;
   }
   return h;
@@ -4135,6 +4138,11 @@ async function renderHenkSites(){
   DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
   DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
+  // Opening a site (e.g. from its summary) — put the calendar on that job's month.
+  if(DU_VIEW === 'site' && DU_SITE){
+    const st = duSiteById(DU_SITE);
+    if(st){ const last = duSiteLastMonth(st); DU_CAL = { y: last.y, m: last.m }; }
+  }
   if(CURRENT_DOOR !== 'sites') return;
   if(DU_VIEW === 'weekbuild' && DU_WEEK_SITE && !DU_WEEK_DATA){ await loadWeek(); }
   paintUpdates();
@@ -4218,6 +4226,14 @@ function openSiteSummary(siteId){
   paintDoor(from);
 }
 function closeSiteSummary(){ history.back(); }
+
+// From a site's summary → its daily updates (newest first), on the Sites tab.
+function openSiteDaily(siteId){
+  SUMMARY_SITE = null;
+  DU_VIEW = 'site'; DU_SITE = siteId; DU_SITE_TAB = 'daily'; DU_SELECTED = null;
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', du:{ view:'site', site:siteId } });
+  renderHenkSites();
+}
 
 // From a live site's summary → its weekly-report builder (on the Sites tab).
 function openSiteWeekly(siteId){
@@ -4735,7 +4751,8 @@ function paintSiteSummaryBody(){
   h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
-      <div style="display:flex;gap:6px;flex:0 0 auto">
+      <div style="display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end">
+        <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
         <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
         <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
       </div>
