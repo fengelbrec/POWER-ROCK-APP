@@ -3513,6 +3513,18 @@ let INBOX_SITES = [];        // sites read from the shared DB, so both doors mat
 // picker and site labels work the same on Ferdi's and Henk's doors.
 function inboxSiteById(id){ return (INBOX_SITES||[]).find(function(s){ return s.id===id; }) || siteById(id); }
 
+// Invoices keep arriving after a job is finished, so a completed site stays
+// pickable for 30 days after its completion date — late costs still land on it.
+const INBOX_LATE_DAYS = 30;
+function inboxSelectableSites(){
+  const cutoff = Date.now() - INBOX_LATE_DAYS*24*60*60*1000;
+  return (INBOX_SITES||[]).filter(function(s){
+    if(s.status !== 'done') return true;
+    const end = s.end_date ? new Date(s.end_date).getTime() : 0;
+    return end && end >= cutoff;
+  });
+}
+
 // Which supplier tab an invoice belongs to (matches on the supplier name).
 function invoiceSupplierTab(supplier){
   const s = String(supplier||'').toLowerCase();
@@ -3563,7 +3575,7 @@ async function renderInvoiceInbox(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${editProductsBtn(inv)}${invoiceFileBtn(inv)}</div>
         <label class="f-label">Which site is this for?</label>
         <select class="f-select" id="inbsite_${idx}">
-          ${INBOX_SITES.filter(s=>s.status!=='done').map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}</option>`).join('')}
+          ${inboxSelectableSites().map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}${s.status==='done'?' — completed '+fd(s.end_date):''}</option>`).join('')}
         </select>
         <div style="display:flex;gap:8px">
           <button class="cta-btn" style="flex:1" onclick="confirmInboxInvoice(${idx})">✓ Confirm — update cost &amp; stock</button>
@@ -3711,7 +3723,7 @@ function guessSiteId(text){
   const t = slugId(text||'');
   if(!t) return '';
   let hit = '';
-  (INBOX_SITES||[]).filter(s=>s.status!=='done').forEach(s=>{
+  inboxSelectableSites().forEach(s=>{
     if(hit) return;
     const tokens = slugId(s.name).split('_').filter(w=>w.length>3);
     if(tokens.some(w=>t.includes(w))) hit = s.id;
