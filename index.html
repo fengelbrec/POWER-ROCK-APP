@@ -4965,11 +4965,15 @@ async function deleteStockItem(stockId){
 
 // ── MATERIAL DRILL-IN — the invoices behind the actual material amount ──
 function summaryInvoices(siteId){
-  const invs = (SUMMARY.invoices||[]).slice().sort(function(a,b){ return String(a.invoice_date).localeCompare(String(b.invoice_date)); });   // oldest first
+  $('siteDetailContent').innerHTML = summaryInvoicesHtml();
   openModal('modalSiteDetail');
+}
+function refreshSummaryInvoices(){ $('siteDetailContent').innerHTML = summaryInvoicesHtml(); }
+function summaryInvoicesHtml(){
+  const invs = (SUMMARY.invoices||[]).slice().sort(function(a,b){ return String(a.invoice_date).localeCompare(String(b.invoice_date)); });   // oldest first
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Site invoices</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${invs.length} invoice${invs.length!==1?'s':''} · ${R(sumMaterialActual())} total, oldest first. Tap one to see and rename its line items.</div>`;
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${invs.length} invoice${invs.length!==1?'s':''} · ${R(sumMaterialActual())} total, oldest first. Tap one to rename its line items, or 🗑 to remove it from this site's material.</div>`;
   if(!invs.length){
     h += `<div style="font-size:12.5px;color:#A39E8C;padding:10px 0 16px">No invoices captured for this site yet. They arrive here once a supplier invoice is confirmed in the Invoice Inbox.</div>`;
   } else {
@@ -4979,12 +4983,34 @@ function summaryInvoices(siteId){
           <div style="font-weight:800;font-size:13px;color:#1A1A1A">${iv.supplier||'Unknown supplier'}</div>
           <div class="disp" style="font-weight:800;font-size:14px;white-space:nowrap">${R(parseFloat(iv.total)||0)}</div>
         </div>
-        <div style="font-size:11px;color:#8A8470;margin-top:3px">${iv.invoice_date?fd(iv.invoice_date):'no date'}${iv.invoice_number?' · '+iv.invoice_number:''} · ${(iv.line_items||[]).length} line item${(iv.line_items||[]).length!==1?'s':''}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:3px">
+          <div style="font-size:11px;color:#8A8470;min-width:0">${iv.invoice_date?fd(iv.invoice_date):'no date'}${iv.invoice_number?' · '+iv.invoice_number:''} · ${(iv.line_items||[]).length} line item${(iv.line_items||[]).length!==1?'s':''}</div>
+          <button onclick="event.stopPropagation();deleteSiteInvoice('${iv.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;flex:0 0 auto">🗑 Remove</button>
+        </div>
       </div>`;
     });
   }
   h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Close</button>`;
-  $('siteDetailContent').innerHTML = h;
+  return h;
+}
+
+// Remove an invoice from a site's material — e.g. a cherry-picker cost confirmed
+// as material by mistake. It is rejected, so it stops counting here and drops out
+// of the Invoice Inbox too. Stock added by its line items is not auto-reversed
+// (flag if that ever matters).
+async function deleteSiteInvoice(invId){
+  const iv = (SUMMARY.invoices||[]).find(function(x){ return x.id === invId; });
+  if(!iv) return;
+  if(!confirm('Remove "' + (iv.supplier||'this invoice') + ' · ' + R(parseFloat(iv.total)||0) + '" from this site\'s material?\n\nIt stops counting as material and won\'t show in the Invoice Inbox. If it was a cherry-picker / scaffold cost, add it under "Additional site costs" instead.')) return;
+  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(invId), { status:'rejected', processed_at:new Date().toISOString() });
+  if(ok){
+    SUMMARY.invoices = (SUMMARY.invoices||[]).filter(function(x){ return x.id !== invId; });
+    showSaveToast('Invoice removed from this site');
+    refreshSummaryInvoices();
+    paintSiteSummaryBody();
+  } else {
+    showSaveToast('Could not remove — check your signal');
+  }
 }
 
 function summaryInvoiceBreakdown(invId){
