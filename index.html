@@ -3544,6 +3544,48 @@ function invoiceSupplierTab(supplier){
 }
 const INBOX_TABS = ['All','Prominent','Plascon','Protech','Other'];
 
+// ── PERIOD FILTER — 'all' | 'YYYY-MM' | 'custom' (with a from/to date pair) ──
+let INBOX_MONTH = 'all';
+let INBOX_FROM = '';
+let INBOX_TO = '';
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// An invoice's own date decides the period (falling back to when it was processed).
+function inboxDateOf(inv){
+  if(inv.invoice_date) return String(inv.invoice_date).slice(0,10);
+  if(inv.processed_at) return String(inv.processed_at).slice(0,10);
+  return '';
+}
+function inboxInPeriod(inv){
+  if(INBOX_MONTH === 'all') return true;
+  const d = inboxDateOf(inv);
+  if(!d) return false;
+  if(INBOX_MONTH === 'custom'){
+    if(INBOX_FROM && d < INBOX_FROM) return false;
+    if(INBOX_TO && d > INBOX_TO) return false;
+    return true;
+  }
+  return d.slice(0,7) === INBOX_MONTH;
+}
+function inboxPeriodLabel(){
+  if(INBOX_MONTH === 'all') return 'all months';
+  if(INBOX_MONTH === 'custom'){
+    if(INBOX_FROM && INBOX_TO) return fd(INBOX_FROM) + ' – ' + fd(INBOX_TO);
+    if(INBOX_FROM) return 'from ' + fd(INBOX_FROM);
+    if(INBOX_TO)   return 'up to ' + fd(INBOX_TO);
+    return 'pick your dates';
+  }
+  const d = new Date(INBOX_MONTH + '-01T12:00:00');
+  return d.toLocaleDateString('en-ZA', { month:'long', year:'numeric' });
+}
+function inboxRepaint(){ const box = document.getElementById('inboxRecent'); if(box) box.innerHTML = inboxRecentHtml(); }
+function inboxSetMonth(v){ INBOX_MONTH = v; inboxRepaint(); }
+function inboxSetCustom(){
+  const f = $('inbFrom'), t = $('inbTo');
+  INBOX_FROM = f ? f.value : ''; INBOX_TO = t ? t.value : '';
+  inboxRepaint();
+}
+
 async function renderInvoiceInbox(){
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
@@ -3601,8 +3643,9 @@ async function renderInvoiceInbox(){
 // The processed-invoice history: supplier tabs, newest first, each row shows the
 // site and opens the full detail. Repaints in place when a tab is tapped.
 function inboxRecentHtml(){
-  const all = INBOX_RECENT || [];
-  if(!all.length) return '';
+  const everything = INBOX_RECENT || [];
+  if(!everything.length) return '';
+  const all = everything.filter(inboxInPeriod);   // only the chosen month / dates
   const counts = { All: all.length, Prominent:0, Plascon:0, Protech:0, Other:0 };
   const totals = { All: 0, Prominent:0, Plascon:0, Protech:0, Other:0 };
   all.forEach(function(inv){
@@ -3613,8 +3656,18 @@ function inboxRecentHtml(){
   const shortR = function(n){ return 'R ' + Math.round(n||0).toLocaleString('en-ZA'); };
   const list = INBOX_TAB === 'All' ? all : all.filter(inv=>invoiceSupplierTab(inv.supplier) === INBOX_TAB);
 
+  // Month picker: the twelve months, then All months, then Custom dates.
+  const yr = new Date().getFullYear();
+  let monthOpts = MONTH_NAMES.map(function(m, i){
+    const v = yr + '-' + String(i+1).padStart(2,'0');
+    return `<option value="${v}" ${INBOX_MONTH===v?'selected':''}>${m}</option>`;
+  }).join('');
+  monthOpts += `<option value="all" ${INBOX_MONTH==='all'?'selected':''}>All months</option>`;
+  monthOpts += `<option value="custom" ${INBOX_MONTH==='custom'?'selected':''}>Custom dates…</option>`;
+
   let h = `<div class="section-lbl">Recently processed</div>`;
   h += `<div style="display:flex;gap:4px;overflow-x:auto;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:12px;-webkit-overflow-scrolling:touch">`;
+  h += `<select onchange="inboxSetMonth(this.value)" title="Filter by month" style="flex:0 0 auto;border:none;border-radius:9px;background:#2A5CA8;color:#fff;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer;padding:7px 9px;max-width:128px">${monthOpts}</select>`;
   INBOX_TABS.forEach(t=>{
     const on = t === INBOX_TAB;
     h += `<button onclick="inboxSetTab('${t}')" style="flex:1 0 auto;white-space:nowrap;padding:7px 13px;border:none;border-radius:9px;background:${on?'#1A1A1A':'transparent'};color:${on?'#fff':'#8A8470'};font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.25">
@@ -3624,15 +3677,27 @@ function inboxRecentHtml(){
   });
   h += `</div>`;
 
+  if(INBOX_MONTH === 'custom'){
+    h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:1;min-width:132px"><label style="font-size:10.5px;color:#8A8470;font-weight:700;display:block;margin-bottom:3px">From</label>
+        <input class="f-input" id="inbFrom" type="date" value="${INBOX_FROM}" onchange="inboxSetCustom()" style="margin:0"/></div>
+      <div style="flex:1;min-width:132px"><label style="font-size:10.5px;color:#8A8470;font-weight:700;display:block;margin-bottom:3px">To</label>
+        <input class="f-input" id="inbTo" type="date" value="${INBOX_TO}" onchange="inboxSetCustom()" style="margin:0"/></div>
+    </div>`;
+  }
+
   // The green total for whichever tab is open, sitting above the invoices.
   h += `<div style="display:flex;margin-bottom:12px">
     <div style="background:#1FA24C;color:#fff;border-radius:10px;padding:10px 16px;box-shadow:0 2px 8px rgba(31,162,76,0.25)">
       <div style="font-size:9.5px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;opacity:0.85">${INBOX_TAB} total</div>
       <div class="disp" style="font-size:19px;font-weight:800;line-height:1.15;margin-top:2px">${R(totals[INBOX_TAB])}</div>
+      <div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px">${inboxPeriodLabel()}</div>
     </div>
   </div>`;
 
-  if(!list.length){ return h + `<div style="font-size:12px;color:#A39E8C;padding:8px 2px 14px">No invoices from this supplier yet.</div>`; }
+  if(!list.length){
+    return h + `<div style="font-size:12px;color:#A39E8C;padding:8px 2px 14px">No ${INBOX_TAB==='All'?'':INBOX_TAB+' '}invoices for ${inboxPeriodLabel()}.</div>`;
+  }
 
   h += `<div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
   list.forEach(inv=>{
