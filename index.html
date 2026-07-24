@@ -1660,7 +1660,8 @@ function duPaintArchive(){
 
   let h = `<button class="cta-btn ghost" style="margin-bottom:12px;height:40px;font-size:12.5px" onclick="duGo('siteshome')">← Back to sites</button>
     <div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">Site archives</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Completed sites only — search, filter by leader, or pick a date.</div>`;
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Completed sites only — search or filter by leader. Tap a site for its completion summary.</div>`;
+
 
   // Search across sites and leaders — filters the list on the left as you type.
   h += `<input id="duSearchInput" value="${String(DU_SEARCH).replace(/"/g,'&quot;')}" oninput="duFilterSites(this.value)"
@@ -1673,26 +1674,9 @@ function duPaintArchive(){
   LEADER_META.forEach(function(lm){ h += duLeaderChip(lm.name, lm.key, lm.colour); });
   h += `</div>`;
 
-  // Two columns: the site list (left) and the calendar (right); stacks on a phone.
-  h += `<div class="du-arch">
-    <div>
-      <div class="section-lbl" style="margin-top:0">Sites — latest on top</div>
-      <div id="duSiteList">${duSiteListHtml()}</div>
-    </div>
-    <div>
-      <div class="section-lbl" style="margin-top:0">Pick any date</div>
-      ${duCalendar(grouped, today, null)}
-    </div>
-  </div>`;
-
-  // A picked date shows full-width below, so the report cards are readable.
-  if(DU_SELECTED){
-    const list = grouped[DU_SELECTED] || [];
-    h += `<div style="font-family:'Poppins',sans-serif;font-size:14px;font-weight:800;color:#1A1A1A;margin:16px 0 3px">${new Date(DU_SELECTED+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
-      <div style="font-size:11.5px;color:#8A8470;margin-bottom:10px">Who worked where that day — tap one to read the report</div>`;
-    h += list.length ? duCards(list, true)
-      : `<div style="font-size:12px;color:#A39E8C;padding:8px 0">Nobody reported on this day.</div>`;
-  }
+  // Just the completed-site list — a site's own daily updates live in its Daily tab.
+  h += `<div class="section-lbl" style="margin-top:0">Completed sites — latest finished on top</div>
+    <div id="duSiteList">${duSiteListHtml()}</div>`;
   return h;
 }
 
@@ -1735,7 +1719,7 @@ function duSiteListHtml(){
     const col = (LEADER_META.find(function(l){ return l.key === s.team_leader; })||{}).colour || '#5C5748';
     const n = DU_CACHE.filter(function(u){ return u.site_id === s.id; }).length;
     const when = done ? ('finished ' + fd(s.end_date || s.started)) : 'running';
-    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="duGo('site','${s.id}')">
+    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openSiteSummary('${s.id}')">
       <div style="width:5px;background:${col};flex:0 0 auto"></div>
       <div style="padding:12px 14px;flex:1;min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
@@ -4843,9 +4827,14 @@ function paintSiteSummaryBody(){
   let h = '';
 
   // ── HEADER ──
+  const startTxt = s.started ? fd(s.started) : '—';
+  const datesLine = s.status === 'done'
+    ? `Started ${startTxt} → Completed ${s.end_date ? fd(s.end_date) : '—'} · ${days} days`
+    : `Started ${startTxt} · active · Day ${days}`;
   h += `<div style="margin-bottom:16px">
     <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A;line-height:1.2">${s.name}</div>
-    <div style="font-size:12px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${leaderName} · ${s.status==='done'?'finished':'active'} · Day ${days}</div>
+    <div style="font-size:12px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${leaderName}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-top:2px">${datesLine}</div>
   </div>`;
 
   // ── LIVE SNAPSHOT HEADLINE ──
@@ -4853,6 +4842,7 @@ function paintSiteSummaryBody(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
       <div style="display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end">
+        <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Invoices</button>
         <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
         <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
         <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
@@ -4975,11 +4965,11 @@ async function deleteStockItem(stockId){
 
 // ── MATERIAL DRILL-IN — the invoices behind the actual material amount ──
 function summaryInvoices(siteId){
-  const invs = (SUMMARY.invoices||[]).slice().sort(function(a,b){ return String(b.invoice_date).localeCompare(String(a.invoice_date)); });
+  const invs = (SUMMARY.invoices||[]).slice().sort(function(a,b){ return String(a.invoice_date).localeCompare(String(b.invoice_date)); });   // oldest first
   openModal('modalSiteDetail');
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Material invoices</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${invs.length} invoice${invs.length!==1?'s':''} · ${R(sumMaterialActual())} total. Tap one to see and rename its line items.</div>`;
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Site invoices</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${invs.length} invoice${invs.length!==1?'s':''} · ${R(sumMaterialActual())} total, oldest first. Tap one to see and rename its line items.</div>`;
   if(!invs.length){
     h += `<div style="font-size:12.5px;color:#A39E8C;padding:10px 0 16px">No invoices captured for this site yet. They arrive here once a supplier invoice is confirmed in the Invoice Inbox.</div>`;
   } else {
