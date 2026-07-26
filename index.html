@@ -4214,10 +4214,16 @@ async function renderHenkSites(){
     <div id="updatesBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading sites…</div></div>`;
   const res = await Promise.all([
     sbFetch('daily_updates', `select=${DU_COLS}&limit=400`),
-    sbGetRows('sites', 'order=started.desc')
+    sbGetRows('sites', 'order=started.desc'),
+    sbGetRows('invoice_inbox', 'status=eq.confirmed'),
+    sbGetRows('site_costs', '')
   ]);
   DU_CACHE    = Array.isArray(res[0]) ? res[0] : [];
   DU_SITELIST = (Array.isArray(res[1]) ? res[1] : []).map(normSiteEnd);
+  // Profit inputs for the live-site blocks: material from confirmed invoices, plus site costs.
+  HENK.material = {}; HENK.costs = {};
+  (Array.isArray(res[2]) ? res[2] : []).forEach(function(iv){ HENK.material[iv.site_guess] = (HENK.material[iv.site_guess]||0) + (parseFloat(iv.total)||0); });
+  (Array.isArray(res[3]) ? res[3] : []).forEach(function(c){ if(!HENK.costs[c.site_id]) HENK.costs[c.site_id] = {}; HENK.costs[c.site_id][c.kind] = (HENK.costs[c.site_id][c.kind]||0) + (parseFloat(c.amount)||0); });
   if(!DU_CAL){ const n = new Date(); DU_CAL = { y: n.getFullYear(), m: n.getMonth() }; }
   // Opening a site (e.g. from its summary) — put the calendar on that job's month.
   if(DU_VIEW === 'site' && DU_SITE){
@@ -4240,25 +4246,70 @@ function duPaintSitesHome(){
 }
 
 // Live sites: the current (not-done) jobs, newest first, tap one for its summary.
+// Net profit per live site for the blocks — matches the site summary per door
+// (the owner sees it after Henk's 10% fee; Henk sees it before).
+function siteBlockProfit(s){
+  const quote        = parseFloat(s.quote_value)||0;
+  const labour       = parseFloat(s.labour_actual)||0;
+  const material     = (HENK.material && HENK.material[s.id]) || 0;
+  const c            = (HENK.costs && HENK.costs[s.id]) || {};
+  const additional   = c.additional||0, accommodation = c.accommodation||0, petrol = c.petrol||0;
+  const henkFee      = (CURRENT_ROLE === 'owner') ? (quote - additional) * HENK_FEE_PCT : 0;
+  const net          = quote - labour - material - additional - accommodation - petrol - henkFee;
+  const days         = henkDays(s);
+  return { net: net, days: days, dailyProfit: net / Math.max(1, days), margin: quote>0 ? net/quote*100 : 0 };
+}
+
+// Live sites as the four coloured team blocks (like the Overview), tap for the
+// full summary. Any extra active site sits below so nothing is hidden.
 function henkLiveSitesHtml(){
-  const active = (DU_SITELIST||[]).filter(function(s){ return s.status !== 'done'; })
-    .sort(function(a,b){ return new Date(b.started||0) - new Date(a.started||0); });
+  const active = (DU_SITELIST||[]).filter(function(s){ return s.status !== 'done'; });
   if(!active.length){
     return `<div style="font-size:12px;color:#A39E8C;padding:2px 2px 14px">No current sites. Tap ＋ Add new site to start one.</div>`;
   }
   let h = `<div class="section-lbl" style="margin-top:0">Current sites — live now (${active.length})</div>`;
-  h += active.map(function(s){
-    const col = henkLeaderColour(s.team_leader);
-    const days = henkDays(s);
-    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openSiteSummary('${s.id}')">
-      <div style="width:6px;background:${col};flex:0 0 auto"></div>
-      <div style="padding:13px 15px;flex:1;min-width:0">
-        <div style="font-weight:800;font-size:14px;color:#1A1A1A">${s.name}</div>
-        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)}${days?' · Day '+days:''}</div>
-      </div>
-      <div style="align-self:center;padding-right:14px;color:#C9C5BA;font-weight:800">›</div>
+  h += `<div class="sites-grid">`;
+  const shown = [];
+  LEADER_META.forEach(function(lm){
+    const mine = active.filter(function(s){ return s.team_leader === lm.key; })
+      .sort(function(a,b){ return new Date(b.started||0) - new Date(a.started||0); });
+    if(!mine.length){
+      h += `<div class="site-block" style="background:#EFEDE6;border:2.5px dashed #1A1A1A;cursor:default">
+        <div class="leader-tag" style="color:#A39E8C;text-shadow:none">${lm.name}</div>
+        <div class="sb-name" style="color:#A39E8C">No active site</div>
+        <div class="sb-meta">Add one with ＋ Add new site</div>
+      </div>`;
+      return;
+    }
+    const s = mine[0];
+    shown.push(s.id);
+    const extra = mine.length > 1 ? ` · +${mine.length-1} more` : '';
+    const p = siteBlockProfit(s);
+    const ppdCol = p.dailyProfit >= 0 ? '#fff' : '#FFC9C4';
+    h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteSummary('${s.id}')">
+      <div class="leader-tag">${lm.name}</div>
+      <div class="sb-name" style="color:#fff">${s.name}</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Day ${p.days} on site${extra}</div>
+      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Profit / day</div>
+      <div class="sb-ppd disp" style="color:${ppdCol}">${R(p.dailyProfit)}</div>
+      <div class="sb-days" style="color:rgba(255,255,255,0.6)">Net ${R(p.net)} · ${p.margin.toFixed(0)}%</div>
     </div>`;
-  }).join('');
+  });
+  h += `</div>`;
+  const others = active.filter(function(s){ return shown.indexOf(s.id) === -1; });
+  if(others.length){
+    h += `<div class="section-lbl">Other active sites</div>`;
+    h += others.map(function(s){
+      return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openSiteSummary('${s.id}')">
+        <div style="width:5px;background:${henkLeaderColour(s.team_leader)};flex:0 0 auto"></div>
+        <div style="padding:12px 14px;flex:1;min-width:0">
+          <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${s.name}</div>
+          <div style="font-size:11px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)} · Day ${henkDays(s)}</div>
+        </div>
+        <div style="align-self:center;padding-right:14px;color:#C9C5BA;font-weight:800">›</div>
+      </div>`;
+    }).join('');
+  }
   return h;
 }
 
