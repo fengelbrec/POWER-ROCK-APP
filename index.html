@@ -2375,7 +2375,7 @@ async function viewUpdate(id){
     if(!items.length) return head + `<div style="font-size:12px;color:#B0AA98;padding:3px 0">—</div>`;
     return head + items.map(it=>`<div style="display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11.5px;color:#3A3527;line-height:1.35;padding:4px 0;border-bottom:1px solid #F1EEE7"><div>${it.product}</div><div style="text-align:right;white-space:nowrap;color:#6B6555;font-weight:600">${it.qty}</div></div>`).join('');
   };
-  const usedItems = _parsePaint(u.paint_used);
+  const usedItems = _parsePaint(u.paint_used).map(it=>({ product: it.product, qty: _stripDrums(it.qty) }));
   const leftItems = stockRows.map(r=>({ product: (r.product||'') + (r.colour?` (${r.colour})`:''), qty: `${r.qty_on_site||0} × ${_stripDrums(r.unit)}` }));
   const paintBlock = (usedItems.length || leftItems.length) ? `
   <div class="slbl">Paint</div>
