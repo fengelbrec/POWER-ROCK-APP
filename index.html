@@ -945,6 +945,10 @@ const LEADER_META = [
 const SURFACE_OPTIONS = ['Exterior Walls','Roof Surfaces','Exterior Ceilings','Exterior Steel Surfaces','Interior Walls','Interior Ceilings'];
 
 function R(n){ return "R " + (n||0).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+// Escape a string so it's safe inside a single-quoted JS argument that itself
+// sits inside a double-quoted HTML onclick="" attribute. Without this, a name
+// with a quote (or JSON.stringify's own double quotes) breaks the whole onclick.
+function jsAttr(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/[\r\n]+/g,' '); }
 function $(id){ return document.getElementById(id); }
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(id).classList.add('active'); window.scrollTo(0,0); }
 // ══════════════════════════════════════════
@@ -2237,7 +2241,7 @@ function duChaseChip(leaderKey){
   const site = DU_SITELIST.find(function(s){ return s.team_leader === leaderKey && s.status !== 'done'; });
   const siteName = site ? site.name : '';
   const has = !!LEADER_WHATSAPP[leaderKey];
-  return `<span onclick="chaseLeader('${leaderKey}', ${JSON.stringify(siteName)})"
+  return `<span onclick="chaseLeader('${leaderKey}', '${jsAttr(siteName)}')"
     title="${has ? 'Chase on WhatsApp' : 'No WhatsApp number saved yet'}"
     style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:#9C6000;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
     ${cap(leaderKey)}<span style="font-size:11px;opacity:${has?'1':'0.35'}">💬</span></span>`;
@@ -2347,13 +2351,16 @@ function duCards(list, showSite, showDate){
 }
 
 async function viewUpdate(id){
-  const u = DU_CACHE.find(function(x){ return x.id === id; });
+  // Works from the Daily Updates screen (DU_CACHE) and from Henk's Overview
+  // (HENK.updates), so the same report opens wherever the leader's name is tapped.
+  let u = (typeof DU_CACHE !== 'undefined' && Array.isArray(DU_CACHE)) ? DU_CACHE.find(function(x){ return x.id === id; }) : null;
+  if(!u && typeof HENK !== 'undefined' && Array.isArray(HENK.updates)) u = HENK.updates.find(function(x){ return x.id === id; });
   if(!u) return;
 
   // Photos are not in the list data — fetch them for this one report only.
   const rows = await sbGetRows('daily_updates', `select=photos&id=eq.${encodeURIComponent(id)}`);
   const photos = (Array.isArray(rows) && rows[0] && Array.isArray(rows[0].photos)) ? rows[0].photos : [];
-  const SITES = DU_SITES;
+  const SITES = (typeof DU_SITES !== 'undefined' && DU_SITES) || {};
 
   // Two paint columns: what was used today (from the report) and what's left on site (live stock).
   let stockRows = await sbGetRows('paint_stock', `site_id=eq.${encodeURIComponent(u.site_id)}&order=product.asc`);
@@ -4123,7 +4130,7 @@ function henkDays(s){
 // sites rather than leader keys.
 function henkChaseChip(s){
   const has = !!LEADER_WHATSAPP[s.team_leader];
-  return `<span onclick="chaseLeader('${s.team_leader}', ${JSON.stringify(s.name || '')})"
+  return `<span onclick="chaseLeader('${s.team_leader}', '${jsAttr(s.name || '')}')"
     title="${has ? 'Chase on WhatsApp' : 'No WhatsApp number saved yet'}"
     style="background:#fff;border:1.5px solid #D4A55A;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;color:#9C6000;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
     ${henkLeaderName(s.team_leader)}<span style="font-size:11px;opacity:${has?'1':'0.35'}">💬</span></span>`;
@@ -4183,7 +4190,13 @@ async function renderHenkOverview(){
     <div style="background:${arrived.length?'#EBF2EC':'#F7F6F3'};border:1px solid ${arrived.length?'#5C7A6B':'#E6E2D8'};border-radius:10px;padding:13px 15px">
       <div style="font-size:10.5px;font-weight:800;color:${arrived.length?'#3F5A4C':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">✓ SUBMITTED TODAY (${arrived.length})</div>
       ${arrived.length
-        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${arrived.map(function(s){ return chip(henkLeaderName(s.team_leader), '#3F5A4C'); }).join('')}</div>`
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${arrived.map(function(s){
+            const u = todays.find(function(x){ return x.site_id === s.id; });
+            const nm = henkLeaderName(s.team_leader);
+            return u
+              ? `<span onclick="viewUpdate('${u.id}')" title="Open ${nm}'s report" style="background:#fff;border:1.5px solid #3F5A4C;border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:#3F5A4C;cursor:pointer;display:inline-flex;align-items:center;gap:5px">${nm}<span style="font-size:11px;opacity:.7">📄</span></span>`
+              : chip(nm, '#3F5A4C');
+          }).join('')}</div>`
         : `<div style="font-size:12px;color:#A39E8C">Nobody yet</div>`}
     </div>
   </div>`;
