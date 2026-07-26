@@ -817,9 +817,30 @@ function navFor(){ return CURRENT_ROLE === 'henk' ? NAV_HENK : NAV; }
 const SB_URL = 'https://xpjdiithqjhbtxznlgdq.supabase.co';
 const SB_KEY = 'sb_publishable_0WVaSGjbD0NsNJNTjLYfLw_9KZXA6dc';
 
+// A stalled connection to Supabase (opens but never answers) would otherwise
+// hang a fetch forever, freezing the screen on "Loading…". This aborts after a
+// cutoff and retries once, so a slow link recovers instead of hanging.
+async function sbHttp(url, opts, ms){
+  ms = ms || 12000;
+  let lastErr;
+  for(let attempt=0; attempt<2; attempt++){
+    const ctrl = new AbortController();
+    const timer = setTimeout(function(){ ctrl.abort(); }, ms);
+    try{
+      const r = await fetch(url, Object.assign({}, opts||{}, { signal: ctrl.signal }));
+      clearTimeout(timer);
+      return r;
+    }catch(e){
+      clearTimeout(timer);
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+
 async function sbFetch(table, filters=''){
   try{
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?${filters}&order=submitted_at.desc`, {
+    const r = await sbHttp(`${SB_URL}/rest/v1/${table}?${filters}&order=submitted_at.desc`, {
       headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
     });
     return r.ok ? r.json() : [];
@@ -828,7 +849,7 @@ async function sbFetch(table, filters=''){
 
 async function sbGetRows(table, filters=''){
   try{
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?${filters}`, {
+    const r = await sbHttp(`${SB_URL}/rest/v1/${table}?${filters}`, {
       headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
     });
     return r.ok ? r.json() : [];
