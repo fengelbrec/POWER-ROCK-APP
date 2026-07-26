@@ -2355,6 +2355,34 @@ async function viewUpdate(id){
   const photos = (Array.isArray(rows) && rows[0] && Array.isArray(rows[0].photos)) ? rows[0].photos : [];
   const SITES = DU_SITES;
 
+  // Two paint columns: what was used today (from the report) and what's left on site (live stock).
+  let stockRows = await sbGetRows('paint_stock', `site_id=eq.${encodeURIComponent(u.site_id)}&order=product.asc`);
+  if(!Array.isArray(stockRows)) stockRows = [];
+  const _stripDrums = v => String(v||'').replace(/\s*drums?\b/gi,'').trim();
+  const _parsePaint = str => String(str||'').split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+    let i = l.indexOf(' — '); if(i===-1) i = l.indexOf(' - ');
+    return i===-1 ? { product:l, qty:'' } : { product:l.slice(0,i).trim(), qty:l.slice(i+3).trim() };
+  });
+  const _paintCol = (items,accent) => {
+    const head = `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;font-size:10px;font-weight:800;color:${accent};letter-spacing:.3px;border-bottom:1.5px solid #E6E2D8;padding-bottom:4px;margin-bottom:5px"><div>Products</div><div style="text-align:right">Quantities</div></div>`;
+    if(!items.length) return head + `<div style="font-size:12px;color:#B0AA98;padding:3px 0">—</div>`;
+    return head + items.map(it=>`<div style="display:grid;grid-template-columns:1fr auto;gap:8px;font-size:11.5px;color:#3A3527;line-height:1.35;padding:4px 0;border-bottom:1px solid #F1EEE7"><div>${it.product}</div><div style="text-align:right;white-space:nowrap;color:#6B6555;font-weight:600">${it.qty}</div></div>`).join('');
+  };
+  const usedItems = _parsePaint(u.paint_used);
+  const leftItems = stockRows.map(r=>({ product: (r.product||'') + (r.colour?` (${r.colour})`:''), qty: `${r.qty_on_site||0} × ${_stripDrums(r.unit)}` }));
+  const paintBlock = (usedItems.length || leftItems.length) ? `
+  <div class="slbl">Paint</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:start">
+    <div style="min-width:0">
+      <div style="font-size:11px;font-weight:800;color:#9C6000;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Paint used today</div>
+      ${_paintCol(usedItems,'#9C6000')}
+    </div>
+    <div style="min-width:0">
+      <div style="font-size:11px;font-weight:800;color:#5C7A6B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Paint left on site</div>
+      ${_paintCol(leftItems,'#5C7A6B')}
+    </div>
+  </div>` : '';
+
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
   <div style="font-family:'Poppins',sans-serif;font-size:17px;font-weight:800;margin-bottom:3px">${u.leader_name} — ${new Date(u.date+'T12:00:00').toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'})}</div>
   <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${SITES[u.site_id]||u.site_name} · ${u.weather}</div>
@@ -2362,7 +2390,7 @@ async function viewUpdate(id){
   <div class="slbl">What was done</div>
   <div style="font-size:13px;color:#1A1A1A;line-height:1.7;margin-bottom:14px">${u.done}</div>
 
-  ${u.paint_used?`<div class="slbl">Paint used</div><div style="font-size:13px;color:#5C5748;line-height:1.7;margin-bottom:14px">${u.paint_used}</div>`:''}
+  ${paintBlock}
 
   <div class="slbl">Plan for tomorrow</div>
   <div style="font-size:13px;color:#1A1A1A;line-height:1.7;margin-bottom:14px">${u.plan_tomorrow}</div>
