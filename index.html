@@ -2377,6 +2377,25 @@ function duCards(list, showSite, showDate){
   }).join('');
 }
 
+let VU_PHOTOS = [];
+// Full-screen photo viewer with a Back button. Opening a data: photo in a new
+// browser tab is blocked by Chrome (it shows blank), so we show it in-app.
+function openReportPhoto(i){
+  const src = VU_PHOTOS[i]; if(!src) return;
+  let ov = document.getElementById('photoViewer');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'photoViewer';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.addEventListener('click', function(e){ if(e.target === ov) closeReportPhoto(); });
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<button onclick="closeReportPhoto()" style="position:absolute;top:16px;left:16px;background:#fff;color:#1A1A1A;border:none;border-radius:24px;padding:11px 20px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.45);display:flex;align-items:center;gap:6px;z-index:2">← Back</button>
+    <img src="${src}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px"/>`;
+  ov.style.display = 'flex';
+}
+function closeReportPhoto(){ const ov = document.getElementById('photoViewer'); if(ov) ov.style.display = 'none'; }
+
 async function viewUpdate(id){
   // Works from the Daily Updates screen (DU_CACHE) and from Henk's Overview
   // (HENK.updates), so the same report opens wherever the leader's name is tapped.
@@ -2387,6 +2406,7 @@ async function viewUpdate(id){
   // Photos are not in the list data — fetch them for this one report only.
   const rows = await sbGetRows('daily_updates', `select=photos&id=eq.${encodeURIComponent(id)}`);
   const photos = (Array.isArray(rows) && rows[0] && Array.isArray(rows[0].photos)) ? rows[0].photos : [];
+  VU_PHOTOS = photos;
   const SITES = (typeof DU_SITES !== 'undefined' && DU_SITES) || {};
 
   // Two paint columns: what was used today (from the report) and what's left on site (live stock).
@@ -2433,7 +2453,7 @@ async function viewUpdate(id){
 
   ${photos.length>0?`<div class="slbl">Photos (${photos.length})</div>
   <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
-    ${photos.map(p=>`<img src="${p}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:2px solid #E6E2D8;cursor:pointer" onclick="window.open('${p}','_blank')"/>`).join('')}
+    ${photos.map((p,i)=>`<img src="${p}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:2px solid #E6E2D8;cursor:pointer" onclick="openReportPhoto(${i})"/>`).join('')}
   </div>`:''}
 
   <button class="cta-btn ghost" onclick="closeModal('modalMonthSnapshot')">Close</button>`;
@@ -4173,6 +4193,37 @@ function henkBudgetBar(pct, over){
   </div>`;
 }
 
+// The "today's reports" pair of boxes (outstanding + submitted) shared by Henk's
+// Overview and the owner's Sites tab. active = live sites; todays = today's updates.
+// A submitted leader's chip opens the full report; an outstanding one is a Chase.
+function todaysReportsBoxesHtml(active, todays){
+  const waiting = active.filter(function(s){ return !todays.some(function(u){ return u.site_id === s.id; }); });
+  const arrived = active.filter(function(s){ return  todays.some(function(u){ return u.site_id === s.id; }); });
+  const chip = function(txt, col){
+    return `<span style="background:#fff;border:1.5px solid ${col};border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:${col}">${txt}</span>`;
+  };
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:18px">
+    <div style="background:${waiting.length?'#FFF3E0':'#F7F6F3'};border:1px solid ${waiting.length?'#D4A55A':'#E6E2D8'};border-radius:10px;padding:13px 15px">
+      <div style="font-size:10.5px;font-weight:800;color:${waiting.length?'#9C6000':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">⏳ STILL OUTSTANDING (${waiting.length})</div>
+      ${waiting.length
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${waiting.map(function(s){ return henkChaseChip(s); }).join('')}</div>`
+        : `<div style="font-size:12px;color:#A39E8C">Nobody — everyone is in</div>`}
+    </div>
+    <div style="background:${arrived.length?'#EBF2EC':'#F7F6F3'};border:1px solid ${arrived.length?'#5C7A6B':'#E6E2D8'};border-radius:10px;padding:13px 15px">
+      <div style="font-size:10.5px;font-weight:800;color:${arrived.length?'#3F5A4C':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">✓ SUBMITTED TODAY (${arrived.length})</div>
+      ${arrived.length
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${arrived.map(function(s){
+            const u = todays.find(function(x){ return x.site_id === s.id; });
+            const nm = henkLeaderName(s.team_leader);
+            return u
+              ? `<span onclick="viewUpdate('${u.id}')" title="Open ${nm}'s report" style="background:#fff;border:1.5px solid #3F5A4C;border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:#3F5A4C;cursor:pointer;display:inline-flex;align-items:center;gap:5px">${nm}<span style="font-size:11px;opacity:.7">📄</span></span>`
+              : chip(nm, '#3F5A4C');
+          }).join('')}</div>`
+        : `<div style="font-size:12px;color:#A39E8C">Nobody yet</div>`}
+    </div>
+  </div>`;
+}
+
 async function renderHenkOverview(){
   if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
   $('pageBody').innerHTML = `
@@ -4199,34 +4250,7 @@ async function renderHenkOverview(){
     return;
   }
 
-  const waiting = active.filter(function(s){ return !todays.some(function(u){ return u.site_id === s.id; }); });
-  const arrived = active.filter(function(s){ return  todays.some(function(u){ return u.site_id === s.id; }); });
-  const chip = function(txt, col){
-    return `<span style="background:#fff;border:1.5px solid ${col};border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:${col}">${txt}</span>`;
-  };
-
-  // Outstanding in orange, submitted in green — side by side on a wide screen,
-  // stacked on a phone where two columns would be unreadable.
-  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:18px">
-    <div style="background:${waiting.length?'#FFF3E0':'#F7F6F3'};border:1px solid ${waiting.length?'#D4A55A':'#E6E2D8'};border-radius:10px;padding:13px 15px">
-      <div style="font-size:10.5px;font-weight:800;color:${waiting.length?'#9C6000':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">⏳ STILL OUTSTANDING (${waiting.length})</div>
-      ${waiting.length
-        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${waiting.map(function(s){ return henkChaseChip(s); }).join('')}</div>`
-        : `<div style="font-size:12px;color:#A39E8C">Nobody — everyone is in</div>`}
-    </div>
-    <div style="background:${arrived.length?'#EBF2EC':'#F7F6F3'};border:1px solid ${arrived.length?'#5C7A6B':'#E6E2D8'};border-radius:10px;padding:13px 15px">
-      <div style="font-size:10.5px;font-weight:800;color:${arrived.length?'#3F5A4C':'#A39E8C'};letter-spacing:1px;margin-bottom:9px">✓ SUBMITTED TODAY (${arrived.length})</div>
-      ${arrived.length
-        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${arrived.map(function(s){
-            const u = todays.find(function(x){ return x.site_id === s.id; });
-            const nm = henkLeaderName(s.team_leader);
-            return u
-              ? `<span onclick="viewUpdate('${u.id}')" title="Open ${nm}'s report" style="background:#fff;border:1.5px solid #3F5A4C;border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700;color:#3F5A4C;cursor:pointer;display:inline-flex;align-items:center;gap:5px">${nm}<span style="font-size:11px;opacity:.7">📄</span></span>`
-              : chip(nm, '#3F5A4C');
-          }).join('')}</div>`
-        : `<div style="font-size:12px;color:#A39E8C">Nobody yet</div>`}
-    </div>
-  </div>`;
+  h += todaysReportsBoxesHtml(active, todays);
 
   // Four teams — today's profit per day, days on site, net profit, margin.
   // Labour comes off the blocks; tap a block for the full detail.
@@ -4309,6 +4333,13 @@ function duPaintSitesHome(){
     <button onclick="openAddSite()" style="flex:1;background:#1FA24C;color:#fff;border:none;border-radius:12px;padding:14px 10px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(31,162,76,0.28)">＋ Add new site</button>
     <button onclick="duGo('archive')" style="flex:1;background:#8B1A1A;color:#fff;border:none;border-radius:12px;padding:14px 10px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(139,26,26,0.28)">📁 Site archives</button>
   </div>`;
+  // Today's reports — same outstanding / submitted view as Henk's Overview; tap a
+  // submitted leader to open the full daily report.
+  const today = new Date().toISOString().split('T')[0];
+  const activeSites = (DU_SITELIST||[]).filter(function(s){ return s.status !== 'done'; });
+  const todays = (DU_CACHE||[]).filter(function(u){ return u.date === today; });
+  h += `<div class="section-lbl" style="margin-top:0">Today's reports</div>`;
+  h += todaysReportsBoxesHtml(activeSites, todays);
   h += henkLiveSitesHtml();
   return h;
 }
