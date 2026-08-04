@@ -4993,6 +4993,7 @@ function paintSiteSummaryBody(){
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
       <div style="display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end">
         <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Invoices</button>
+        <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
         <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
         <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
         <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
@@ -5048,6 +5049,9 @@ function paintSiteSummaryBody(){
       <div style="font-size:10.5px;color:#A39E8C;margin:8px 2px 4px">Tap any line to open or edit it. Every figure is live — change labour, add an invoice or another day passes, and this recalculates.</div>
     </div>`;
 
+  // Stock + paint-on-site show only for LIVE sites. A completed site is trimmed to
+  // the profit sheet; the 📦 Products button shows what was bought.
+  if(s.status !== 'done'){
   // ── STOCK SHEET — total products USED so far (invoiced minus still on site) ──
   h += `<div class="section-lbl">Stock sheet — total products used so far</div>`;
   const stockRows = (data.stock||[]).slice().sort(function(a,b){ return String(a.product).localeCompare(String(b.product)); });
@@ -5082,12 +5086,120 @@ function paintSiteSummaryBody(){
     h += `<div style="font-size:10.5px;color:#9C7A3A;padding:8px 0">This is the unopened paint you should find on site — what's left to finish the job.</div></div>`;
   }
 
+  } // end live-only stock / paint-on-site sections
+
   // Owner-only: keep client payments and complete-site reachable (the older tools).
   if(CURRENT_ROLE === 'owner'){
     h += `<button class="cta-btn ghost" style="margin-top:6px;height:44px;font-size:12.5px" onclick="openSiteDetail('${s.id}')">⚙ Owner tools — client payments, mark complete</button>`;
   }
 
   body.innerHTML = h;
+}
+
+// ── PRODUCTS BOUGHT — every invoice line item for a site, boxed by product so you
+// can see exactly how much of each was purchased (quantities only, no rands). Each
+// product can be renamed (fixes typos so variants merge) and the list shared to
+// WhatsApp. Reachable from the 📦 Products button on any site summary. ──
+let PRODUCTS_STATE = null;
+
+async function openSiteProducts(siteId){
+  const s = (SUMMARY && SUMMARY.site && SUMMARY.site.id === siteId) ? SUMMARY.site : null;
+  const siteName = s ? s.name : 'this site';
+  $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Loading products…</div>`;
+  openModal('modalSiteDetail');
+  const invoices = await sbGetRows('invoice_inbox', `select=id,invoice_number,line_items&site_guess=eq.${encodeURIComponent(siteId)}&status=eq.confirmed`);
+  PRODUCTS_STATE = { siteId: siteId, siteName: siteName, invoices: Array.isArray(invoices) ? invoices : [] };
+  $('siteDetailContent').innerHTML = siteProductsHtml();
+}
+
+// Group every line item by product + colour, summing quantity per unit.
+function siteProductsGroups(){
+  const map = {};
+  (PRODUCTS_STATE.invoices || []).forEach(function(inv){
+    (inv.line_items || []).forEach(function(li){
+      const product = String(li.product || '—').trim();
+      const colour  = String(li.colour || '').trim();
+      const unit    = String(li.unit || '').replace(/\bdrums?\b/ig, '').replace(/\s+/g, ' ').trim() || '—';
+      const qty     = parseFloat(li.qty) || 0;
+      const key = product.toLowerCase() + '|' + colour.toLowerCase();
+      if(!map[key]) map[key] = { product: product, colour: colour, units: {} };
+      map[key].units[unit] = (map[key].units[unit] || 0) + qty;
+    });
+  });
+  return Object.keys(map).map(function(k){ return map[k]; })
+    .sort(function(a,b){ return a.product.localeCompare(b.product) || a.colour.localeCompare(b.colour); });
+}
+
+function siteProductsQtyStr(g){
+  return Object.keys(g.units).map(function(u){ return (+g.units[u].toFixed(2)) + ' × ' + u; }).join('  +  ');
+}
+
+function siteProductsHtml(){
+  const st = PRODUCTS_STATE;
+  const groups = siteProductsGroups();
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:3px">
+      <div class="disp" style="font-size:17px;font-weight:800">Products bought</div>
+      ${groups.length ? `<button onclick="shareSiteProducts()" style="background:#25D366;color:#fff;border:none;border-radius:20px;padding:8px 15px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;white-space:nowrap">📲 Share</button>` : ''}
+    </div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${st.siteName} · every product from this site's invoices, boxed together (quantities only).</div>`;
+  if(!groups.length){
+    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 16px">No invoice products for this site yet.</div>`;
+  } else {
+    h += `<div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
+    groups.forEach(function(g){
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #EFECE3">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:#1A1A1A">${g.product}${g.colour ? ` <span style="color:#8A8470;font-weight:500">(${g.colour})</span>` : ''}</div>
+        </div>
+        <span class="disp" style="font-weight:800;font-size:13.5px;white-space:nowrap;color:#1A1A1A">${siteProductsQtyStr(g)}</span>
+        <button onclick="editSiteProduct('${jsAttr(g.product)}','${jsAttr(g.colour)}')" title="Rename this product" style="background:none;border:none;font-size:14px;cursor:pointer;flex:0 0 auto;padding:2px 4px">✏️</button>
+      </div>`;
+    });
+    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">Tap ✏️ to fix a product name — it updates on every invoice for this site, so typos and variants merge into one line.</div></div>`;
+  }
+  h += `<button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  return h;
+}
+
+async function editSiteProduct(product, colour){
+  const st = PRODUCTS_STATE; if(!st) return;
+  const nw = prompt(`Rename product:\n\n"${product}"${colour ? ' ('+colour+')' : ''}\n\nType the correct name. It updates on every invoice for this site, so typos/variants merge into one.`, product);
+  if(nw === null) return;
+  const newName = String(nw).trim();
+  if(!newName || newName === product) return;
+  const jobs = [];
+  (st.invoices || []).forEach(function(inv){
+    let changed = false;
+    const items = (inv.line_items || []).map(function(li){
+      if(String(li.product||'').trim().toLowerCase() === product.toLowerCase() &&
+         String(li.colour||'').trim().toLowerCase() === colour.toLowerCase()){
+        changed = true;
+        return Object.assign({}, li, { product: newName });
+      }
+      return li;
+    });
+    if(changed){ inv.line_items = items; jobs.push(sbPatch('invoice_inbox', 'id=eq.' + encodeURIComponent(inv.id), { line_items: items })); }
+  });
+  $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
+  await Promise.all(jobs);
+  $('siteDetailContent').innerHTML = siteProductsHtml();
+  showSaveToast('Product renamed');
+}
+
+function shareSiteProducts(){
+  const st = PRODUCTS_STATE; if(!st) return;
+  const groups = siteProductsGroups();
+  let txt = `📦 Products bought — ${st.siteName}\n\n`;
+  groups.forEach(function(g){
+    txt += `• ${g.product}${g.colour ? ' ('+g.colour+')' : ''}: ${siteProductsQtyStr(g)}\n`;
+  });
+  txt += `\n— Power Rock`;
+  if(navigator.share){
+    navigator.share({ title: 'Products bought — ' + st.siteName, text: txt }).catch(function(){});
+  } else {
+    window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+  }
 }
 
 // Remove a stock line (samples, once-off buys). Clears it from Supabase so it
