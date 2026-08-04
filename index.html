@@ -5120,27 +5120,37 @@ async function openSiteProducts(siteId){
   $('siteDetailContent').innerHTML = siteProductsHtml();
 }
 
-// Group every line item by product + colour, summing quantity per unit.
+// Normalised product / colour / unit for a line item (unit drops "drums").
+function liKey(li){
+  return {
+    product: String(li.product || '—').trim(),
+    colour:  String(li.colour || '').trim(),
+    unit:    String(li.unit || '').replace(/\bdrums?\b/ig, '').replace(/\s+/g, ' ').trim() || '—'
+  };
+}
+function liMatches(li, product, colour, unit){
+  const k = liKey(li);
+  return k.product.toLowerCase() === String(product).toLowerCase()
+      && k.colour.toLowerCase()  === String(colour).toLowerCase()
+      && k.unit.toLowerCase()    === String(unit).toLowerCase();
+}
+
+// One line per product + colour + unit, so delete and quantity edits are exact.
 function siteProductsGroups(){
   const map = {};
   (PRODUCTS_STATE.invoices || []).forEach(function(inv){
     (inv.line_items || []).forEach(function(li){
-      const product = String(li.product || '—').trim();
-      const colour  = String(li.colour || '').trim();
-      const unit    = String(li.unit || '').replace(/\bdrums?\b/ig, '').replace(/\s+/g, ' ').trim() || '—';
-      const qty     = parseFloat(li.qty) || 0;
-      const key = product.toLowerCase() + '|' + colour.toLowerCase();
-      if(!map[key]) map[key] = { product: product, colour: colour, units: {} };
-      map[key].units[unit] = (map[key].units[unit] || 0) + qty;
+      const k = liKey(li);
+      const key = k.product.toLowerCase() + '|' + k.colour.toLowerCase() + '|' + k.unit.toLowerCase();
+      if(!map[key]) map[key] = { product: k.product, colour: k.colour, unit: k.unit, qty: 0 };
+      map[key].qty += (parseFloat(li.qty) || 0);
     });
   });
   return Object.keys(map).map(function(k){ return map[k]; })
-    .sort(function(a,b){ return a.product.localeCompare(b.product) || a.colour.localeCompare(b.colour); });
+    .sort(function(a,b){ return a.product.localeCompare(b.product) || a.colour.localeCompare(b.colour) || a.unit.localeCompare(b.unit); });
 }
 
-function siteProductsQtyStr(g){
-  return Object.keys(g.units).map(function(u){ return (+g.units[u].toFixed(2)) + ' × ' + u; }).join('  +  ');
-}
+function siteProductQtyStr(g){ return (+g.qty.toFixed(2)) + ' × ' + g.unit; }
 
 function siteProductsHtml(){
   const st = PRODUCTS_STATE;
@@ -5156,15 +5166,17 @@ function siteProductsHtml(){
   } else {
     h += `<div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
     groups.forEach(function(g){
-      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #EFECE3">
+      const a = jsAttr(g.product), c = jsAttr(g.colour), u = jsAttr(g.unit);
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #EFECE3">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:700;color:#1A1A1A">${g.product}${g.colour ? ` <span style="color:#8A8470;font-weight:500">(${g.colour})</span>` : ''}</div>
         </div>
-        <span class="disp" style="font-weight:800;font-size:13.5px;white-space:nowrap;color:#1A1A1A">${siteProductsQtyStr(g)}</span>
-        <button onclick="editSiteProduct('${jsAttr(g.product)}','${jsAttr(g.colour)}')" title="Rename this product" style="background:none;border:none;font-size:14px;cursor:pointer;flex:0 0 auto;padding:2px 4px">✏️</button>
+        <button onclick="editSiteProductQty('${a}','${c}','${u}')" title="Edit quantity" style="background:none;border:none;font-size:13.5px;font-weight:800;color:#1A1A1A;cursor:pointer;white-space:nowrap;font-family:inherit;padding:2px 2px;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${siteProductQtyStr(g)}</button>
+        <button onclick="editSiteProduct('${a}','${c}')" title="Rename product" style="background:none;border:none;font-size:14px;cursor:pointer;flex:0 0 auto;padding:2px 3px">✏️</button>
+        <button onclick="deleteSiteProduct('${a}','${c}','${u}')" title="Delete this line" style="background:none;border:none;font-size:14px;cursor:pointer;flex:0 0 auto;padding:2px 3px;color:#C4A0A0">🗑</button>
       </div>`;
     });
-    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0">Tap ✏️ to fix a product name — it updates on every invoice for this site, so typos and variants merge into one line.</div></div>`;
+    h += `<div style="font-size:10.5px;color:#A39E8C;padding:8px 0;line-height:1.6">Tap the <b>quantity</b> to correct it, <b>✏️</b> to rename the product (merges typos/variants), or <b>🗑</b> to delete a duplicate line. Names & quantities only — invoice totals and money never change.</div></div>`;
   }
   h += `<button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
   return h;
@@ -5195,12 +5207,50 @@ async function editSiteProduct(product, colour){
   showSaveToast('Product renamed');
 }
 
+async function editSiteProductQty(product, colour, unit){
+  const st = PRODUCTS_STATE; if(!st) return;
+  const g = siteProductsGroups().find(function(x){ return x.product === product && x.colour === colour && x.unit === unit; });
+  const cur = g ? g.qty : '';
+  const nw = prompt(`Quantity of:\n\n${product}${colour ? ' ('+colour+')' : ''}  ·  per ${unit}\n\nType the correct number.`, cur);
+  if(nw === null) return;
+  const newQty = parseFloat(nw);
+  if(isNaN(newQty) || newQty < 0) return;
+  // Consolidate: drop every matching line item, then add one carrying the new quantity.
+  let firstInv = null;
+  (st.invoices || []).forEach(function(inv){
+    const orig = inv.line_items || [];
+    const kept = orig.filter(function(li){ return !liMatches(li, product, colour, unit); });
+    if(kept.length !== orig.length){ if(!firstInv) firstInv = inv; inv.line_items = kept; inv.__ch = true; }
+  });
+  if(firstInv && newQty > 0){ firstInv.line_items = firstInv.line_items.concat([{ product: product, colour: colour, unit: unit, qty: newQty }]); }
+  const jobs = (st.invoices || []).filter(function(inv){ return inv.__ch; }).map(function(inv){ delete inv.__ch; return sbPatch('invoice_inbox', 'id=eq.' + encodeURIComponent(inv.id), { line_items: inv.line_items }); });
+  $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
+  await Promise.all(jobs);
+  $('siteDetailContent').innerHTML = siteProductsHtml();
+  showSaveToast('Quantity updated');
+}
+
+async function deleteSiteProduct(product, colour, unit){
+  const st = PRODUCTS_STATE; if(!st) return;
+  if(!confirm(`Delete this line?\n\n${product}${colour ? ' ('+colour+')' : ''} — ${unit}\n\nIt is removed from the products list only. Invoice totals and money do not change.`)) return;
+  const jobs = [];
+  (st.invoices || []).forEach(function(inv){
+    const orig = inv.line_items || [];
+    const kept = orig.filter(function(li){ return !liMatches(li, product, colour, unit); });
+    if(kept.length !== orig.length){ inv.line_items = kept; jobs.push(sbPatch('invoice_inbox', 'id=eq.' + encodeURIComponent(inv.id), { line_items: kept })); }
+  });
+  $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
+  await Promise.all(jobs);
+  $('siteDetailContent').innerHTML = siteProductsHtml();
+  showSaveToast('Line removed');
+}
+
 function shareSiteProducts(){
   const st = PRODUCTS_STATE; if(!st) return;
   const groups = siteProductsGroups();
   let txt = `📦 Products bought — ${st.siteName}\n\n`;
   groups.forEach(function(g){
-    txt += `• ${g.product}${g.colour ? ' ('+g.colour+')' : ''}: ${siteProductsQtyStr(g)}\n`;
+    txt += `• ${g.product}${g.colour ? ' ('+g.colour+')' : ''}: ${siteProductQtyStr(g)}\n`;
   });
   txt += `\n— Power Rock`;
   if(navigator.share){
