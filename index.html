@@ -2810,8 +2810,16 @@ async function saveSite(){
   }
   const totalQuote = scopeLines.length ? scopeLines.reduce((a,l)=>a+l.amount,0) : quoteValue;
 
-  if(!name || !totalQuote || !started){
-    $('as_err').style.display='block';
+  // Name the exact box that's missing, so it's obvious what to fix.
+  let missing = '';
+  if(!name)            missing = 'Please fill in the Site name (question 1).';
+  else if(!started)    missing = 'Please choose a Start date (in the “R · Quote & budgets” section, next to Status).';
+  else if(!totalQuote) missing = 'Please enter a Total quoted value, or add a scope line with an amount (in “R · Quote & budgets”).';
+  if(missing){
+    const el = $('as_err');
+    el.textContent = missing;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior:'smooth', block:'center' });
     return;
   }
   $('as_err').style.display='none';
