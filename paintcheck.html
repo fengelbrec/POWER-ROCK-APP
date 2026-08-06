@@ -164,12 +164,17 @@ const COND_LABOUR = { good:0, fair:0, bad:0.25, verybad:0.40 };         // extra
 const DAMP_DRUM_MULT = [1.7, 1.9];                 // damp plaster primer: 70–90% more per drum than exterior paint, 1 coat
 const DAMP_LABOUR = 0.20;                          // damp adds ~20% labour
 const AREA = {
-  '1bed': { interior:90,  exterior:90,  roof:70  },
-  '2bed': { interior:150, exterior:120, roof:110 },
-  '3bed': { interior:230, exterior:150, roof:150 },
-  '4bed': { interior:320, exterior:200, roof:200 }
+  '1bed': { interior:90,  exterior:90  },
+  '2bed': { interior:150, exterior:120 },
+  '3bed': { interior:230, exterior:150 },
+  '4bed': { interior:320, exterior:200 }
 };
-const GARAGE = { interior:40, exterior:45, roof:40 };
+// Roof paintable = floor footprint × pitch/profile factor. The slope + the sheet/tile
+// profile add ~25–30% over the flat floor area.
+const FLOOR = { '1bed':55, '2bed':85, '3bed':120, '4bed':180 };  // house footprint m²
+const ROOF_PITCH = 1.275;                                        // +27.5% for slope & profile
+const GARAGE_FLOOR = 36;                                         // double garage footprint m²
+const GARAGE = { interior:40, exterior:45 };
 const CEIL_OF_INTERIOR = 0.45;
 // ──────────────────────────────────────────────────────────────
 
@@ -190,6 +195,12 @@ const Rr = (a,b) => R(a) + ' – ' + R(b);
 
 function areaFor(surf){
   if(!state.home) return 0;
+  if(surf==='roof'){
+    // footprint × pitch/profile — a double storey has the same roof footprint.
+    let f = FLOOR[state.home] || 0;
+    if(state.garage) f += GARAGE_FLOOR;
+    return Math.round(f * ROOF_PITCH);
+  }
   let a = AREA[state.home][surf] || 0;
   if(state.garage) a += (GARAGE[surf]||0);
   if(surf==='exterior' && state.storey) a *= 2;
