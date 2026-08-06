@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<meta name="theme-color" content="#12324e"/>
+<title>PaintCheck — What should it cost to paint your home?</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef1f4;color:#16222e;line-height:1.5}
+.wrap{max-width:560px;margin:0 auto;min-height:100vh;background:#f6f8fa}
+.top{background:#12324e;color:#fff;padding:22px 20px 20px}
+.logo{font-size:24px;font-weight:800;letter-spacing:-0.5px}
+.logo .paint{color:#fff}.logo .check{color:#9fc3e0}.logo .tick{color:#37c07a}
+.tagline{font-size:12.5px;color:#a9c4db;margin-top:4px}
+.body{padding:18px 16px 70px}
+.card{background:#fff;border:1px solid #e3e8ee;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,0.03)}
+.step{font-size:11px;font-weight:800;letter-spacing:1px;color:#2e7d5b;text-transform:uppercase;margin-bottom:12px}
+.q{font-size:14px;font-weight:700;margin:6px 0 9px}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opt{flex:1;min-width:calc(50% - 4px);border:1.5px solid #d7dee6;border-radius:10px;padding:11px 8px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;background:#fff}
+.opt.sel{border-color:#12324e;background:#12324e;color:#fff}
+.opt.q4{min-width:calc(25% - 6px)}
+.chk{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid #d7dee6;border-radius:10px;margin-bottom:8px;cursor:pointer;font-size:14px;font-weight:600}
+.chk.sel{border-color:#2e7d5b;background:#eaf6ef}
+.chk .box{width:20px;height:20px;border-radius:5px;border:2px solid #b9c4cf;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff}
+.chk.sel .box{background:#2e7d5b;border-color:#2e7d5b}
+.lbl{font-size:12px;font-weight:700;color:#5a6b7b;margin:12px 0 6px}
+input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
+.hint{font-size:11.5px;color:#8494a3;margin-top:5px;line-height:1.5}
+.cta{width:100%;background:#37c07a;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer;margin-top:4px}
+.cond{display:none}.cond.show{display:block}
+.res{display:none}.res.show{display:block}
+.bigrange{background:#12324e;color:#fff;border-radius:14px;padding:20px;text-align:center;margin-bottom:14px}
+.bigrange .k{font-size:11px;font-weight:800;letter-spacing:1px;color:#9fc3e0;text-transform:uppercase}
+.bigrange .v{font-size:26px;font-weight:800;margin:6px 0 2px;letter-spacing:-0.5px}
+.bigrange .s{font-size:12px;color:#c5d8e8}
+.route{border:1px solid #e3e8ee;border-radius:12px;padding:13px 14px;margin-bottom:10px}
+.route .rh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.route .rn{font-size:14px;font-weight:800}
+.route .ra{font-size:15px;font-weight:800;white-space:nowrap;color:#12324e}
+.route .rd{font-size:11.5px;color:#7c8b99;margin-top:3px;line-height:1.5}
+.r1{background:#eaf6ef;border-color:#bfe6cf}.r1 .ra{color:#1e7d4f}
+.line{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid #eef1f4;font-size:13px}
+.line:last-child{border-bottom:none}.line .n{color:#41505f}.line .a{font-weight:700;white-space:nowrap}
+.sub{font-size:11px;color:#8494a3}
+.verdict{border-radius:14px;padding:16px;margin-bottom:14px;text-align:center}
+.verdict .vh{font-size:18px;font-weight:800;margin-bottom:4px}.verdict .vt{font-size:13px;line-height:1.55}
+.v-fair{background:#eaf6ef;border:1.5px solid #37c07a}.v-fair .vh{color:#1e7d4f}
+.v-high{background:#fff5e6;border:1.5px solid #e0a54a}.v-high .vh{color:#a86e14}
+.v-over{background:#fdeceb;border:1.5px solid #d6584c}.v-over .vh{color:#b0342a}
+.v-low{background:#eef4fb;border:1.5px solid #6f9fc7}.v-low .vh{color:#2c5f8a}
+.excl{background:#fbf7ee;border:1px solid #e6dcc2;border-radius:12px;padding:13px 14px;font-size:11.5px;color:#7a6a42;line-height:1.6;margin-bottom:14px}
+.foot{font-size:11px;color:#93a2b1;text-align:center;padding:6px 6px;line-height:1.6}
+.tune{background:#fffceb;border:1px dashed #d8c98a;border-radius:10px;padding:10px 12px;font-size:11px;color:#8a7420;margin-bottom:14px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="logo"><span class="paint">Paint</span><span class="check">Check</span> <span class="tick">✓</span></div>
+    <div class="tagline">What should it really cost to paint your home? · South Africa</div>
+  </div>
+  <div class="body">
+    <div class="tune">⚙️ Ferdi test build — numbers at the top of the code are easy to tune. Try a few combos and tell me what to change.</div>
+
+    <div class="card">
+      <div class="step">Step 1 · What are you painting?</div>
+      <div class="chk" data-surf="exterior" onclick="tSurf(this)"><span class="box">✓</span> Outside walls (textured, hard-wearing)</div>
+      <div class="chk" data-surf="interior" onclick="tSurf(this)"><span class="box">✓</span> Inside walls (washable low-sheen)</div>
+      <div class="chk" data-surf="roof" onclick="tSurf(this)"><span class="box">✓</span> Roof</div>
+    </div>
+
+    <div class="card">
+      <div class="step">Step 2 · Your home (no measuring)</div>
+      <div class="q">Home size</div>
+      <div class="opts" id="homeOpts">
+        <div class="opt q4" data-home="1bed" onclick="tHome(this)">1-bed</div>
+        <div class="opt q4" data-home="2bed" onclick="tHome(this)">2-bed</div>
+        <div class="opt q4" data-home="3bed" onclick="tHome(this)">3-bed</div>
+        <div class="opt q4" data-home="4bed" onclick="tHome(this)">4-bed+</div>
+      </div>
+      <div class="chk" data-extra="garage" onclick="tExtra(this)" style="margin-top:10px"><span class="box">✓</span> Double garage</div>
+      <div class="chk" data-extra="storey" onclick="tExtra(this)"><span class="box">✓</span> Double storey (more outside wall)</div>
+      <div class="chk" data-extra="ceilings" onclick="tExtra(this)"><span class="box">✓</span> Also painting ceilings inside</div>
+    </div>
+
+    <div class="card cond" id="wallCard">
+      <div class="step">Step 3 · Condition of the walls</div>
+      <div class="q">What state are they in?</div>
+      <div class="opts" id="condOpts">
+        <div class="opt" data-cond="good" onclick="tCond(this)">Good</div>
+        <div class="opt" data-cond="fair" onclick="tCond(this)">Fair</div>
+        <div class="opt" data-cond="bad" onclick="tCond(this)">Bad (chalky)</div>
+        <div class="opt" data-cond="verybad" onclick="tCond(this)">Very bad</div>
+      </div>
+      <div class="hint">Bad/very bad = old, powdery or flaking — needs a plaster primer coat first.</div>
+      <div class="chk" data-extra="damp" onclick="tExtra(this)" style="margin-top:12px"><span class="box">✓</span> There's a damp / rising-damp problem</div>
+      <div class="hint">Damp needs special treatment, damp plaster primer and extra prep.</div>
+    </div>
+
+    <div class="card cond" id="roofCard">
+      <div class="step">Step 3b · Your roof</div>
+      <div class="q">Roof type</div>
+      <div class="opts" id="roofOpts">
+        <div class="opt" data-roof="tiled" onclick="tRoof(this)">Tiled (rough)</div>
+        <div class="opt" data-roof="corrugated" onclick="tRoof(this)">Corrugated / metal</div>
+      </div>
+      <div class="chk" data-extra="rust" onclick="tExtra(this)" id="rustChk" style="margin-top:12px;display:none"><span class="box">✓</span> There is rust on the roof</div>
+    </div>
+
+    <div class="card">
+      <div class="step">Step 4 · Optional — check a quote</div>
+      <div class="lbl">Got a price from a painter? Enter it (R)</div>
+      <input type="number" id="quote" inputmode="decimal" placeholder="Leave blank to just see the fair range"/>
+      <div class="hint">We'll tell you where it sits and if it's fair.</div>
+    </div>
+
+    <button class="cta" onclick="calc()">Show me the fair price →</button>
+
+    <div class="res" id="res">
+      <div id="verdictBox"></div>
+      <div class="bigrange">
+        <div class="k">To paint this, expect</div>
+        <div class="v" id="rangeMain">—</div>
+        <div class="s">from doing it yourself to a full contractor</div>
+      </div>
+      <div class="card">
+        <div class="step">Your 3 options</div>
+        <div class="route r1">
+          <div class="rh"><span class="rn">1 · Do it yourself</span><span class="ra" id="r1a">—</span></div>
+          <div class="rd">Just the paint &amp; consumables — you do the work. We give you the step-by-step method for your walls.</div>
+        </div>
+        <div class="route">
+          <div class="rh"><span class="rn">2 · Buy paint + hire a painter</span><span class="ra" id="r2a">—</span></div>
+          <div class="rd">You buy the paint and pay an individual painter (~R1000/room). You manage it.</div>
+        </div>
+        <div class="route">
+          <div class="rh"><span class="rn">3 · Full contractor</span><span class="ra" id="r3a">—</span></div>
+          <div class="rd">They handle everything — insured, guaranteed, you do nothing. You pay for convenience.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="step">Breakdown</div>
+        <div id="breakdown"></div>
+      </div>
+      <div class="excl" id="excl"></div>
+      <div class="foot">Estimates for a typical SA home at current paint prices. Real m² varies with your layout — a solid ballpark to plan and to sense-check a quote.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── TUNE THESE (Ferdi's numbers) ─────────────────────────────
+const COVER = { interior: 8.5, exterior: 6.5 };   // m² per litre, per coat
+const ROOFT = { tiled:{cover:2,coats:1}, corrugated:{cover:9,coats:2} };
+const RUST_COVER = 9;                              // rust primer, 1 coat, priced ~ roof paint
+const DRUM  = { interior:[1600,2000], exterior:[1100,1300], roof:[1000,1300] }; // price per 20L
+const CONSUMABLE_PCT = 0.15;                       // brushes, rollers, sheets, filler, silicone
+const LABOUR_M2 = [25, 30];                        // R/m², incl. prep + paint
+const CONTRACTOR_LABOUR_RATIO = 0.24;              // contractor quote ≈ labour ÷ 24%  (→ ~R20k for a 3–4 bed exterior)
+const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add plaster-primer coat?
+const COND_LABOUR = { good:0, fair:0, bad:0.25, verybad:0.40 };         // extra prep labour
+const DAMP_DRUM_MULT = [1.7, 1.9];                 // damp plaster primer: 70–90% more per drum than exterior paint, 1 coat
+const DAMP_LABOUR = 0.20;                          // damp adds ~20% labour
+const AREA = {
+  '1bed': { interior:90,  exterior:90,  roof:70  },
+  '2bed': { interior:150, exterior:120, roof:110 },
+  '3bed': { interior:230, exterior:150, roof:150 },
+  '4bed': { interior:320, exterior:200, roof:200 }
+};
+const GARAGE = { interior:40, exterior:45, roof:40 };
+const CEIL_OF_INTERIOR = 0.45;
+// ──────────────────────────────────────────────────────────────
+
+const state = { surf:{interior:false,exterior:false,roof:false}, home:null, garage:false, storey:false, ceilings:false, cond:'good', damp:false, roof:'tiled', rust:false };
+
+function tSurf(el){ const s=el.dataset.surf; state.surf[s]=!state.surf[s]; el.classList.toggle('sel',state.surf[s]); syncCards(); }
+function tHome(el){ document.querySelectorAll('#homeOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.home=el.dataset.home; }
+function tCond(el){ document.querySelectorAll('#condOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.cond=el.dataset.cond; }
+function tRoof(el){ document.querySelectorAll('#roofOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.roof=el.dataset.roof; document.getElementById('rustChk').style.display = state.roof==='corrugated'?'flex':'none'; }
+function tExtra(el){ const k=el.dataset.extra; state[k]=!state[k]; el.classList.toggle('sel',state[k]); }
+function syncCards(){
+  document.getElementById('wallCard').classList.toggle('show', state.surf.interior||state.surf.exterior);
+  document.getElementById('roofCard').classList.toggle('show', state.surf.roof);
+}
+
+const R = n => 'R ' + Math.round(n).toLocaleString('en-ZA');
+const Rr = (a,b) => R(a) + ' – ' + R(b);
+
+function areaFor(surf){
+  if(!state.home) return 0;
+  let a = AREA[state.home][surf] || 0;
+  if(state.garage) a += (GARAGE[surf]||0);
+  if(surf==='exterior' && state.storey) a *= 2;
+  if(surf==='interior' && state.ceilings) a += a*CEIL_OF_INTERIOR;
+  return Math.round(a);
+}
+
+function calc(){
+  const chosen = Object.keys(state.surf).filter(s=>state.surf[s]);
+  if(!chosen.length){ alert('Tick at least one thing to paint (Step 1).'); return; }
+  if(!state.home){ alert('Choose your home size (Step 2).'); return; }
+
+  let paintLo=0,paintHi=0, labLo=0,labHi=0, bh='';
+  chosen.forEach(surf=>{
+    const area = areaFor(surf);
+    let pLo=0,pHi=0, detail='';
+    if(surf==='roof'){
+      const rt = ROOFT[state.roof];
+      const L = area*rt.coats/rt.cover;
+      pLo += L*DRUM.roof[0]/20; pHi += L*DRUM.roof[1]/20;
+      detail = `${state.roof} · ~${area} m² · ${Math.ceil(L)} L, ${rt.coats} coat${rt.coats>1?'s':''}`;
+      if(state.roof==='corrugated' && state.rust){
+        const rl = area/RUST_COVER;
+        pLo += rl*DRUM.roof[0]/20; pHi += rl*DRUM.roof[1]/20;
+        detail += ` + rust primer (${Math.ceil(rl)} L)`;
+      }
+    } else {
+      const cov = COVER[surf], d = DRUM[surf];
+      const L = area*2/cov;
+      pLo += L*d[0]/20; pHi += L*d[1]/20;
+      detail = `~${area} m² · ${Math.ceil(L)} L, 2 coats`;
+      if(COND_PRIMER[state.cond]){
+        const pl = area/cov;
+        pLo += pl*d[0]/20; pHi += pl*d[1]/20;
+        detail += ' + plaster primer';
+      }
+      if(state.damp){
+        const dl = area/cov;
+        pLo += dl*d[0]*DAMP_DRUM_MULT[0]/20; pHi += dl*d[1]*DAMP_DRUM_MULT[1]/20;
+        detail += ' + damp primer';
+      }
+    }
+    // labour with condition/damp multipliers (roof uses base rate)
+    let mult = 1;
+    if(surf!=='roof'){ mult += (COND_LABOUR[state.cond]||0); if(state.damp) mult += DAMP_LABOUR; }
+    const lLo = area*LABOUR_M2[0]*mult, lHi = area*LABOUR_M2[1]*mult;
+    paintLo+=pLo; paintHi+=pHi; labLo+=lLo; labHi+=lHi;
+    const nm = surf==='interior'?'Inside walls':surf==='exterior'?'Outside walls':'Roof';
+    bh += `<div class="line"><span class="n">${nm}<br/><span class="sub">${detail}</span></span><span class="a">${Rr(pLo,pHi)}</span></div>`;
+  });
+
+  const consLo=paintLo*CONSUMABLE_PCT, consHi=paintHi*CONSUMABLE_PCT;
+  const matLo=paintLo+consLo, matHi=paintHi+consHi;
+  const manageLo=matLo+labLo, manageHi=matHi+labHi;
+  const conLo=labLo/CONTRACTOR_LABOUR_RATIO, conHi=labHi/CONTRACTOR_LABOUR_RATIO;
+
+  bh += `<div class="line"><span class="n">Paint &amp; primers</span><span class="a">${Rr(paintLo,paintHi)}</span></div>`;
+  bh += `<div class="line"><span class="n">Consumables <span class="sub">(brushes, rollers, sheets, filler, silicone)</span></span><span class="a">${Rr(consLo,consHi)}</span></div>`;
+  bh += `<div class="line"><span class="n">Labour <span class="sub">(prep + painting)</span></span><span class="a">${Rr(labLo,labHi)}</span></div>`;
+  document.getElementById('breakdown').innerHTML = bh;
+
+  document.getElementById('r1a').textContent = Rr(matLo,matHi);
+  document.getElementById('r2a').textContent = Rr(manageLo,manageHi);
+  document.getElementById('r3a').textContent = Rr(conLo,conHi);
+  document.getElementById('rangeMain').textContent = Rr(matLo, conHi);
+
+  // exclusions notice
+  document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
+
+  // Verdict — place their quote on the spectrum
+  const q = parseFloat(document.getElementById('quote').value)||0;
+  const vb = document.getElementById('verdictBox');
+  if(q>0){
+    let cls,h,t;
+    if(q < matLo*0.9){ cls='v-low'; h='🔍 Very cheap'; t='This is below what the paint alone should cost. Ask exactly which paint, how many coats, and what prep is included — cheap usually means thin paint or skipped prep.'; }
+    else if(q <= manageHi){ cls='v-fair'; h='✅ Fair — individual painter level'; t='This matches doing it with an individual painter and buying your own paint. Good price if you\'re happy to manage the job.'; }
+    else if(q <= conHi){ cls='v-fair'; h='✅ Fair — contractor level'; t='This sits in the professional-contractor range: more than DIY, but they manage everything, insured and guaranteed.'; }
+    else if(q <= conHi*1.15){ cls='v-high'; h='⚠️ On the high side'; t='A little above a fair contractor price. Get one more quote, or ask what extra you\'re getting (guarantee, scaffolding, premium paint).'; }
+    else { cls='v-over'; h='🚩 Looks overpriced'; t='Well above a fair contractor price for a home this size. Get 2 more quotes before signing.'; }
+    vb.innerHTML = `<div class="verdict ${cls}"><div class="vh">${h}</div><div class="vt">Your quote: <b>${R(q)}</b><br/>${t}</div></div>`;
+  } else { vb.innerHTML=''; }
+
+  const res=document.getElementById('res'); res.classList.add('show'); res.scrollIntoView({behavior:'smooth'});
+}
+</script>
+</body>
+</html>
