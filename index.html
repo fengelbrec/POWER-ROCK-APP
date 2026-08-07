@@ -1537,10 +1537,10 @@ async function openMonthSnapshot(monthKey){
           <td>${Rs(r.projectValue*1.15)}</td>
           <td><button onclick="openProgressInvoice('${r.site.id}','${monthKey}')" style="background:${r.progInv>0?'#eaf6ef':'#f2f6fb'};border:1px solid ${r.progInv>0?'#bfe6cf':'#cdddec'};border-radius:7px;padding:6px 10px;font-size:12px;font-weight:800;color:${r.progInv>0?'#1e7d4f':'#2c5f8a'};cursor:pointer;font-family:inherit;white-space:nowrap">${r.progInv>0?Rs(r.progInv):'＋ Add'}</button></td>
           <td class="bud">${Rs(r.labourBudget)}</td>
-          ${money(r.labourActual, labC)}
+          <td onclick="openSiteLabour('${r.site.id}','${monthKey}')" title="See labour payments" style="cursor:pointer;font-weight:800;color:${labC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.labourActual)}</td>
           <td class="bud">${Rs(r.materialBudget)}</td>
-          ${money(r.materialActual, matC)}
-          <td>${Rs(r.henk)}</td>
+          <td onclick="openSiteMaterial('${r.site.id}','${monthKey}')" title="See material invoices" style="cursor:pointer;font-weight:800;color:${matC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.materialActual)}</td>
+          <td onclick="openSiteHenk('${r.site.id}','${monthKey}')" title="See Henk payments" style="cursor:pointer;font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.henk)}</td>
           ${money(r.dpd, dpdC)}
           <td style="font-weight:800">${Rs(r.monthNet)}</td>
           <td style="font-weight:800;color:${netC||'inherit'}">${Rs(r.totalNet)}${r.marginPct!=null?` <span style="font-size:9px;opacity:.85">${Math.round(r.marginPct*100)}%</span>`:''}</td>
@@ -1633,6 +1633,114 @@ function removeProgressInvoice(siteId, i){
   sbPatch('sites', 'id=eq.'+encodeURIComponent(siteId), { details: details }).then(function(ok){
     if(ok){ s.details = details; renderProgressInvoiceEditor(s, PI_RETURN); }
   });
+}
+
+// ── DRILL-IN from the month sheet: a site's material invoices / labour payments /
+// Henk payments — the same records as the site section, with dates + add. ──
+function snapBackBtn(mk){ const p=mk.split('-'); return `<button class="cta-btn ghost" style="margin-top:10px" onclick="openMonthSnapshot('${mk}')">← Back to ${MONTH_NAMES_FULL[parseInt(p[1])-1]} ${p[0]}</button>`; }
+function snapLoading(msg){ $('monthSnapshotContent').innerHTML=`<div style="text-align:center;padding:44px;color:#8A8470">${msg}</div>`; openModal('modalMonthSnapshot'); }
+
+// MATERIAL — confirmed invoices for the site, with view + add-invoice.
+async function openSiteMaterial(siteId, monthKey){
+  const s=(OWNER.sites||[]).find(x=>x.id===siteId); if(!s) return;
+  snapLoading('Loading invoices…');
+  const inv=await sbGetRows('invoice_inbox','site_guess=eq.'+encodeURIComponent(siteId)+'&status=eq.confirmed&order=invoice_date.desc');
+  renderSiteMaterial(s, monthKey, Array.isArray(inv)?inv:[]);
+}
+function renderSiteMaterial(s, monthKey, inv){
+  const p=monthKey.split('-'), total=inv.reduce((a,i)=>a+(parseFloat(i.total)||0),0);
+  let h=`<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
+    <div class="snap-title">Material invoices — ${s.name}</div>
+    <div class="snap-meta">${inv.length} confirmed invoice${inv.length!==1?'s':''} · ${R(total)} total</div>`;
+  if(inv.length){
+    h+=`<div class="ledger-card" style="padding:4px 16px;margin:14px 0">`;
+    inv.forEach(function(i){
+      const d=(i.invoice_date||(i.received_at||'').slice(0,10)||'');
+      h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #EFECE3">
+        <div style="min-width:0"><div style="font-weight:700;font-size:13px">${i.supplier||'—'}</div>
+          <div style="font-size:11px;color:#8A8470">${d} · ${R(parseFloat(i.total)||0)}${i.file_url?` · <a href="${i.file_url}" target="_blank" style="color:#2c5f8a">📄 view</a>`:''}</div></div>
+        <button onclick="removeMaterialInvoice('${i.id}','${s.id}','${monthKey}')" style="background:none;border:none;color:#B2342A;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>
+      </div>`;
+    });
+    h+=`</div>`;
+  } else h+=`<div style="font-size:12.5px;color:#A39E8C;padding:10px 0">No confirmed material invoices for this site yet.</div>`;
+  h+=`<div style="max-width:420px;margin-top:12px">
+    <div class="section-lbl" style="margin-top:0">Upload a material invoice</div>
+    <label class="f-label">Supplier</label><input class="f-input" id="mi_sup" placeholder="e.g. Plascon" style="margin-bottom:8px"/>
+    <label class="f-label">Amount (incl VAT)</label><input class="f-input" id="mi_amt" type="number" step="0.01" placeholder="0.00" style="margin-bottom:8px"/>
+    <label class="f-label">Invoice date</label><input class="f-input" id="mi_date" type="date" value="${p[0]}-${p[1]}-15" style="margin-bottom:8px"/>
+    <label class="f-label">Upload the invoice (PDF or photo)</label><input type="file" id="mi_file" accept=".pdf,image/*" style="margin-bottom:12px;font-size:13px;width:100%"/>
+    <button class="cta-btn" onclick="saveMaterialInvoice('${s.id}','${monthKey}')">Save invoice</button>
+    ${snapBackBtn(monthKey)}
+  </div>`;
+  $('monthSnapshotContent').innerHTML=h; openModal('modalMonthSnapshot');
+}
+async function saveMaterialInvoice(siteId, monthKey){
+  const sup=($('mi_sup').value||'').trim(), amt=parseFloat($('mi_amt').value)||0, date=$('mi_date').value;
+  if(!amt||!date){ alert('Please enter the amount and the invoice date.'); return; }
+  const file=($('mi_file')||{}).files&&$('mi_file').files[0];
+  snapLoading('Saving…');
+  let fileUrl=''; if(file){ try{ fileUrl=await sbUploadFile('material-invoices/'+siteId+'-'+Date.now()+'-'+file.name, file)||''; }catch(e){} }
+  await sbInsert('invoice_inbox', { supplier:sup||'Added by owner', total:amt, invoice_date:date, site_guess:siteId, status:'confirmed', raw_summary:'Added by owner', received_at:new Date().toISOString(), file_url:fileUrl });
+  await loadOwnerFin();
+  openSiteMaterial(siteId, monthKey);
+}
+async function removeMaterialInvoice(invId, siteId, monthKey){
+  if(!confirm('Remove this invoice from the site\'s material total?')) return;
+  snapLoading('Removing…');
+  await sbPatch('invoice_inbox','id=eq.'+encodeURIComponent(invId),{status:'rejected'});
+  await loadOwnerFin();
+  openSiteMaterial(siteId, monthKey);
+}
+
+// LABOUR / HENK — dated progress payments (site_costs), with add.
+function openSiteLabour(siteId, monthKey){ openSiteCostKind(siteId, monthKey, 'labour', 'Labour payments'); }
+function openSiteHenk(siteId, monthKey){ openSiteCostKind(siteId, monthKey, 'henk', 'Henk payments'); }
+async function openSiteCostKind(siteId, monthKey, kind, titleLbl){
+  const s=(OWNER.sites||[]).find(x=>x.id===siteId); if(!s) return;
+  snapLoading('Loading payments…');
+  const rows=await sbGetRows('site_costs','site_id=eq.'+encodeURIComponent(siteId)+'&kind=eq.'+kind+'&order=paid_date.desc');
+  renderSiteCostKind(s, monthKey, kind, titleLbl, Array.isArray(rows)?rows:[]);
+}
+function renderSiteCostKind(s, monthKey, kind, titleLbl, list){
+  const p=monthKey.split('-'), paid=list.reduce((a,c)=>a+(parseFloat(c.amount)||0),0);
+  const fin=ownerFin(s), target=(kind==='labour')?fin.labourActual:fin.henk, outstanding=target-paid;
+  let h=`<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
+    <div class="snap-title">${titleLbl} — ${s.name}</div>
+    <div class="snap-meta">${kind==='labour'?'Agreed labour':'Henk fee'} ${R(target)} · paid ${R(paid)} · <strong>${R(outstanding)} still to pay</strong></div>`;
+  if(list.length){
+    h+=`<div class="ledger-card" style="padding:4px 16px;margin:14px 0">`;
+    list.forEach(function(c){
+      h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #EFECE3">
+        <div><div style="font-weight:800;font-size:14px">${R(parseFloat(c.amount)||0)}</div><div style="font-size:11px;color:#8A8470">${c.paid_date||'no date'}</div></div>
+        <button onclick="removeCostRow('${c.id}','${s.id}','${monthKey}','${kind}')" style="background:none;border:none;color:#B2342A;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>
+      </div>`;
+    });
+    h+=`</div>`;
+  } else h+=`<div style="font-size:12.5px;color:#A39E8C;padding:10px 0">No payments logged yet.</div>`;
+  h+=`<div style="max-width:420px;margin-top:12px">
+    <div class="section-lbl" style="margin-top:0">Add a payment</div>
+    <label class="f-label">Amount paid</label><input class="f-input" id="cc_amt" type="number" step="0.01" placeholder="0.00" style="margin-bottom:8px"/>
+    <label class="f-label">Date paid</label><input class="f-input" id="cc_date" type="date" value="${p[0]}-${p[1]}-15" style="margin-bottom:12px"/>
+    <button class="cta-btn" onclick="saveCostRow('${s.id}','${monthKey}','${kind}')">Add payment</button>
+    ${snapBackBtn(monthKey)}
+  </div>`;
+  $('monthSnapshotContent').innerHTML=h; openModal('modalMonthSnapshot');
+}
+async function saveCostRow(siteId, monthKey, kind){
+  const amt=parseFloat($('cc_amt').value)||0, date=$('cc_date').value;
+  if(!amt||!date){ alert('Please enter the amount and the date.'); return; }
+  snapLoading('Saving…');
+  await sbInsert('site_costs', { id: uid(), site_id: siteId, kind: kind, amount: amt, paid_date: date, note:'' });
+  await loadOwnerFin();
+  openSiteCostKind(siteId, monthKey, kind, kind==='labour'?'Labour payments':'Henk payments');
+}
+async function removeCostRow(id, siteId, monthKey, kind){
+  if(!confirm('Remove this payment?')) return;
+  snapLoading('Removing…');
+  await sbDelete('site_costs','id=eq.'+encodeURIComponent(id));
+  await loadOwnerFin();
+  openSiteCostKind(siteId, monthKey, kind, kind==='labour'?'Labour payments':'Henk payments');
 }
 
 // Per-site, per-month, per-split paid-out tracking
