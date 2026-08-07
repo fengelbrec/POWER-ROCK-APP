@@ -187,13 +187,17 @@ input[type=password]{letter-spacing:5px}
 .snap-grand-total{font-family:'Poppins',sans-serif;font-size:24px;font-weight:800;color:#1A1A1A}
 .snap-meta{font-size:12px;color:#8A8470;margin-bottom:18px}
 .snap-meta strong{color:#1A1A1A}
-.snap-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
-.snap-table th{padding:8px 7px;text-align:right;font-weight:700;color:#1A1A1A;border-bottom:2px solid #1A1A1A;white-space:nowrap;font-size:10.5px}
-.snap-table th:first-child{text-align:left;width:15%}
-.snap-table td{padding:8px 7px;text-align:right;border-bottom:1px solid #EFECE3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.snap-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:4px}
+.snap-table{min-width:900px;border-collapse:collapse;font-size:12px}
+.snap-table th{padding:8px 10px;text-align:right;font-weight:700;color:#1A1A1A;border-bottom:2px solid #1A1A1A;white-space:nowrap;font-size:10.5px}
+.snap-table th:first-child{text-align:left}
+.snap-table td{padding:8px 10px;text-align:right;border-bottom:1px solid #EFECE3;white-space:nowrap}
 .snap-table td:first-child{text-align:left;font-weight:700;color:#1A1A1A}
+.snap-table th:first-child,.snap-table td:first-child{position:sticky;left:0;z-index:2;background:#fff;min-width:148px;max-width:190px;overflow:hidden;text-overflow:ellipsis}
 .snap-table tr:hover td{background:#FAF9F5}
 .snap-table tfoot td{border-top:2px solid #1A1A1A;border-bottom:none;font-weight:800;background:#F7F6F3}
+.snap-table tfoot td:first-child{background:#F7F6F3}
+.snap-table .bud{background:#EFF1F3;color:#98A0A8}
 .snap-paybtn{background:#F4ECD8;color:#9C8049;border:none;border-radius:4px;padding:3px 7px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;width:100%}
 .snap-paybtn.paid{background:#5C7A6B;color:#fff}
 .snap-close-x{position:absolute;top:18px;right:20px;width:34px;height:34px;border-radius:50%;background:#F0EEE6;border:none;font-size:18px;cursor:pointer;color:#5C5748;display:flex;align-items:center;justify-content:center}
@@ -1468,10 +1472,10 @@ function openMonthSnapshot(monthKey){
     <div class="snap-grand-total">${Rs(gInc)}</div>
   </div>`;
 
-  h += `<table class="snap-table">
+  h += `<div class="snap-scroll"><table class="snap-table">
     <thead><tr>
       <th>Site</th><th>Turnover</th><th>VAT</th><th>Incl VAT</th>
-      <th>Labour budget</th><th>Labour actual</th><th>Material budget</th><th>Material actual</th>
+      <th class="bud">Labour budget</th><th>Labour actual</th><th class="bud">Material budget</th><th>Material actual</th>
       <th>Henk 10%</th><th>Profit / day</th><th>Net profit</th>
     </tr></thead>
     <tbody>
@@ -1485,9 +1489,9 @@ function openMonthSnapshot(monthKey){
           <td>${Rs(r.exclVAT)}</td>
           <td>${Rs(r.incVAT-r.exclVAT)}</td>
           <td>${Rs(r.incVAT)}</td>
-          <td>${Rs(r.labourBudget)}</td>
+          <td class="bud">${Rs(r.labourBudget)}</td>
           ${money(r.labourActual, labC)}
-          <td>${Rs(r.materialBudget)}</td>
+          <td class="bud">${Rs(r.materialBudget)}</td>
           ${money(r.materialActual, matC)}
           <td>${Rs(r.henk)}</td>
           ${money(r.dpd, dpdC)}
@@ -1499,14 +1503,14 @@ function openMonthSnapshot(monthKey){
       <tr>
         <td>TOTAL</td>
         <td>${Rs(gExcl)}</td><td>${Rs(gVat)}</td><td>${Rs(gInc)}</td>
-        <td>${Rs(gLabB)}</td>${money(gLabA, gLabB>0?col(gLabA<gLabB):null)}
-        <td>${Rs(gMatB)}</td>${money(gMatA, gMatB>0?col(gMatA<gMatB):null)}
+        <td class="bud">${Rs(gLabB)}</td>${money(gLabA, gLabB>0?col(gLabA<gLabB):null)}
+        <td class="bud">${Rs(gMatB)}</td>${money(gMatA, gMatB>0?col(gMatA<gMatB):null)}
         <td>${Rs(gHenk)}</td>
         ${money(gDpd, col(gDpd>=PPD_TARGET))}
         <td style="font-weight:800;color:${gNetPct!=null?col(gNetPct>=NET_TARGET):'inherit'}">${Rs(gNet)}${gNetPct!=null?` ${Math.round(gNetPct*100)}%`:''}</td>
       </tr>
     </tfoot>
-  </table>`;
+  </table></div>`;
 
   h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px;line-height:1.7"><span style="color:#1FA24C;font-weight:800">Green</span> = on target: labour &amp; material under budget, profit ≥ R5&nbsp;000/day, net ≥ 35%. <span style="color:#C0392B;font-weight:800">Red</span> = over budget or below target.</div>`;
 
