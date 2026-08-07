@@ -1320,6 +1320,14 @@ function siteDaysOnSite(s){
 function siteNetProfitLive(s){
   return siteInvoicedToDate(s) - siteLabourActual(s) - siteMaterialActual(s) - siteOverheadsActual(s);
 }
+// Owner net for cashflow: Project Value (ex VAT) − labour − material − site costs −
+// Henk's 10% (charged on the pre-VAT value). Powers the day-apportioned monthly net
+// on both the Overview blocks and the month snapshot, so the figures stay consistent.
+function siteHenkFee(s){ return (siteQuoteValue(s)||0) * HENK_FEE_PCT; }
+function siteNetOwner(s){
+  return (siteQuoteValue(s)||0) - siteLabourActual(s) - siteMaterialActual(s) - siteOverheadsActual(s) - siteHenkFee(s);
+}
+function siteDailyNetOwner(s){ return siteNetOwner(s) / siteDaysOnSite(s); }
 function siteProfitPerDay(s){ return siteNetProfitLive(s) / siteDaysOnSite(s); }
 function slugId(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
 function mapsLinkFor(name){ return name ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(name) : ''; }
@@ -1354,7 +1362,7 @@ function monthlyNetProfitMap(){
     const start = new Date(s.started);
     const end = (s.status==='done' && s.endDate) ? new Date(s.endDate) : new Date();
     if(isNaN(start.getTime()) || end < start) return;
-    const dailyNet = siteProfitPerDay(s);      // same Profit/Day the site blocks show
+    const dailyNet = siteDailyNetOwner(s);     // ex-VAT project value − costs − Henk 10%, ÷ days
     let cur = new Date(start.getFullYear(), start.getMonth(), 1);
     const lastM = new Date(end.getFullYear(), end.getMonth(), 1);
     while(cur <= lastM){
@@ -1418,63 +1426,63 @@ function openMonthSnapshot(monthKey){
     return;
   }
 
-  const paidPayments = payments.filter(p=>p.paid);
-  const siteIds = [...new Set(paidPayments.map(p=>p.siteId))];
-  const rows = siteIds.map(id=>{
-    const s = siteById(id);
-    const sitePays = paidPayments.filter(p=>p.siteId===id);
-    const incVAT = sitePays.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
-    const exclVAT = incVAT/1.15;
-    const splitAmts = {};
-    DATA.splitConfig.forEach(sp=> splitAmts[sp.key] = sitePays.reduce((a,p)=>a+(p.splits[sp.key]||0),0));
-    // Labour & Material now show REAL actuals from the site, not the calculated split ceiling
-    const labourActual = siteLabourActual(s);
-    const materialActual = siteMaterialActual(s);
-    const overheadsActual = siteOverheadsActual(s);
-    const totalSplitOut = DATA.splitConfig.reduce((a,sp)=>a+splitAmts[sp.key],0);
-    const netProfit = exclVAT - totalSplitOut - labourActual - materialActual - overheadsActual;
-    return { site: s, incVAT, exclVAT, splitAmts, labourActual, materialActual, overheadsActual, netProfit,
-             labourBudget: parseFloat(s.labourBudget)||0, materialBudget: parseFloat(s.materialBudget)||0 };
-  }).filter(r=>r.site);
+  const monthStart = new Date(parseInt(y), parseInt(m)-1, 1);
+  const monthEnd   = new Date(parseInt(y), parseInt(m), 0);
 
-  const grandIncVAT = rows.reduce((a,r)=>a+r.incVAT,0);
-  const grandExclVAT = rows.reduce((a,r)=>a+r.exclVAT,0);
-  const grandVAT = grandIncVAT - grandExclVAT;
-  const grandNet = rows.reduce((a,r)=>a+r.netProfit,0);
+  // Days a site actually ran inside this month — drives the day-apportioned net.
+  const daysIn = (s)=>{
+    const start=new Date(s.started);
+    const end=(s.status==='done'&&s.endDate)?new Date(s.endDate):new Date();
+    const from=start>monthStart?start:monthStart, to=end<monthEnd?end:monthEnd;
+    return Math.floor((to-from)/86400000)+1;
+  };
+  // Progress invoices (incl VAT) submitted for a site this month — the turnover number.
+  const invIn = (siteId)=> (DATA.payments||[]).filter(p=>{
+    if(p.siteId!==siteId) return false;
+    const d=new Date(p.date);
+    return d.getFullYear()===monthStart.getFullYear() && d.getMonth()===monthStart.getMonth();
+  }).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
 
-  // Shortened R formatter for dense table cells — no decimals, fits more columns
+  // Every site that ran any days in this month (so a job spanning two months shows in both).
+  const rows = (DATA.sites||[]).map(s=>{
+    if(!s.started) return null;
+    const start=new Date(s.started);
+    const end=(s.status==='done'&&s.endDate)?new Date(s.endDate):new Date();
+    if(isNaN(start.getTime()) || end<monthStart || start>monthEnd) return null;
+    const dim=daysIn(s); if(dim<=0) return null;
+    const projectValue=siteQuoteValue(s)||0;
+    const totalNet=siteNetOwner(s);
+    const dailyNet=siteDailyNetOwner(s);
+    return { site:s, projectValue, progInv:invIn(s.id),
+             labourBudget:parseFloat(s.labourBudget)||0, labourActual:siteLabourActual(s),
+             materialBudget:parseFloat(s.materialBudget)||0, materialActual:siteMaterialActual(s),
+             henk:siteHenkFee(s), dpd:dailyNet, monthNet:dailyNet*dim,
+             marginPct: projectValue>0 ? totalNet/projectValue : null };
+  }).filter(Boolean).sort((a,b)=> new Date(b.site.started)-new Date(a.site.started));
+
   const Rs = (n) => "R" + Math.round(n||0).toLocaleString("en-ZA");
-
-  const GC='#1FA24C', RC='#C0392B';                       // bright green (good) / red (over target)
-  const NET_TARGET = 0.35, PPD_TARGET = 5000;             // net ≥ 35%, profit ≥ R5000/day
-  const col = ok => ok ? GC : RC;
+  const GC='#1FA24C', RC='#C0392B', NET_TARGET=0.35, PPD_TARGET=5000;
+  const col = ok => ok?GC:RC;
   const money = (v,c) => c ? `<td style="color:${c};font-weight:800">${Rs(v)}</td>` : `<td>${Rs(v)}</td>`;
-
-  rows.forEach(r=>{
-    r.henk   = r.splitAmts['henk'] || 0;
-    r.netP   = r.exclVAT - r.labourActual - r.materialActual - r.overheadsActual - r.henk;
-    r.days   = siteDaysOnSite(r.site);
-    r.dpd    = r.days>0 ? r.netP/r.days : r.netP;
-    r.netPct = r.exclVAT>0 ? r.netP/r.exclVAT : null;
-  });
   const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
-  const gExcl=T('exclVAT'), gInc=T('incVAT'), gVat=gInc-gExcl, gHenk=T('henk'), gNet=T('netP'), gDpd=T('dpd');
-  const gLabB=T('labourBudget'), gLabA=T('labourActual'), gMatB=T('materialBudget'), gMatA=T('materialActual');
-  const gNetPct = gExcl>0 ? gNet/gExcl : null;
+  const gProj=T('projectValue'), gInv=T('progInv'), gLabB=T('labourBudget'), gLabA=T('labourActual');
+  const gMatB=T('materialBudget'), gMatA=T('materialActual'), gHenk=T('henk'), gMonthNet=T('monthNet'), gDpd=T('dpd');
+  const gTotalNet = rows.reduce((a,r)=>a+siteNetOwner(r.site),0);
+  const gMargin = gProj>0 ? gTotalNet/gProj : null;
 
   let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>`;
 
   h += `<div class="snap-top">
     <div>
       <div class="snap-title">${monthName} ${y}</div>
-      <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} · ${Rs(gExcl)} excl VAT · ${Rs(gVat)} VAT · Net <strong style="color:${gNetPct!=null?col(gNetPct>=NET_TARGET):'inherit'}">${Rs(gNet)}${gNetPct!=null?' · '+Math.round(gNetPct*100)+'%':''}</strong></div>
+      <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} · Progress invoices ${Rs(gInv)} (incl VAT) · Net <strong style="color:${gMargin!=null?col(gMargin>=NET_TARGET):'inherit'}">${Rs(gMonthNet)}${gMargin!=null?' · '+Math.round(gMargin*100)+'%':''}</strong></div>
     </div>
-    <div class="snap-grand-total">${Rs(gInc)}</div>
+    <div class="snap-grand-total">${Rs(gInv)}</div>
   </div>`;
 
   h += `<div class="snap-scroll"><table class="snap-table">
     <thead><tr>
-      <th>Site</th><th>Turnover</th><th>VAT</th><th>Incl VAT</th>
+      <th>Site</th><th>Project Value</th><th>Progress invoice</th>
       <th class="bud">Labour budget</th><th>Labour actual</th><th class="bud">Material budget</th><th>Material actual</th>
       <th>Henk 10%</th><th>Profit / day</th><th>Net profit</th>
     </tr></thead>
@@ -1483,31 +1491,30 @@ function openMonthSnapshot(monthKey){
         const labC = r.labourBudget>0 ? col(r.labourActual < r.labourBudget) : null;
         const matC = r.materialBudget>0 ? col(r.materialActual < r.materialBudget) : null;
         const dpdC = col(r.dpd >= PPD_TARGET);
-        const netC = r.netPct!=null ? col(r.netPct >= NET_TARGET) : null;
+        const netC = r.marginPct!=null ? col(r.marginPct >= NET_TARGET) : null;
         return `<tr>
           <td title="${r.site.name}">${r.site.name}</td>
-          <td>${Rs(r.exclVAT)}</td>
-          <td>${Rs(r.incVAT-r.exclVAT)}</td>
-          <td>${Rs(r.incVAT)}</td>
+          <td>${Rs(r.projectValue)}</td>
+          <td>${Rs(r.progInv)}</td>
           <td class="bud">${Rs(r.labourBudget)}</td>
           ${money(r.labourActual, labC)}
           <td class="bud">${Rs(r.materialBudget)}</td>
           ${money(r.materialActual, matC)}
           <td>${Rs(r.henk)}</td>
           ${money(r.dpd, dpdC)}
-          <td style="font-weight:800;color:${netC||'inherit'}">${Rs(r.netP)}${r.netPct!=null?` <span style="font-size:9px;opacity:.85">${Math.round(r.netPct*100)}%</span>`:''}</td>
+          <td style="font-weight:800;color:${netC||'inherit'}">${Rs(r.monthNet)}${r.marginPct!=null?` <span style="font-size:9px;opacity:.85">${Math.round(r.marginPct*100)}%</span>`:''}</td>
         </tr>`;
       }).join('')}
     </tbody>
     <tfoot>
       <tr>
         <td>TOTAL</td>
-        <td>${Rs(gExcl)}</td><td>${Rs(gVat)}</td><td>${Rs(gInc)}</td>
+        <td>${Rs(gProj)}</td><td>${Rs(gInv)}</td>
         <td class="bud">${Rs(gLabB)}</td>${money(gLabA, gLabB>0?col(gLabA<gLabB):null)}
         <td class="bud">${Rs(gMatB)}</td>${money(gMatA, gMatB>0?col(gMatA<gMatB):null)}
         <td>${Rs(gHenk)}</td>
         ${money(gDpd, col(gDpd>=PPD_TARGET))}
-        <td style="font-weight:800;color:${gNetPct!=null?col(gNetPct>=NET_TARGET):'inherit'}">${Rs(gNet)}${gNetPct!=null?` ${Math.round(gNetPct*100)}%`:''}</td>
+        <td style="font-weight:800;color:${gMargin!=null?col(gMargin>=NET_TARGET):'inherit'}">${Rs(gMonthNet)}${gMargin!=null?` ${Math.round(gMargin*100)}%`:''}</td>
       </tr>
     </tfoot>
   </table></div>`;
