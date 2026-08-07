@@ -1441,75 +1441,74 @@ function openMonthSnapshot(monthKey){
   // Shortened R formatter for dense table cells — no decimals, fits more columns
   const Rs = (n) => "R" + Math.round(n||0).toLocaleString("en-ZA");
 
-  const COLS = [
-    {key:'turnover', label:'Turnover'},
-    {key:'vat', label:'VAT 15%'},
-    ...DATA.splitConfig.map(s=>({key:s.key, label:s.label.split(' ')[0]+' '+(s.pct*100).toFixed(1)+'%', split:true})),
-    {key:'labour', label:'Labour '+Math.round(DATA.labourBudgetPct*100)+'%'},
-    {key:'material', label:'Material '+Math.round(DATA.materialBudgetPct*100)+'%'},
-    {key:'overheads', label:'Overheads'},
-    {key:'net', label:'Net'},
-  ];
+  const GC='#1FA24C', RC='#C0392B';                       // bright green (good) / red (over target)
+  const NET_TARGET = 0.35, PPD_TARGET = 5000;             // net ≥ 35%, profit ≥ R5000/day
+  const col = ok => ok ? GC : RC;
+  const money = (v,c) => c ? `<td style="color:${c};font-weight:800">${Rs(v)}</td>` : `<td>${Rs(v)}</td>`;
+
+  rows.forEach(r=>{
+    r.henk   = r.splitAmts['henk'] || 0;
+    r.netP   = r.exclVAT - r.labourActual - r.materialActual - r.overheadsActual - r.henk;
+    r.days   = siteDaysOnSite(r.site);
+    r.dpd    = r.days>0 ? r.netP/r.days : r.netP;
+    r.netPct = r.exclVAT>0 ? r.netP/r.exclVAT : null;
+  });
+  const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
+  const gExcl=T('exclVAT'), gInc=T('incVAT'), gVat=gInc-gExcl, gHenk=T('henk'), gNet=T('netP'), gDpd=T('dpd');
+  const gLabB=T('labourBudget'), gLabA=T('labourActual'), gMatB=T('materialBudget'), gMatA=T('materialActual');
+  const gNetPct = gExcl>0 ? gNet/gExcl : null;
 
   let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>`;
 
   h += `<div class="snap-top">
     <div>
       <div class="snap-title">${monthName} ${y}</div>
-      <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} · ${Rs(grandExclVAT)} excl VAT · ${Rs(grandVAT)} VAT · Net <strong class="${grandNet>=0?'snap-net-pos':'snap-net-neg'}">${Rs(grandNet)}</strong></div>
+      <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} · ${Rs(gExcl)} excl VAT · ${Rs(gVat)} VAT · Net <strong style="color:${gNetPct!=null?col(gNetPct>=NET_TARGET):'inherit'}">${Rs(gNet)}${gNetPct!=null?' · '+Math.round(gNetPct*100)+'%':''}</strong></div>
     </div>
-    <div class="snap-grand-total">${Rs(grandIncVAT)}</div>
+    <div class="snap-grand-total">${Rs(gInc)}</div>
   </div>`;
 
   h += `<table class="snap-table">
     <thead><tr>
-      <th>Site</th>
-      ${COLS.map(c=>`<th>${c.label}</th>`).join('')}
+      <th>Site</th><th>Turnover</th><th>VAT</th><th>Incl VAT</th>
+      <th>Labour budget</th><th>Labour actual</th><th>Material budget</th><th>Material actual</th>
+      <th>Henk 10%</th><th>Profit / day</th><th>Net profit</th>
     </tr></thead>
     <tbody>
       ${rows.map(r=>{
-        const cellVal = (key)=>{
-          if(key==='turnover') return r.exclVAT;
-          if(key==='vat') return r.incVAT - r.exclVAT;
-          if(key==='labour') return r.labourActual;
-          if(key==='material') return r.materialActual;
-          if(key==='overheads') return r.overheadsActual;
-          if(key==='net') return r.netProfit;
-          return r.splitAmts[key] || 0;
-        };
+        const labC = r.labourBudget>0 ? col(r.labourActual < r.labourBudget) : null;
+        const matC = r.materialBudget>0 ? col(r.materialActual < r.materialBudget) : null;
+        const dpdC = col(r.dpd >= PPD_TARGET);
+        const netC = r.netPct!=null ? col(r.netPct >= NET_TARGET) : null;
         return `<tr>
           <td title="${r.site.name}">${r.site.name}</td>
-          ${COLS.map(c=>{
-            const v = cellVal(c.key);
-            if(c.split){
-              const paidOut = siteSplitPaidStatus(monthKey, r.site.id, c.key);
-              return `<td><button class="snap-paybtn ${paidOut?'paid':''}" onclick="toggleSiteSplitPaid('${monthKey}','${r.site.id}','${c.key}')">${Rs(v)}</button></td>`;
-            }
-            if(c.key==='net') return `<td class="${v>=0?'snap-net-pos':'snap-net-neg'}" style="font-weight:800">${Rs(v)}</td>`;
-            return `<td>${Rs(v)}</td>`;
-          }).join('')}
+          <td>${Rs(r.exclVAT)}</td>
+          <td>${Rs(r.incVAT-r.exclVAT)}</td>
+          <td>${Rs(r.incVAT)}</td>
+          <td>${Rs(r.labourBudget)}</td>
+          ${money(r.labourActual, labC)}
+          <td>${Rs(r.materialBudget)}</td>
+          ${money(r.materialActual, matC)}
+          <td>${Rs(r.henk)}</td>
+          ${money(r.dpd, dpdC)}
+          <td style="font-weight:800;color:${netC||'inherit'}">${Rs(r.netP)}${r.netPct!=null?` <span style="font-size:9px;opacity:.85">${Math.round(r.netPct*100)}%</span>`:''}</td>
         </tr>`;
       }).join('')}
     </tbody>
     <tfoot>
       <tr>
         <td>TOTAL</td>
-        ${COLS.map(c=>{
-          let v=0;
-          if(c.key==='turnover') v=grandExclVAT;
-          else if(c.key==='vat') v=grandVAT;
-          else if(c.key==='net') v=grandNet;
-          else if(c.key==='labour') v=rows.reduce((a,r)=>a+r.labourActual,0);
-          else if(c.key==='material') v=rows.reduce((a,r)=>a+r.materialActual,0);
-          else if(c.key==='overheads') v=rows.reduce((a,r)=>a+r.overheadsActual,0);
-          else v=rows.reduce((a,r)=>a+(r.splitAmts[c.key]||0),0);
-          return `<td class="${c.key==='net'?(v>=0?'snap-net-pos':'snap-net-neg'):''}">${Rs(v)}</td>`;
-        }).join('')}
+        <td>${Rs(gExcl)}</td><td>${Rs(gVat)}</td><td>${Rs(gInc)}</td>
+        <td>${Rs(gLabB)}</td>${money(gLabA, gLabB>0?col(gLabA<gLabB):null)}
+        <td>${Rs(gMatB)}</td>${money(gMatA, gMatB>0?col(gMatA<gMatB):null)}
+        <td>${Rs(gHenk)}</td>
+        ${money(gDpd, col(gDpd>=PPD_TARGET))}
+        <td style="font-weight:800;color:${gNetPct!=null?col(gNetPct>=NET_TARGET):'inherit'}">${Rs(gNet)}${gNetPct!=null?` ${Math.round(gNetPct*100)}%`:''}</td>
       </tr>
     </tfoot>
   </table>`;
 
-  h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px">Tap any split amount to mark it paid out — turns green.</div>`;
+  h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px;line-height:1.7"><span style="color:#1FA24C;font-weight:800">Green</span> = on target: labour &amp; material under budget, profit ≥ R5&nbsp;000/day, net ≥ 35%. <span style="color:#C0392B;font-weight:800">Red</span> = over budget or below target.</div>`;
 
   $('monthSnapshotContent').innerHTML = h;
   openModal('modalMonthSnapshot');
