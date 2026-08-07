@@ -1339,6 +1339,36 @@ function monthlyTurnoverMap(){
   return map;
 }
 
+// Net profit per month — every site's net (invoiced − labour − material − overheads)
+// spread across the calendar months it ran, by day count. A job that overlaps into
+// the next month only contributes that month's share: daily net × days that fell in
+// the month. Sum across all sites = the month's combined net profit.
+function monthlyNetProfitMap(){
+  const map = {};
+  (DATA.sites||[]).forEach(function(s){
+    if(!s.started) return;
+    const start = new Date(s.started);
+    const end = (s.status==='done' && s.endDate) ? new Date(s.endDate) : new Date();
+    if(isNaN(start.getTime()) || end < start) return;
+    const dailyNet = siteProfitPerDay(s);      // same Profit/Day the site blocks show
+    let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+    const lastM = new Date(end.getFullYear(), end.getMonth(), 1);
+    while(cur <= lastM){
+      const y = cur.getFullYear(), m = cur.getMonth();
+      const mStart = new Date(y, m, 1), mEnd = new Date(y, m+1, 0);
+      const from = start > mStart ? start : mStart;
+      const to   = end   < mEnd   ? end   : mEnd;
+      const days = Math.floor((to - from) / 86400000) + 1;
+      if(days > 0){
+        const key = `${y}-${String(m+1).padStart(2,'0')}`;
+        map[key] = (map[key]||0) + dailyNet * days;
+      }
+      cur = new Date(y, m+1, 1);
+    }
+  });
+  return map;
+}
+
 // ───────────────────────────────────────────
 // MONTH SNAPSHOT — full single-screen month picture
 // ───────────────────────────────────────────
@@ -2477,6 +2507,7 @@ function renderOverview(){
   const statusPill = pct >= 80 ? 'pill-green' : pct >= 50 ? 'pill-amber' : 'pill-red';
   const statusText = pct >= 80 ? 'On track' : pct >= 50 ? 'Needs attention' : 'Behind target';
   const monthMap = monthlyTurnoverMap();
+  const netMap = monthlyNetProfitMap();
   const MONTHS_S = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Annual Performance</div>`;
@@ -2494,9 +2525,19 @@ function renderOverview(){
       ${MONTHS_S.map((m,i)=>{
         const monthKey = `${now.getFullYear()}-${String(i+1).padStart(2,'0')}`;
         const val = monthMap[monthKey] || 0;
-        return `<div class="month-cell ${val>0?'filled':''}" onclick="openMonthSnapshot('${monthKey}')" style="cursor:pointer"><div class="month-cell-lbl">${m}</div><div class="month-cell-val">${val>0?R(val):'—'}</div></div>`;
+        const net = netMap[monthKey] || 0;
+        // Net profit only from July 2026 onward — the site data before then is
+        // incomplete (app wasn't live), so Jan–Jun net is left blank for now.
+        const showNet = net !== 0 && monthKey >= '2026-07';
+        return `<div class="month-cell ${val>0?'filled':''}" onclick="openMonthSnapshot('${monthKey}')" style="cursor:pointer">
+          <div class="month-cell-lbl">${m}</div>
+          <div class="month-cell-val">${val>0?R(val):'—'}</div>
+          ${val>0?`<div style="font-size:8.5px;font-weight:700;letter-spacing:.6px;color:rgba(255,255,255,0.4)">TURNOVER</div>`:''}
+          ${showNet?`<div style="font-size:13px;font-weight:800;color:${net>=0?'#8FBF9F':'#E58C82'};margin-top:6px">${R(net)}</div><div style="font-size:8.5px;font-weight:700;letter-spacing:.6px;color:rgba(255,255,255,0.4)">NET PROFIT</div>`:''}
+        </div>`;
       }).join('')}
     </div>
+    <div style="font-size:10.5px;color:rgba(255,255,255,0.45);margin-top:10px;line-height:1.6">Top figure = turnover for the month (all sites). Green = combined net profit, split day-by-day for jobs that run across months.</div>
   </div>`;
 
   h += `<div class="section-lbl">Quick access</div>`;
