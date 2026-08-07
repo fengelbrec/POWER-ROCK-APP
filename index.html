@@ -1328,6 +1328,42 @@ function siteNetOwner(s){
   return (siteQuoteValue(s)||0) - siteLabourActual(s) - siteMaterialActual(s) - siteOverheadsActual(s) - siteHenkFee(s);
 }
 function siteDailyNetOwner(s){ return siteNetOwner(s) / siteDaysOnSite(s); }
+
+// ── OWNER live financials from Supabase (the real, shared data) ──────────────
+// sites carry quote/budgets/labour_actual; confirmed invoices = material spend;
+// site_costs = labour payments + overheads. This powers the Overview net blocks
+// and the month snapshot so the owner sees the same truth as the ops side.
+let OWNER = { sites:[], material:{}, costs:{}, loaded:false };
+async function loadOwnerFin(){
+  const res = await Promise.all([
+    sbGetRows('sites','order=started.desc'),
+    sbGetRows('invoice_inbox','status=eq.confirmed'),
+    sbGetRows('site_costs','')
+  ]);
+  OWNER.sites = (Array.isArray(res[0])?res[0]:[]).map(normSiteEnd);
+  OWNER.material = {}; OWNER.costs = {};
+  (Array.isArray(res[1])?res[1]:[]).forEach(function(iv){ OWNER.material[iv.site_guess]=(OWNER.material[iv.site_guess]||0)+(parseFloat(iv.total)||0); });
+  (Array.isArray(res[2])?res[2]:[]).forEach(function(c){ if(!OWNER.costs[c.site_id]) OWNER.costs[c.site_id]={}; OWNER.costs[c.site_id][c.kind]=(OWNER.costs[c.site_id][c.kind]||0)+(parseFloat(c.amount)||0); });
+  OWNER.loaded = true;
+}
+function ownerDays(s){
+  if(!s.started) return 1;
+  const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
+  return Math.max(1, Math.floor((end-new Date(s.started))/86400000)+1);
+}
+// Real per-site money: quote (ex VAT), agreed labour, material from invoices, site
+// overheads, Henk 10% on the pre-VAT value after cherry/scaffold, and the net.
+function ownerFin(s){
+  const quote=parseFloat(s.quote_value)||0;
+  const labourActual=parseFloat(s.labour_actual)||0;
+  const material=OWNER.material[s.id]||0;
+  const c=OWNER.costs[s.id]||{};
+  const additional=c.additional||0;
+  const overheads=additional+(c.accommodation||0)+(c.petrol||0);
+  const henk=(quote-additional)*HENK_FEE_PCT;
+  const net=quote-labourActual-material-overheads-henk;
+  return { quote, labourActual, labourBudget:parseFloat(s.labour_budget)||0, material, materialBudget:parseFloat(s.material_budget)||0, overheads, henk, net, days:ownerDays(s) };
+}
 function siteProfitPerDay(s){ return siteNetProfitLive(s) / siteDaysOnSite(s); }
 function slugId(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
 function mapsLinkFor(name){ return name ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(name) : ''; }
@@ -1357,12 +1393,13 @@ function monthlyTurnoverMap(){
 // the month. Sum across all sites = the month's combined net profit.
 function monthlyNetProfitMap(){
   const map = {};
-  (DATA.sites||[]).forEach(function(s){
+  (OWNER.sites||[]).forEach(function(s){
     if(!s.started) return;
     const start = new Date(s.started);
-    const end = (s.status==='done' && s.endDate) ? new Date(s.endDate) : new Date();
+    const end = (s.status==='done' && s.end_date) ? new Date(s.end_date) : new Date();
     if(isNaN(start.getTime()) || end < start) return;
-    const dailyNet = siteDailyNetOwner(s);     // ex-VAT project value − costs − Henk 10%, ÷ days
+    const fin = ownerFin(s);
+    const dailyNet = fin.net / fin.days;       // real: ex-VAT quote − labour − material − costs − Henk 10%, ÷ days
     let cur = new Date(start.getFullYear(), start.getMonth(), 1);
     const lastM = new Date(end.getFullYear(), end.getMonth(), 1);
     while(cur <= lastM){
@@ -1406,7 +1443,8 @@ function monthIsBackfilled(monthKey){
   return !!(DATA.monthlyBackfill && DATA.monthlyBackfill[monthKey]) && monthPaymentsFor(monthKey).length === 0;
 }
 
-function openMonthSnapshot(monthKey){
+async function openMonthSnapshot(monthKey){
+  if(!OWNER.loaded) await loadOwnerFin();
   const [y,m] = monthKey.split('-');
   const monthName = MONTH_NAMES_FULL[parseInt(m)-1];
   const isBackfilled = monthIsBackfilled(monthKey);
@@ -1432,7 +1470,7 @@ function openMonthSnapshot(monthKey){
   // Days a site actually ran inside this month — drives the day-apportioned net.
   const daysIn = (s)=>{
     const start=new Date(s.started);
-    const end=(s.status==='done'&&s.endDate)?new Date(s.endDate):new Date();
+    const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
     const from=start>monthStart?start:monthStart, to=end<monthEnd?end:monthEnd;
     return Math.floor((to-from)/86400000)+1;
   };
@@ -1444,19 +1482,20 @@ function openMonthSnapshot(monthKey){
   }).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
 
   // Every site that ran any days in this month (so a job spanning two months shows in both).
-  const rows = (DATA.sites||[]).map(s=>{
+  const rows = (OWNER.sites||[]).map(s=>{
     if(!s.started) return null;
     const start=new Date(s.started);
-    const end=(s.status==='done'&&s.endDate)?new Date(s.endDate):new Date();
+    const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
     if(isNaN(start.getTime()) || end<monthStart || start>monthEnd) return null;
     const dim=daysIn(s); if(dim<=0) return null;
-    const projectValue=siteQuoteValue(s)||0;
-    const totalNet=siteNetOwner(s);
-    const dailyNet=siteDailyNetOwner(s);
+    const fin=ownerFin(s);
+    const projectValue=fin.quote;
+    const totalNet=fin.net;
+    const dailyNet=fin.net/fin.days;
     return { site:s, projectValue, progInv:invIn(s.id),
-             labourBudget:parseFloat(s.labourBudget)||0, labourActual:siteLabourActual(s),
-             materialBudget:parseFloat(s.materialBudget)||0, materialActual:siteMaterialActual(s),
-             henk:siteHenkFee(s), dpd:dailyNet, monthNet:dailyNet*dim,
+             labourBudget:fin.labourBudget, labourActual:fin.labourActual,
+             materialBudget:fin.materialBudget, materialActual:fin.material,
+             henk:fin.henk, dpd:dailyNet, monthNet:dailyNet*dim,
              marginPct: projectValue>0 ? totalNet/projectValue : null };
   }).filter(Boolean).sort((a,b)=> new Date(b.site.started)-new Date(a.site.started));
 
@@ -1467,7 +1506,7 @@ function openMonthSnapshot(monthKey){
   const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
   const gProj=T('projectValue'), gInv=T('progInv'), gLabB=T('labourBudget'), gLabA=T('labourActual');
   const gMatB=T('materialBudget'), gMatA=T('materialActual'), gHenk=T('henk'), gMonthNet=T('monthNet'), gDpd=T('dpd');
-  const gTotalNet = rows.reduce((a,r)=>a+siteNetOwner(r.site),0);
+  const gTotalNet = rows.reduce((a,r)=>a+ownerFin(r.site).net,0);
   const gMargin = gProj>0 ? gTotalNet/gProj : null;
 
   let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>`;
@@ -2505,7 +2544,11 @@ async function viewUpdate(id){
 // ───────────────────────────────────────────
 // OVERVIEW
 // ───────────────────────────────────────────
-function renderOverview(){
+async function renderOverview(){
+  if(!OWNER.loaded){
+    $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Annual Performance</div><div style="text-align:center;padding:44px;color:#8A8470">Loading live figures…</div>`;
+    await loadOwnerFin();
+  }
   const target = DATA.annualTargetZAR;
   const ytd = ytdTurnoverPaid();
   const pct = target ? Math.min(100, Math.round((ytd/target)*100)) : 0;
