@@ -53,6 +53,18 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .excl{background:#fbf7ee;border:1px solid #e6dcc2;border-radius:12px;padding:13px 14px;font-size:11.5px;color:#7a6a42;line-height:1.6;margin-bottom:14px}
 .foot{font-size:11px;color:#93a2b1;text-align:center;padding:6px 6px;line-height:1.6}
 .tune{background:#fffceb;border:1px dashed #d8c98a;border-radius:10px;padding:10px 12px;font-size:11px;color:#8a7420;margin-bottom:14px;line-height:1.5}
+.surfhead{font-size:13px;font-weight:800;color:#12324e;margin:14px 0 2px}
+.surfhead:first-child{margin-top:2px}
+.surfneed{font-size:11.5px;color:#7c8b99;font-weight:600;margin-bottom:8px}
+.prod{border:1px solid #e3e8ee;border-radius:12px;padding:11px 12px;margin-bottom:8px;background:#fff}
+.prod .ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.prod .pn{font-size:13.5px;font-weight:800}
+.prod .score{font-size:11px;font-weight:800;color:#1e7d4f;background:#eaf6ef;border-radius:20px;padding:3px 9px;white-space:nowrap}
+.prod .pp{font-size:12px;color:#41505f;margin-top:4px}
+.prod .pj{font-size:12.5px;font-weight:800;color:#12324e;margin-top:2px}
+.prod .pnote{font-size:11px;color:#9a8248;margin-top:3px}
+.prod a.ds{display:inline-block;font-size:11.5px;color:#2c5f8a;text-decoration:none;font-weight:700;margin-top:6px}
+.colnote{font-size:11px;color:#8494a3;line-height:1.5;margin-top:6px}
 </style>
 </head>
 <body>
@@ -62,7 +74,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
     <div class="tagline">What should it really cost to paint your home? · South Africa</div>
   </div>
   <div class="body">
-    <div class="tune">⚙️ Ferdi test build — numbers at the top of the code are easy to tune. Try a few combos and tell me what to change.</div>
+    <div class="tune">⚙️ Ferdi test build — now runs on real Builders Warehouse prices &amp; your real R/m² rates. Try a few combos and tell me what to change.</div>
 
     <div class="card">
       <div class="step">Step 1 · What are you painting?</div>
@@ -106,6 +118,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
         <div class="opt" data-roof="tiled" onclick="tRoof(this)">Tiled (rough)</div>
         <div class="opt" data-roof="corrugated" onclick="tRoof(this)">Corrugated / metal</div>
       </div>
+      <div class="hint" id="roofHint">Unpainted tiles drink up to 3× the paint (about 40–50 m² per 20L, one thick coat). Metal covers much further.</div>
       <div class="chk" data-extra="rust" onclick="tExtra(this)" id="rustChk" style="margin-top:12px;display:none"><span class="box">✓</span> There is rust on the roof</div>
     </div>
 
@@ -128,17 +141,23 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       <div class="card">
         <div class="step">Your 3 options</div>
         <div class="route r1">
-          <div class="rh"><span class="rn">1 · Do it yourself</span><span class="ra" id="r1a">—</span></div>
-          <div class="rd">Just the paint &amp; consumables — you do the work. We give you the step-by-step method for your walls.</div>
+          <div class="rh"><span class="rn">1 · Just the paint (do it yourself)</span><span class="ra" id="r1a">—</span></div>
+          <div class="rd">Buy the paint &amp; the bits, and do the work yourself. See exactly what to buy at Builders below.</div>
         </div>
         <div class="route">
           <div class="rh"><span class="rn">2 · Buy paint + hire a painter</span><span class="ra" id="r2a">—</span></div>
-          <div class="rd">You buy the paint and pay an individual painter (~R1000/room). You manage it.</div>
+          <div class="rd">You buy the paint, and pay an individual painter for the labour only (about R20–25 per m²). You manage the job.</div>
         </div>
         <div class="route">
           <div class="rh"><span class="rn">3 · Full contractor</span><span class="ra" id="r3a">—</span></div>
-          <div class="rd">They handle everything — insured, guaranteed, you do nothing. You pay for convenience.</div>
+          <div class="rd">A contractor buys all the paint &amp; materials, brings transport, ladders, tools and safety equipment, and does the whole job. The priciest option, but by far the least hassle — nothing for you to arrange.</div>
         </div>
+        <div class="hint">Options 1 &amp; 2 assume typical mid-range paint. Pick a cheaper or premium paint in "What to buy" below to see the exact cost.</div>
+      </div>
+      <div class="card">
+        <div class="step">What to buy at Builders</div>
+        <div id="buylist"></div>
+        <div class="colnote">Prices are for standard colours only and may vary — checked at Builders Warehouse. Tap a paint's spec sheet for drying &amp; overcoat times.</div>
       </div>
       <div class="card">
         <div class="step">Breakdown</div>
@@ -151,31 +170,58 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 </div>
 
 <script>
-// ─── TUNE THESE (Ferdi's numbers) ─────────────────────────────
-const COVER = { interior: 8.5, exterior: 6.5 };   // m² per litre, per coat
-const ROOFT = { tiled:{cover:2,coats:1}, corrugated:{cover:9,coats:2} };
-const RUST_COVER = 9;                              // rust primer, 1 coat, priced ~ roof paint
-const DRUM  = { interior:[1600,2000], exterior:[1100,1300], roof:[1000,1300] }; // price per 20L
-const CONSUMABLE_PCT = 0.15;                       // brushes, rollers, sheets, filler, silicone
-const LABOUR_M2 = [25, 30];                        // R/m², incl. prep + paint
-const CONTRACTOR_LABOUR_RATIO = 0.24;              // contractor quote ≈ labour ÷ 24%  (→ ~R20k for a 3–4 bed exterior)
-const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add plaster-primer coat?
-const COND_LABOUR = { good:0, fair:0, bad:0.25, verybad:0.40 };         // extra prep labour
-const DAMP_DRUM_MULT = [1.7, 1.9];                 // damp plaster primer: 70–90% more per drum than exterior paint, 1 coat
-const DAMP_LABOUR = 0.20;                          // damp adds ~20% labour
-const AREA = {
-  '1bed': { interior:90,  exterior:90  },
-  '2bed': { interior:150, exterior:120 },
-  '3bed': { interior:230, exterior:150 },
-  '4bed': { interior:320, exterior:200 }
+// ─── TUNE THESE (Ferdi's real numbers) ────────────────────────
+// Coverage = m² per litre, per coat
+const COVER = { interior:8, exterior:5.5, ceiling:7 };
+const ROOFT = { tiled:{cover:2.25, coats:1}, corrugated:{cover:10, coats:2} }; // tiled ~45m²/20L 1 coat; metal ~100m²/20L 2 coats
+const RUST_COVER = 10;                              // rust primer, 1 coat
+
+// Recommended paints at Builders (price per 20L = [special, normal]); score /10; datasheet link
+const PRODUCTS = {
+  exterior: [
+    {n:'Dulux Weatherguard', s:8.5, p:[1099,1249], ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf'},
+    {n:'Plascon Micatex',    s:8,   p:[1149,1299], ds:'https://plascon.co.za/wp-content/uploads/2024/04/BBO-Range-TMX-Tint-Bases-TDS-2.pdf'},
+    {n:'Duram Armatex',      s:6.5, p:[899,899],   ds:'https://www.duram.co.za/product/armatex/'}
+  ],
+  interior: [
+    {n:'Plascon Double Velvet', s:9.5, p:[2799,2999], ds:'https://plascon.co.za/wp-content/uploads/2024/12/VEL-Double-Velvet-TDV-Tintbases-TDS.pdf', note:'Pastel colours only — no plain standard colours'},
+    {n:'Dulux Luxurious Silk',  s:8.5, p:[2299,2599], ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20luxurious%20silk.pdf', note:'White; tinted colours cost more'},
+    {n:'Duram Satin Touch',     s:7.5, p:[1899,1999], ds:'https://www.duram.co.za/product/satin-touch/'},
+    {n:'Duram Durasheen',       s:6.5, p:[1029,1099], ds:'https://www.duram.co.za/product/dura-sheen/'}
+  ],
+  roof: [
+    {n:'Plascon Nuroof Cool', s:9, p:[1399,1599], ds:'https://plascon.co.za/wp-content/uploads/2025/02/TRP-200-Range-Nuroof-Cool-TDS.pdf'},
+    {n:'Dulux Roofguard',     s:9, p:[1399,1699], ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20roofguard.pdf'},
+    {n:'Duram Weather Roof',  s:7, p:[999,1069],  ds:'https://www.duram.co.za/product/weather-roof/'}
+  ],
+  ceiling: [
+    {n:'Duram Wall & Ceiling', s:8,   p:[1029,1129], ds:'https://www.duram.co.za/product/wall-ceiling/'},
+    {n:'Duram Matt Acrylic',   s:7.5, p:[859,859],   ds:'https://www.duram.co.za/product/matt-acrylic/'},
+    {n:'Bergermaster Nukote',  s:7,   p:[749,849],   ds:''}
+  ]
 };
-// Roof paintable = floor footprint × pitch/profile factor. The slope + the sheet/tile
-// profile add ~25–30% over the flat floor area.
+
+const LABOUR_M2 = [20, 25];                        // individual painter, R/m² (option 2)
+// Contractor all-in R/m² from Ferdi's 2026 quotes = [lo, hi]
+const CONTRACT = { interior:[69,76], exterior:[74,84], ceiling:[49,59], roof:[71,80] };
+
+const CONSUMABLE_PCT = 0.15;                        // brushes, rollers, sheets, filler, silicone
+const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add a plaster-primer coat?
+const COND_LABOUR = { good:0, fair:0, bad:0.25, verybad:0.40 };         // extra prep labour
+const DAMP_LABOUR = 0.20;                           // damp adds ~20% labour + a primer coat
+
+// Areas (m²) recalibrated from Ferdi's real 2026 quotes
+const AREA = {
+  '1bed': { interior:110, exterior:90  },
+  '2bed': { interior:180, exterior:120 },
+  '3bed': { interior:280, exterior:150 },
+  '4bed': { interior:380, exterior:200 }
+};
+const CEIL_OF_INTERIOR = 0.47;
 const FLOOR = { '1bed':55, '2bed':85, '3bed':120, '4bed':180 };  // house footprint m²
 const ROOF_PITCH = 1.275;                                        // +27.5% for slope & profile
-const GARAGE_FLOOR = 36;                                         // double garage footprint m²
+const GARAGE_FLOOR = 36;
 const GARAGE = { interior:40, exterior:45 };
-const CEIL_OF_INTERIOR = 0.45;
 // ──────────────────────────────────────────────────────────────
 
 const state = { surf:{interior:false,exterior:false,roof:false}, home:null, garage:false, storey:false, ceilings:false, cond:'good', damp:false, roof:'tiled', rust:false };
@@ -193,19 +239,49 @@ function syncCards(){
 const R = n => 'R ' + Math.round(n).toLocaleString('en-ZA');
 const Rr = (a,b) => R(a) + ' – ' + R(b);
 
-function areaFor(surf){
-  if(!state.home) return 0;
-  if(surf==='roof'){
-    // footprint × pitch/profile — a double storey has the same roof footprint.
-    let f = FLOOR[state.home] || 0;
-    if(state.garage) f += GARAGE_FLOOR;
-    return Math.round(f * ROOF_PITCH);
+// Build the list of paint jobs from the choices
+function buildJobs(){
+  const jobs=[];
+  if(state.surf.interior){
+    let a = AREA[state.home].interior; if(state.garage) a += GARAGE.interior;
+    const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
+    jobs.push({cat:'interior', name:'Inside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
+    if(state.ceilings) jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(a*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
   }
-  let a = AREA[state.home][surf] || 0;
-  if(state.garage) a += (GARAGE[surf]||0);
-  if(surf==='exterior' && state.storey) a *= 2;
-  if(surf==='interior' && state.ceilings) a += a*CEIL_OF_INTERIOR;
-  return Math.round(a);
+  if(state.surf.exterior){
+    let a = AREA[state.home].exterior; if(state.garage) a += GARAGE.exterior; if(state.storey) a *= 2;
+    const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
+    jobs.push({cat:'exterior', name:'Outside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
+  }
+  if(state.surf.roof){
+    let f = FLOOR[state.home]||0; if(state.garage) f += GARAGE_FLOOR;
+    jobs.push({cat:'roof', name:'Roof', area:Math.round(f*ROOF_PITCH), roof:true, condMult:1});
+  }
+  return jobs;
+}
+
+function litresFor(job){
+  if(job.roof){
+    const rt = ROOFT[state.roof];
+    let L = job.area*rt.coats/rt.cover;
+    if(state.roof==='corrugated' && state.rust) L += job.area/RUST_COVER;
+    return L;
+  }
+  const cov = COVER[job.cat];
+  let L = job.area*2/cov;      // 2 coats
+  if(job.primer) L += job.area/cov;   // plaster primer coat
+  if(job.damp)   L += job.area/cov;   // damp primer coat
+  return L;
+}
+
+// Typical mid-range paint price per 20L for a category = [special avg, normal avg].
+// Used for the 3 headline options so the numbers stay clean; the "What to buy"
+// list below shows each paint's own price (budget → premium).
+function repPrice(cat){
+  const list = PRODUCTS[cat];
+  const lo = list.reduce((s,p)=>s+p.p[0],0)/list.length;
+  const hi = list.reduce((s,p)=>s+p.p[1],0)/list.length;
+  return [lo,hi];
 }
 
 function calc(){
@@ -213,59 +289,61 @@ function calc(){
   if(!chosen.length){ alert('Tick at least one thing to paint (Step 1).'); return; }
   if(!state.home){ alert('Choose your home size (Step 2).'); return; }
 
-  let paintLo=0,paintHi=0, labLo=0,labHi=0, bh='';
-  chosen.forEach(surf=>{
-    const area = areaFor(surf);
-    let pLo=0,pHi=0, detail='';
-    if(surf==='roof'){
-      const rt = ROOFT[state.roof];
-      const L = area*rt.coats/rt.cover;
-      pLo += L*DRUM.roof[0]/20; pHi += L*DRUM.roof[1]/20;
-      detail = `${state.roof} · ~${area} m² · ${Math.ceil(L)} L, ${rt.coats} coat${rt.coats>1?'s':''}`;
-      if(state.roof==='corrugated' && state.rust){
-        const rl = area/RUST_COVER;
-        pLo += rl*DRUM.roof[0]/20; pHi += rl*DRUM.roof[1]/20;
-        detail += ` + rust primer (${Math.ceil(rl)} L)`;
-      }
-    } else {
-      const cov = COVER[surf], d = DRUM[surf];
-      const L = area*2/cov;
-      pLo += L*d[0]/20; pHi += L*d[1]/20;
-      detail = `~${area} m² · ${Math.ceil(L)} L, 2 coats`;
-      if(COND_PRIMER[state.cond]){
-        const pl = area/cov;
-        pLo += pl*d[0]/20; pHi += pl*d[1]/20;
-        detail += ' + plaster primer';
-      }
-      if(state.damp){
-        const dl = area/cov;
-        pLo += dl*d[0]*DAMP_DRUM_MULT[0]/20; pHi += dl*d[1]*DAMP_DRUM_MULT[1]/20;
-        detail += ' + damp primer';
-      }
-    }
-    // labour with condition/damp multipliers (roof uses base rate)
-    let mult = 1;
-    if(surf!=='roof'){ mult += (COND_LABOUR[state.cond]||0); if(state.damp) mult += DAMP_LABOUR; }
-    const lLo = area*LABOUR_M2[0]*mult, lHi = area*LABOUR_M2[1]*mult;
-    paintLo+=pLo; paintHi+=pHi; labLo+=lLo; labHi+=lHi;
-    const nm = surf==='interior'?'Inside walls':surf==='exterior'?'Outside walls':'Roof';
-    bh += `<div class="line"><span class="n">${nm}<br/><span class="sub">${detail}</span></span><span class="a">${Rr(pLo,pHi)}</span></div>`;
+  const jobs = buildJobs();
+  let paintLo=0,paintHi=0, labLo=0,labHi=0, conLo=0,conHi=0, bh='';
+
+  jobs.forEach(job=>{
+    const L = litresFor(job);
+    const rep = repPrice(job.cat);                       // typical mid-range paint
+    const pLo = L*rep[0]/20, pHi = L*rep[1]/20;
+    paintLo += pLo; paintHi += pHi;
+    // individual painter labour (roof condMult = 1)
+    labLo += job.area*LABOUR_M2[0]*job.condMult;
+    labHi += job.area*LABOUR_M2[1]*job.condMult;
+    // contractor all-in rate card
+    const cr = CONTRACT[job.cat];
+    conLo += job.area*cr[0]; conHi += job.area*cr[1];
+    // breakdown line
+    let extra=''; if(job.primer) extra+=' + primer'; if(job.damp) extra+=' + damp primer';
+    if(job.roof && state.roof==='corrugated' && state.rust) extra+=' + rust primer';
+    const coats = job.roof ? ROOFT[state.roof].coats : 2;
+    bh += `<div class="line"><span class="n">${job.name}<br/><span class="sub">~${job.area} m² · ${Math.ceil(L)} L, ${coats} coat${coats>1?'s':''}${extra}</span></span><span class="a">${Rr(pLo,pHi)}</span></div>`;
   });
 
   const consLo=paintLo*CONSUMABLE_PCT, consHi=paintHi*CONSUMABLE_PCT;
-  const matLo=paintLo+consLo, matHi=paintHi+consHi;
-  const manageLo=matLo+labLo, manageHi=matHi+labHi;
-  const conLo=labLo/CONTRACTOR_LABOUR_RATIO, conHi=labHi/CONTRACTOR_LABOUR_RATIO;
+  const matLo=paintLo+consLo, matHi=paintHi+consHi;              // option 1
+  const indLo=matLo+labLo, indHi=matHi+labHi;                    // option 2
 
   bh += `<div class="line"><span class="n">Paint &amp; primers</span><span class="a">${Rr(paintLo,paintHi)}</span></div>`;
   bh += `<div class="line"><span class="n">Consumables <span class="sub">(brushes, rollers, sheets, filler, silicone)</span></span><span class="a">${Rr(consLo,consHi)}</span></div>`;
-  bh += `<div class="line"><span class="n">Labour <span class="sub">(prep + painting)</span></span><span class="a">${Rr(labLo,labHi)}</span></div>`;
+  bh += `<div class="line"><span class="n">Painter labour <span class="sub">(individual, R20–25/m²)</span></span><span class="a">${Rr(labLo,labHi)}</span></div>`;
   document.getElementById('breakdown').innerHTML = bh;
 
   document.getElementById('r1a').textContent = Rr(matLo,matHi);
-  document.getElementById('r2a').textContent = Rr(manageLo,manageHi);
+  document.getElementById('r2a').textContent = Rr(indLo,indHi);
   document.getElementById('r3a').textContent = Rr(conLo,conHi);
   document.getElementById('rangeMain').textContent = Rr(matLo, conHi);
+
+  // What to buy at Builders — products per surface, sorted by quality
+  let buy='';
+  jobs.forEach(job=>{
+    const L = litresFor(job);
+    const tins = Math.max(1, Math.ceil(L/20));
+    buy += `<div class="surfhead">${job.name}</div>`;
+    buy += `<div class="surfneed">About ${tins} × 20L tin${tins>1?'s':''} needed (~${Math.ceil(L)} L)</div>`;
+    PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=>{
+      const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
+      const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1];
+      const jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
+      buy += `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span><span class="score">${pr.s}/10</span></div>`;
+      buy += `<div class="pp">${priceTxt} per 20L</div>`;
+      buy += `<div class="pj">≈ ${jobTxt} for this job</div>`;
+      if(pr.note) buy += `<div class="pnote">${pr.note}</div>`;
+      if(pr.ds) buy += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
+      buy += `</div>`;
+    });
+  });
+  document.getElementById('buylist').innerHTML = buy;
 
   // exclusions notice
   document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
@@ -276,7 +354,7 @@ function calc(){
   if(q>0){
     let cls,h,t;
     if(q < matLo*0.9){ cls='v-low'; h='🔍 Very cheap'; t='This is below what the paint alone should cost. Ask exactly which paint, how many coats, and what prep is included — cheap usually means thin paint or skipped prep.'; }
-    else if(q <= manageHi){ cls='v-fair'; h='✅ Fair — individual painter level'; t='This matches doing it with an individual painter and buying your own paint. Good price if you\'re happy to manage the job.'; }
+    else if(q <= indHi){ cls='v-fair'; h='✅ Fair — individual painter level'; t='This matches doing it with an individual painter and buying your own paint. Good price if you\'re happy to manage the job.'; }
     else if(q <= conHi){ cls='v-fair'; h='✅ Fair — contractor level'; t='This sits in the professional-contractor range: more than DIY, but they manage everything, insured and guaranteed.'; }
     else if(q <= conHi*1.15){ cls='v-high'; h='⚠️ On the high side'; t='A little above a fair contractor price. Get one more quote, or ask what extra you\'re getting (guarantee, scaffolding, premium paint).'; }
     else { cls='v-over'; h='🚩 Looks overpriced'; t='Well above a fair contractor price for a home this size. Get 2 more quotes before signing.'; }
