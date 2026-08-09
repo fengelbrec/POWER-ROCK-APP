@@ -65,6 +65,14 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .prod .pnote{font-size:11px;color:#9a8248;margin-top:3px}
 .prod a.ds{display:inline-block;font-size:11.5px;color:#2c5f8a;text-decoration:none;font-weight:700;margin-top:6px}
 .colnote{font-size:11px;color:#8494a3;line-height:1.5;margin-top:6px}
+.bksurf{font-size:11.5px;color:#5a6b7b;line-height:1.5;margin-bottom:5px}
+.bk{width:100%;border-collapse:collapse;margin-top:8px}
+.bk th{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#8494a3;text-align:right;padding:0 0 7px}
+.bk th.l{text-align:left}
+.bk td{font-size:13px;padding:9px 0;border-top:1px solid #eef1f4;vertical-align:top}
+.bk td.n{color:#41505f;padding-right:8px}
+.bk td.a{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bk tr.sub td{font-weight:800;color:#12324e;border-top:1.5px solid #cdd6df}
 </style>
 </head>
 <body>
@@ -233,6 +241,7 @@ const ROOF_PITCH = 1.40;                                         // +40% for slo
 // Garage adds wall/roof area (m²): single ≈ half a double
 const GARAGE = { single:{interior:22, exterior:28, floor:18}, double:{interior:40, exterior:45, floor:36} };
 const BATH_EXTRA_INTERIOR = 25;   // extra interior wall area for a 2nd+ bathroom
+const INTERIOR_WALL_FACTOR = 0.85;  // deduct ~15% for window frames & cupboards (no wall paint)
 // ──────────────────────────────────────────────────────────────
 
 const state = { surf:{interior:false,exterior:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, ceilings:false, cond:'good', damp:false, roof:'tiled', rust:false };
@@ -257,12 +266,13 @@ function buildJobs(){
   const jobs=[];
   const g = state.garage!=='none' ? GARAGE[state.garage] : null;
   if(state.surf.interior){
-    let a = AREA[state.home].interior;
-    if(g) a += g.interior;
-    if(state.bath==='2plus') a += BATH_EXTRA_INTERIOR;
+    let base = AREA[state.home].interior;
+    if(g) base += g.interior;
+    if(state.bath==='2plus') base += BATH_EXTRA_INTERIOR;
+    const wallArea = Math.round(base * INTERIOR_WALL_FACTOR); // less windows & cupboards
     const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
-    jobs.push({cat:'interior', name:'Inside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
-    if(state.ceilings) jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(a*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
+    jobs.push({cat:'interior', name:'Inside walls', area:wallArea, primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
+    if(state.ceilings) jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(base*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
   }
   if(state.surf.exterior){
     let a = AREA[state.home].exterior;
@@ -308,33 +318,40 @@ function calc(){
   if(!state.home){ alert('Choose your home size (Step 2).'); return; }
 
   const jobs = buildJobs();
-  let paintLo=0,paintHi=0, labLo=0,labHi=0, conLo=0,conHi=0, bh='';
+  let paintLo=0,paintHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='';
 
   jobs.forEach(job=>{
     const L = litresFor(job);
     const rep = repPrice(job.cat);                       // typical mid-range paint
-    const pLo = L*rep[0]/20, pHi = L*rep[1]/20;
-    paintLo += pLo; paintHi += pHi;
+    paintLo += L*rep[0]/20; paintHi += L*rep[1]/20;
     // individual painter labour (roof condMult = 1)
     labLo += job.area*LABOUR_M2[0]*job.condMult;
     labHi += job.area*LABOUR_M2[1]*job.condMult;
-    // contractor all-in rate card
+    // contractor all-in rate card (same bad-wall / damp uplift as the painter route)
     const cr = CONTRACT[job.cat];
-    conLo += job.area*cr[0]; conHi += job.area*cr[1];
-    // breakdown line
-    let extra=''; if(job.primer) extra+=' + primer'; if(job.damp) extra+=' + damp primer';
+    conLo += job.area*cr[0]*job.condMult; conHi += job.area*cr[1]*job.condMult;
+    // per-surface summary (shows how the litres/tins are worked out)
+    let extra=''; if(job.primer) extra+=' + 1 primer coat'; if(job.damp) extra+=' + damp primer';
     if(job.roof && state.roof==='corrugated' && state.rust) extra+=' + rust primer';
     const coats = job.roof ? ROOFT[state.roof].coats : 2;
-    bh += `<div class="line"><span class="n">${job.name}<br/><span class="sub">~${job.area} m² · ${Math.ceil(L)} L, ${coats} coat${coats>1?'s':''}${extra}</span></span><span class="a">${Rr(pLo,pHi)}</span></div>`;
+    const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
+    const tins = Math.max(1, Math.ceil(L/20));
+    surf += `<div class="bksurf"><b>${job.name}</b> — ~${job.area} m² × ${coats} coat${coats>1?'s':''}${extra} ÷ ${cov} m²/L = ${Math.ceil(L)} L → <b>${tins} × 20L tin${tins>1?'s':''}</b></div>`;
   });
 
   const consLo=paintLo*CONSUMABLE_PCT, consHi=paintHi*CONSUMABLE_PCT;
   const matLo=paintLo+consLo, matHi=paintHi+consHi;              // option 1
   const indLo=matLo+labLo, indHi=matHi+labHi;                    // option 2
 
-  bh += `<div class="line"><span class="n">Paint &amp; primers</span><span class="a">${Rr(paintLo,paintHi)}</span></div>`;
-  bh += `<div class="line"><span class="n">Consumables <span class="sub">(brushes, rollers, sheets, filler, silicone)</span></span><span class="a">${Rr(consLo,consHi)}</span></div>`;
-  bh += `<div class="line"><span class="n">Painter labour <span class="sub">(individual, R20–25/m²)</span></span><span class="a">${Rr(labLo,labHi)}</span></div>`;
+  // 2-column Minimum / Maximum table
+  const row=(n,lo,hi,sub,cls)=>`<tr${cls?' class="'+cls+'"':''}><td class="n">${n}${sub?'<br/><span class="sub">'+sub+'</span>':''}</td><td class="a">${R(lo)}</td><td class="a">${R(hi)}</td></tr>`;
+  let bh = surf + '<table class="bk"><tr><th class="l"></th><th>Minimum</th><th>Maximum</th></tr>';
+  bh += row('Paint &amp; primers', paintLo, paintHi);
+  bh += row('Consumables', consLo, consHi, 'brushes, rollers, sheets, filler, silicone');
+  bh += row('Materials subtotal', matLo, matHi, 'option 1 · just the paint', 'sub');
+  bh += row('Painter labour', labLo, labHi, 'individual, R20–25/m²');
+  bh += row('Paint + painter total', indLo, indHi, 'option 2', 'sub');
+  bh += '</table>';
   document.getElementById('breakdown').innerHTML = bh;
 
   document.getElementById('r1a').textContent = Rr(matLo,matHi);
@@ -354,8 +371,8 @@ function calc(){
       const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1];
       const jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
       buy += `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span><span class="score">${pr.s}/10</span></div>`;
-      buy += `<div class="pp">${priceTxt} per 20L</div>`;
-      buy += `<div class="pj">≈ ${jobTxt} for this job</div>`;
+      buy += `<div class="pp">${priceTxt} per 20L tin</div>`;
+      buy += `<div class="pj">${tins} × 20L = ${jobTxt}</div>`;
       if(pr.note) buy += `<div class="pnote">${pr.note}</div>`;
       if(pr.ds) buy += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
       buy += `</div>`;
