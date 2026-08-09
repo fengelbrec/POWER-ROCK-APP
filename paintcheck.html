@@ -74,7 +74,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
     <div class="tagline">What should it really cost to paint your home? · South Africa</div>
   </div>
   <div class="body">
-    <div class="tune">⚙️ Ferdi test build — now runs on real Builders Warehouse prices &amp; your real R/m² rates. Try a few combos and tell me what to change.</div>
+    <div class="tune">⚙️ Test build — now runs on real Builders Warehouse prices &amp; real R/m² rates. Try a few combos and tell me what to change.</div>
 
     <div class="card">
       <div class="step">Step 1 · What are you painting?</div>
@@ -180,7 +180,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 </div>
 
 <script>
-// ─── TUNE THESE (Ferdi's real numbers) ────────────────────────
+// ─── TUNE THESE (real-world numbers) ──────────────────────────
 // Coverage = m² per litre, per coat
 const COVER = { interior:8, exterior:5.5, ceiling:7 };
 const ROOFT = { tiled:{cover:2.25, coats:1}, corrugated:{cover:10, coats:2} }; // tiled ~45m²/20L 1 coat; metal ~100m²/20L 2 coats
@@ -212,7 +212,7 @@ const PRODUCTS = {
 };
 
 const LABOUR_M2 = [20, 25];                        // individual painter, R/m² (option 2)
-// Contractor all-in R/m² from Ferdi's 2026 quotes = [lo, hi]
+// Contractor all-in R/m² from real 2026 quotes = [lo, hi]
 const CONTRACT = { interior:[69,76], exterior:[74,84], ceiling:[49,59], roof:[71,80] };
 
 const CONSUMABLE_PCT = 0.15;                        // brushes, rollers, sheets, filler, silicone
@@ -220,7 +220,7 @@ const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add a
 const COND_LABOUR = { good:0, fair:0, bad:0.25, verybad:0.40 };         // extra prep labour
 const DAMP_LABOUR = 0.20;                           // damp adds ~20% labour + a primer coat
 
-// Areas (m²) recalibrated from Ferdi's real 2026 quotes
+// Areas (m²) recalibrated from real 2026 quotes
 const AREA = {
   '1bed': { interior:110, exterior:90  },
   '2bed': { interior:180, exterior:120 },
