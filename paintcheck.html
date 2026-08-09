@@ -90,6 +90,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       <div class="step">Step 1 · What are you painting?</div>
       <div class="chk" data-surf="exterior" onclick="tSurf(this)"><span class="box">✓</span> Outside walls (textured, hard-wearing)</div>
       <div class="chk" data-surf="interior" onclick="tSurf(this)"><span class="box">✓</span> Inside walls (washable low-sheen)</div>
+      <div class="chk" data-surf="ceiling" onclick="tSurf(this)"><span class="box">✓</span> Interior ceilings</div>
       <div class="chk" data-surf="roof" onclick="tSurf(this)"><span class="box">✓</span> Roof</div>
     </div>
 
@@ -114,7 +115,6 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
         <div class="opt" data-bath="2plus" onclick="tBath(this)">2 or more</div>
       </div>
       <div class="chk" data-extra="storey" id="storeyChk" onclick="tExtra(this)" style="margin-top:12px;display:none"><span class="box">✓</span> Double storey (more outside wall)</div>
-      <div class="chk" data-extra="ceilings" id="ceilChk" onclick="tExtra(this)" style="display:none"><span class="box">✓</span> Also painting ceilings inside</div>
     </div>
 
     <div class="card cond" id="wallCard">
@@ -238,7 +238,7 @@ const BATH_EXTRA_INTERIOR = 25;   // extra interior wall area for a 2nd+ bathroo
 const INTERIOR_WALL_FACTOR = 0.85;  // deduct ~15% for window frames & cupboards (no wall paint)
 // ──────────────────────────────────────────────────────────────
 
-const state = { surf:{interior:false,exterior:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, ceilings:false, cond:'good', damp:false, roof:'tiled', rust:false };
+const state = { surf:{interior:false,exterior:false,ceiling:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, cond:'good', damp:false, roof:'tiled', rust:false };
 
 function tSurf(el){ const s=el.dataset.surf; state.surf[s]=!state.surf[s]; el.classList.toggle('sel',state.surf[s]); syncCards(); }
 function tHome(el){ document.querySelectorAll('#homeOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.home=el.dataset.home; }
@@ -250,10 +250,6 @@ function tExtra(el){ const k=el.dataset.extra; state[k]=!state[k]; el.classList.
 function syncCards(){
   document.getElementById('wallCard').classList.toggle('show', state.surf.interior||state.surf.exterior);
   document.getElementById('roofCard').classList.toggle('show', state.surf.roof);
-  // ceilings only make sense with inside walls
-  const cc=document.getElementById('ceilChk');
-  if(state.surf.interior){ cc.style.display='flex'; }
-  else { cc.style.display='none'; state.ceilings=false; cc.classList.remove('sel'); }
   // double storey only affects outside walls
   const sc=document.getElementById('storeyChk');
   if(state.surf.exterior){ sc.style.display='flex'; }
@@ -267,14 +263,16 @@ const Rr = (a,b) => R(a) + ' – ' + R(b);
 function buildJobs(){
   const jobs=[];
   const g = state.garage!=='none' ? GARAGE[state.garage] : null;
+  let base = AREA[state.home].interior;
+  if(g) base += g.interior;
+  if(state.bath==='2plus') base += BATH_EXTRA_INTERIOR;
   if(state.surf.interior){
-    let base = AREA[state.home].interior;
-    if(g) base += g.interior;
-    if(state.bath==='2plus') base += BATH_EXTRA_INTERIOR;
     const wallArea = Math.round(base * INTERIOR_WALL_FACTOR); // less windows & cupboards
     const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
     jobs.push({cat:'interior', name:'Inside walls', area:wallArea, primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
-    if(state.ceilings) jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(base*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
+  }
+  if(state.surf.ceiling){
+    jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(base*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
   }
   if(state.surf.exterior){
     let a = AREA[state.home].exterior;
