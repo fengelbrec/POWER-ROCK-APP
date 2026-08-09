@@ -140,17 +140,9 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       <div class="chk" data-extra="rust" onclick="tExtra(this)" id="rustChk" style="margin-top:12px;display:none"><span class="box">✓</span> There is rust on the roof</div>
     </div>
 
-    <div class="card">
-      <div class="step">Step 4 · Optional — check a quote</div>
-      <div class="lbl">Got a price from a painter? Enter it (R)</div>
-      <input type="number" id="quote" inputmode="decimal" placeholder="Leave blank to just see the fair range"/>
-      <div class="hint">We'll tell you where it sits and if it's fair.</div>
-    </div>
-
     <button class="cta" onclick="calc()">Show me the fair price →</button>
 
     <div class="res" id="res">
-      <div id="verdictBox"></div>
       <div class="bigrange">
         <div class="k">To paint this, expect</div>
         <div class="v" id="rangeMain">—</div>
@@ -318,23 +310,32 @@ function calc(){
   if(!state.home){ alert('Choose your home size (Step 2).'); return; }
 
   const jobs = buildJobs();
-  let paintLo=0,paintHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='';
+  let paintLo=0,paintHi=0, primerLo=0,primerHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='';
+  const paintRows=[];   // one per surface: colour-coat paint only
 
   jobs.forEach(job=>{
-    const L = litresFor(job);
     const rep = repPrice(job.cat);                       // typical mid-range paint
-    paintLo += L*rep[0]/20; paintHi += L*rep[1]/20;
-    // individual painter labour (roof condMult = 1)
+    const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
+    const coats = job.roof ? ROOFT[state.roof].coats : 2;
+    // split litres: colour coats vs primer coats
+    const colourL = job.roof ? job.area*coats/cov : job.area*2/cov;
+    let primerL = 0;
+    if(job.roof){ if(state.roof==='corrugated' && state.rust) primerL += job.area/RUST_COVER; }
+    else { if(job.primer) primerL += job.area/cov; if(job.damp) primerL += job.area/cov; }
+    const cLo=colourL*rep[0]/20, cHi=colourL*rep[1]/20;
+    const prLo=primerL*rep[0]/20, prHi=primerL*rep[1]/20;
+    const label = job.cat==='interior'?'Interior wall paint' : job.cat==='exterior'?'Exterior wall paint' : job.cat==='ceiling'?'Ceiling paint' : 'Roof paint';
+    paintRows.push({label, lo:cLo, hi:cHi});
+    primerLo += prLo; primerHi += prHi;
+    paintLo += cLo+prLo; paintHi += cHi+prHi;
     labLo += job.area*LABOUR_M2[0]*job.condMult;
     labHi += job.area*LABOUR_M2[1]*job.condMult;
-    // contractor all-in rate card (same bad-wall / damp uplift as the painter route)
     const cr = CONTRACT[job.cat];
     conLo += job.area*cr[0]*job.condMult; conHi += job.area*cr[1]*job.condMult;
     // per-surface summary (shows how the litres/tins are worked out)
     let extra=''; if(job.primer) extra+=' + 1 primer coat'; if(job.damp) extra+=' + damp primer';
     if(job.roof && state.roof==='corrugated' && state.rust) extra+=' + rust primer';
-    const coats = job.roof ? ROOFT[state.roof].coats : 2;
-    const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
+    const L = colourL+primerL;
     const tins = Math.max(1, Math.ceil(L/20));
     surf += `<div class="bksurf"><b>${job.name}</b> — ~${job.area} m² × ${coats} coat${coats>1?'s':''}${extra} ÷ ${cov} m²/L = ${Math.ceil(L)} L → <b>${tins} × 20L tin${tins>1?'s':''}</b></div>`;
   });
@@ -346,7 +347,8 @@ function calc(){
   // 2-column Minimum / Maximum table
   const row=(n,lo,hi,sub,cls)=>`<tr${cls?' class="'+cls+'"':''}><td class="n">${n}${sub?'<br/><span class="sub">'+sub+'</span>':''}</td><td class="a">${R(lo)}</td><td class="a">${R(hi)}</td></tr>`;
   let bh = surf + '<table class="bk"><tr><th class="l"></th><th>Minimum</th><th>Maximum</th></tr>';
-  bh += row('Paint &amp; primers', paintLo, paintHi);
+  paintRows.forEach(r=> bh += row(r.label, r.lo, r.hi));
+  if(primerHi>0) bh += row('Primers', primerLo, primerHi, 'plaster / damp / rust primer');
   bh += row('Consumables', consLo, consHi, 'brushes, rollers, sheets, filler, silicone');
   bh += row('Materials subtotal', matLo, matHi, 'option 1 · just the paint', 'sub');
   bh += row('Painter labour', labLo, labHi, 'individual, R20–25/m²');
@@ -382,19 +384,6 @@ function calc(){
 
   // exclusions notice
   document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
-
-  // Verdict — place their quote on the spectrum
-  const q = parseFloat(document.getElementById('quote').value)||0;
-  const vb = document.getElementById('verdictBox');
-  if(q>0){
-    let cls,h,t;
-    if(q < matLo*0.9){ cls='v-low'; h='🔍 Very cheap'; t='This is below what the paint alone should cost. Ask exactly which paint, how many coats, and what prep is included — cheap usually means thin paint or skipped prep.'; }
-    else if(q <= indHi){ cls='v-fair'; h='✅ Fair — individual painter level'; t='This matches doing it with an individual painter and buying your own paint. Good price if you\'re happy to manage the job.'; }
-    else if(q <= conHi){ cls='v-fair'; h='✅ Fair — contractor level'; t='This sits in the professional-contractor range: more than DIY, but they manage everything, insured and guaranteed.'; }
-    else if(q <= conHi*1.15){ cls='v-high'; h='⚠️ On the high side'; t='A little above a fair contractor price. Get one more quote, or ask what extra you\'re getting (guarantee, scaffolding, premium paint).'; }
-    else { cls='v-over'; h='🚩 Looks overpriced'; t='Well above a fair contractor price for a home this size. Get 2 more quotes before signing.'; }
-    vb.innerHTML = `<div class="verdict ${cls}"><div class="vh">${h}</div><div class="vt">Your quote: <b>${R(q)}</b><br/>${t}</div></div>`;
-  } else { vb.innerHTML=''; }
 
   const res=document.getElementById('res'); res.classList.add('show'); res.scrollIntoView({behavior:'smooth'});
 }
