@@ -187,6 +187,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 const COVER = { interior:8, exterior:5.5, ceiling:7 };
 const ROOFT = { tiled:{cover:2.25, coats:1}, corrugated:{cover:10, coats:2} }; // tiled ~45m²/20L 1 coat; metal ~100m²/20L 2 coats
 const RUST_COVER = 10;                              // rust primer, 1 coat
+const PRIMER_COVER = 6.5;                           // solvent-based plaster primer, 1 coat, ~6–7 m²/L
 
 // Recommended paints at Builders (price per 20L = [special, normal]); score /10; datasheet link
 const PRODUCTS = {
@@ -210,6 +211,12 @@ const PRODUCTS = {
     {n:'Duram Wall & Ceiling', s:8,   p:[1029,1129], ds:'https://www.duram.co.za/product/wall-ceiling/'},
     {n:'Duram Matt Acrylic',   s:7.5, p:[859,859],   ds:'https://www.duram.co.za/product/matt-acrylic/'},
     {n:'Bergermaster Nukote',  s:7,   p:[749,849],   ds:''}
+  ],
+  // Solvent-based plaster primers for chalky / flaky / bare areas — 1 full binding coat
+  primer: [
+    {n:'Duram Adhesion Primer',       p:[949,1029],  ds:'https://www.duram.co.za/product/adhesion-primer/'},
+    {n:'Plascon Sure Coat Primer',    p:[1149,1399], ds:'https://plascon.co.za/wp-content/uploads/2025/01/UC-56-Plaster-primer.pdf'},
+    {n:'Dulux Maxicover Plaster Primer', p:[1359,1559], ds:'https://msp.images.akzonobel.com/prd/dh/ezadlx/documents/bc/89/df/36/12_maxicover_2_1_en_prep_plaster_primer_2019_rev4.pdf'}
   ]
 };
 
@@ -318,20 +325,23 @@ function calc(){
   if(!state.home){ alert('Choose your home size (Step 2).'); return; }
 
   const jobs = buildJobs();
-  let paintLo=0,paintHi=0, primerLo=0,primerHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='';
+  const primerRep = repPrice('primer');
+  let paintLo=0,paintHi=0, primerLo=0,primerHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='', wallPrimerL=0;
   const paintRows=[];   // one per surface: colour-coat paint only
 
   jobs.forEach(job=>{
     const rep = repPrice(job.cat);                       // typical mid-range paint
     const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
     const coats = job.roof ? ROOFT[state.roof].coats : 2;
-    // split litres: colour coats vs primer coats
-    const colourL = job.roof ? job.area*coats/cov : job.area*2/cov;
+    // colour/topcoat litres (roof rust primer folds into the roof paint line)
+    let colourL = job.roof ? job.area*coats/cov : job.area*2/cov;
+    if(job.roof && state.roof==='corrugated' && state.rust) colourL += job.area/RUST_COVER;
+    // wall primer coats (chalky/flaky + damp) use a separate solvent-based plaster primer @ 6.5 m²/L
     let primerL = 0;
-    if(job.roof){ if(state.roof==='corrugated' && state.rust) primerL += job.area/RUST_COVER; }
-    else { if(job.primer) primerL += job.area/cov; if(job.damp) primerL += job.area/cov; }
+    if(!job.roof){ if(job.primer) primerL += job.area/PRIMER_COVER; if(job.damp) primerL += job.area/PRIMER_COVER; }
+    wallPrimerL += primerL;
     const cLo=colourL*rep[0]/20, cHi=colourL*rep[1]/20;
-    const prLo=primerL*rep[0]/20, prHi=primerL*rep[1]/20;
+    const prLo=primerL*primerRep[0]/20, prHi=primerL*primerRep[1]/20;
     const label = job.cat==='interior'?'Interior wall paint' : job.cat==='exterior'?'Exterior wall paint' : job.cat==='ceiling'?'Ceiling paint' : 'Roof paint';
     paintRows.push({label, lo:cLo, hi:cHi});
     primerLo += prLo; primerHi += prHi;
@@ -341,11 +351,12 @@ function calc(){
     const cr = CONTRACT[job.cat];
     conLo += job.area*cr[0]*job.condMult; conHi += job.area*cr[1]*job.condMult;
     // per-surface summary (shows how the litres/tins are worked out)
-    let extra=''; if(job.primer) extra+=' + 1 primer coat'; if(job.damp) extra+=' + damp primer';
-    if(job.roof && state.roof==='corrugated' && state.rust) extra+=' + rust primer';
-    const L = colourL+primerL;
-    const tins = Math.max(1, Math.ceil(L/20));
-    surf += `<div class="bksurf"><b>${job.name}</b> — ~${job.area} m² × ${coats} coat${coats>1?'s':''}${extra} ÷ ${cov} m²/L = ${Math.ceil(L)} L → <b>${tins} × 20L tin${tins>1?'s':''}</b></div>`;
+    const totalL = colourL + primerL;
+    const tins = Math.max(1, Math.ceil(totalL/20));
+    let s = `<b>${job.name}</b> — ~${job.area} m² · ${coats} topcoat${coats>1?'s':''} (${Math.ceil(colourL)} L)`;
+    if(primerL>0){ s += ` + 1 primer coat (${Math.ceil(primerL)} L)`; }
+    s += ` = ${Math.ceil(totalL)} L → <b>${tins} × 20L tin${tins>1?'s':''}</b>`;
+    surf += `<div class="bksurf">${s}</div>`;
   });
 
   const consLo=paintLo*CONSUMABLE_PCT, consHi=paintHi*CONSUMABLE_PCT;
@@ -356,7 +367,7 @@ function calc(){
   const row=(n,lo,hi,sub,cls)=>`<tr${cls?' class="'+cls+'"':''}><td class="n">${n}${sub?'<br/><span class="sub">'+sub+'</span>':''}</td><td class="a">${R(lo)}</td><td class="a">${R(hi)}</td></tr>`;
   let bh = surf + '<table class="bk"><tr><th class="l"></th><th>Minimum</th><th>Maximum</th></tr>';
   paintRows.forEach(r=> bh += row(r.label, r.lo, r.hi));
-  if(primerHi>0) bh += row('Primers', primerLo, primerHi, 'plaster / damp / rust primer');
+  if(primerHi>0) bh += row('Plaster primer', primerLo, primerHi, 'solvent-based, 1 binding coat on chalky/flaky areas');
   bh += row('Consumables', consLo, consHi, 'brushes, rollers, sheets, filler, silicone');
   bh += row('Materials subtotal', matLo, matHi, 'option 1 · just the paint', 'sub');
   bh += row('Painter labour', labLo, labHi, 'individual, R20–25/m²');
@@ -369,29 +380,38 @@ function calc(){
   document.getElementById('r3a').textContent = Rr(conLo,conHi);
   document.getElementById('rangeMain').textContent = Rr(matLo, conHi);
 
-  // What to buy at Builders — products per surface, sorted by quality
+  // What to buy at Builders — products per surface, best quality first
+  const prodCard=(pr,tins)=>{
+    const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
+    const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1];
+    const jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
+    let h = `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
+    h += `<div class="pp">${priceTxt} per 20L tin</div>`;
+    h += `<div class="pj">${tins} × 20L = ${jobTxt}</div>`;
+    if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
+    if(pr.ds) h += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
+    return h + `</div>`;
+  };
   let buy='';
   jobs.forEach(job=>{
     const L = litresFor(job);
     const tins = Math.max(1, Math.ceil(L/20));
     buy += `<div class="surfhead">${job.name}</div>`;
     buy += `<div class="surfneed">About ${tins} × 20L tin${tins>1?'s':''} needed (~${Math.ceil(L)} L)</div>`;
-    PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=>{
-      const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
-      const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1];
-      const jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
-      buy += `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span><span class="score">${pr.s}/10</span></div>`;
-      buy += `<div class="pp">${priceTxt} per 20L tin</div>`;
-      buy += `<div class="pj">${tins} × 20L = ${jobTxt}</div>`;
-      if(pr.note) buy += `<div class="pnote">${pr.note}</div>`;
-      if(pr.ds) buy += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
-      buy += `</div>`;
-    });
+    PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins));
   });
+  // Primer for chalky / flaky / bare areas
+  if(wallPrimerL>0){
+    const pt = Math.max(1, Math.ceil(wallPrimerL/20));
+    buy += `<div class="surfhead">Primer — chalky, flaky or bare areas</div>`;
+    buy += `<div class="surfneed">1 full binding coat · about ${pt} × 20L tin${pt>1?'s':''} (~${Math.ceil(wallPrimerL)} L). Must be a <b>solvent-based</b> plaster primer.</div>`;
+    PRODUCTS.primer.forEach(pr=> buy += prodCard(pr,pt));
+    buy += `<div class="colnote"><b>Why:</b> chalky or flaking walls need one full coat of solvent-based plaster primer over those areas to bind the surface, so the topcoats grip properly. <b>Note:</b> plaster &amp; crack repairs are NOT included in these prices — but any new plaster must also get a coat of this same primer.</div>`;
+  }
   document.getElementById('buylist').innerHTML = buy;
 
   // exclusions notice
-  document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
+  document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): plaster &amp; crack repairs, boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
 
   const res=document.getElementById('res'); res.classList.add('show'); res.scrollIntoView({behavior:'smooth'});
 }
