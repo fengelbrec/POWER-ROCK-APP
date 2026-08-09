@@ -92,8 +92,18 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
         <div class="opt q4" data-home="3bed" onclick="tHome(this)">3-bed</div>
         <div class="opt q4" data-home="4bed" onclick="tHome(this)">4-bed+</div>
       </div>
-      <div class="chk" data-extra="garage" onclick="tExtra(this)" style="margin-top:10px"><span class="box">✓</span> Double garage</div>
-      <div class="chk" data-extra="storey" onclick="tExtra(this)"><span class="box">✓</span> Double storey (more outside wall)</div>
+      <div class="q" style="margin-top:14px">Garage</div>
+      <div class="opts" id="garageOpts">
+        <div class="opt sel" data-garage="none" onclick="tGarage(this)">None</div>
+        <div class="opt" data-garage="single" onclick="tGarage(this)">Single</div>
+        <div class="opt" data-garage="double" onclick="tGarage(this)">Double</div>
+      </div>
+      <div class="q" style="margin-top:14px">Bathrooms</div>
+      <div class="opts" id="bathOpts">
+        <div class="opt sel" data-bath="1" onclick="tBath(this)">1</div>
+        <div class="opt" data-bath="2plus" onclick="tBath(this)">2 or more</div>
+      </div>
+      <div class="chk" data-extra="storey" onclick="tExtra(this)" style="margin-top:12px"><span class="box">✓</span> Double storey (more outside wall)</div>
       <div class="chk" data-extra="ceilings" onclick="tExtra(this)"><span class="box">✓</span> Also painting ceilings inside</div>
     </div>
 
@@ -220,14 +230,17 @@ const AREA = {
 const CEIL_OF_INTERIOR = 0.47;
 const FLOOR = { '1bed':55, '2bed':85, '3bed':120, '4bed':180 };  // house footprint m²
 const ROOF_PITCH = 1.275;                                        // +27.5% for slope & profile
-const GARAGE_FLOOR = 36;
-const GARAGE = { interior:40, exterior:45 };
+// Garage adds wall/roof area (m²): single ≈ half a double
+const GARAGE = { single:{interior:22, exterior:28, floor:18}, double:{interior:40, exterior:45, floor:36} };
+const BATH_EXTRA_INTERIOR = 25;   // extra interior wall area for a 2nd+ bathroom
 // ──────────────────────────────────────────────────────────────
 
-const state = { surf:{interior:false,exterior:false,roof:false}, home:null, garage:false, storey:false, ceilings:false, cond:'good', damp:false, roof:'tiled', rust:false };
+const state = { surf:{interior:false,exterior:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, ceilings:false, cond:'good', damp:false, roof:'tiled', rust:false };
 
 function tSurf(el){ const s=el.dataset.surf; state.surf[s]=!state.surf[s]; el.classList.toggle('sel',state.surf[s]); syncCards(); }
 function tHome(el){ document.querySelectorAll('#homeOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.home=el.dataset.home; }
+function tGarage(el){ document.querySelectorAll('#garageOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.garage=el.dataset.garage; }
+function tBath(el){ document.querySelectorAll('#bathOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.bath=el.dataset.bath; }
 function tCond(el){ document.querySelectorAll('#condOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.cond=el.dataset.cond; }
 function tRoof(el){ document.querySelectorAll('#roofOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.roof=el.dataset.roof; document.getElementById('rustChk').style.display = state.roof==='corrugated'?'flex':'none'; }
 function tExtra(el){ const k=el.dataset.extra; state[k]=!state[k]; el.classList.toggle('sel',state[k]); }
@@ -242,19 +255,24 @@ const Rr = (a,b) => R(a) + ' – ' + R(b);
 // Build the list of paint jobs from the choices
 function buildJobs(){
   const jobs=[];
+  const g = state.garage!=='none' ? GARAGE[state.garage] : null;
   if(state.surf.interior){
-    let a = AREA[state.home].interior; if(state.garage) a += GARAGE.interior;
+    let a = AREA[state.home].interior;
+    if(g) a += g.interior;
+    if(state.bath==='2plus') a += BATH_EXTRA_INTERIOR;
     const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
     jobs.push({cat:'interior', name:'Inside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
     if(state.ceilings) jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(a*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
   }
   if(state.surf.exterior){
-    let a = AREA[state.home].exterior; if(state.garage) a += GARAGE.exterior; if(state.storey) a *= 2;
+    let a = AREA[state.home].exterior;
+    if(state.storey) a *= 2;
+    if(g) a += g.exterior;
     const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
     jobs.push({cat:'exterior', name:'Outside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
   }
   if(state.surf.roof){
-    let f = FLOOR[state.home]||0; if(state.garage) f += GARAGE_FLOOR;
+    let f = FLOOR[state.home]||0; if(g) f += g.floor;
     jobs.push({cat:'roof', name:'Roof', area:Math.round(f*ROOF_PITCH), roof:true, condMult:1});
   }
   return jobs;
