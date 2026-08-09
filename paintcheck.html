@@ -75,6 +75,23 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .bk td.n{color:#41505f;padding-right:8px}
 .bk td.a{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .bk tr.sub td{font-weight:800;color:#12324e;border-top:1.5px solid #cdd6df}
+.unlock{background:#12324e;color:#fff;border-radius:16px;padding:20px 18px;margin-bottom:14px}
+.unlock .ulh{font-size:18px;font-weight:800;margin-bottom:12px}
+.ulist{list-style:none;margin:0 0 16px;padding:0}
+.ulist li{font-size:13px;line-height:1.5;padding:6px 0 6px 26px;position:relative;color:#e7eef5}
+.ulist li:before{content:"✓";position:absolute;left:0;top:6px;color:#37c07a;font-weight:800}
+.ulbtn{margin-top:0}
+.ulnote{font-size:11px;color:#a9c4db;margin-top:10px;text-align:center;line-height:1.5}
+.dlbtn{background:#12324e;display:block;text-align:center;text-decoration:none}
+.scopeblk{margin-bottom:12px}
+.scopeblk h4{font-size:13px;font-weight:800;color:#12324e;margin:10px 0 5px}
+.scopeblk ol{margin:0 0 4px 18px;padding:0}
+.scopeblk li{font-size:12.5px;color:#26323e;line-height:1.45;margin-bottom:4px}
+.scopeblk ul{margin:4px 0 4px 16px}
+.scopeblk ul li{list-style:disc}
+.warn{background:#fdeceb;border:1px solid #e5a79f;border-radius:10px;padding:10px 12px;font-size:12px;color:#8f2d22;line-height:1.5;margin:8px 0}
+.script li{font-size:12.5px;color:#26323e;line-height:1.5;margin-bottom:7px}
+.script{margin-left:2px;padding-left:16px}
 </style>
 </head>
 <body>
@@ -164,16 +181,50 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
           <div class="rh"><span class="rn">3 · Full contractor</span><span class="ra" id="r3a">—</span></div>
           <div class="rd">A contractor buys all the paint &amp; materials, brings transport, ladders, tools and safety equipment, and does the whole job. The priciest option, but by far the least hassle — nothing for you to arrange.</div>
         </div>
-        <div class="hint">Options 1 &amp; 2 assume typical mid-range paint. Pick a cheaper or premium paint in "What to buy" below to see the exact cost.</div>
+        <div class="hint">Options 1 &amp; 2 assume typical mid-range paint. Unlock below for the exact paint, prices and method.</div>
       </div>
-      <div class="card">
-        <div class="step">What to buy at Builders</div>
-        <div id="buylist"></div>
-        <div class="colnote">Prices are for standard colours only and may vary — checked at Builders Warehouse. Tap a paint's spec sheet for drying &amp; overcoat times.</div>
+
+      <div class="card" id="teaser"></div>
+
+      <div class="unlock" id="unlockCard">
+        <div class="ulh">🔓 Unlock your complete plan — <b>R99</b></div>
+        <ul class="ulist">
+          <li>Exact shopping list &amp; today's Builders prices — every paint &amp; primer</li>
+          <li>Full cost breakdown (paint, primer, damp/rust, labour)</li>
+          <li>Step-by-step <b>scope of works</b> for your walls (PDF to download)</li>
+          <li>What to say to your painter, so you don't get caught out</li>
+          <li>Emailed to you to take to the shop</li>
+        </ul>
+        <button class="cta ulbtn" onclick="payR99()">Pay R99 with Payfast →</button>
+        <div class="ulnote">🔒 Secure card &amp; EFT payment via Payfast. <span id="sbxNote">Test mode — no real money is charged.</span></div>
       </div>
-      <div class="card">
-        <div class="step">Breakdown</div>
-        <div id="breakdown"></div>
+
+      <div id="paid" style="display:none">
+        <div class="card">
+          <div class="step">What to buy at Builders</div>
+          <div id="buylist"></div>
+          <div class="colnote">Prices are for standard colours only and may vary — checked at Builders Warehouse. Tap a paint's spec sheet for drying &amp; overcoat times.</div>
+        </div>
+        <div class="card">
+          <div class="step">Breakdown</div>
+          <div id="breakdown"></div>
+        </div>
+        <div class="card">
+          <div class="step">Your scope of works</div>
+          <div id="scope"></div>
+          <a class="cta dlbtn" id="scopeDl" href="#" target="_blank" rel="noopener">📄 Download the scope of works (PDF)</a>
+        </div>
+        <div class="card">
+          <div class="step">What to say to your painter</div>
+          <div id="script"></div>
+        </div>
+        <div class="card">
+          <div class="step">Email me my plan</div>
+          <div class="hint" style="margin-top:0">We'll email this whole plan to you to take to the shop.</div>
+          <input type="email" id="leadEmail" inputmode="email" placeholder="you@email.com" style="margin-top:8px"/>
+          <button class="cta dlbtn" onclick="emailPlan()" style="margin-top:8px">Email it to me →</button>
+          <div class="ulnote" id="emailMsg"></div>
+        </div>
       </div>
       <div class="excl" id="excl"></div>
       <div class="foot">Estimates for a typical SA home at current paint prices. Real m² varies with your layout — a solid ballpark to plan and to sense-check a quote.</div>
@@ -256,6 +307,12 @@ const INTERIOR_WALL_FACTOR = 0.85;  // deduct ~15% for window frames & cupboards
 
 const state = { surf:{interior:false,exterior:false,ceiling:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, cond:'good', damp:false, roof:'tiled', rust:false };
 
+let unlocked = false;
+const SCOPE_PDF = 'PaintCheck-Scope-of-Works-Exterior-Walls.pdf';
+const WEB3FORMS_KEY = '';          // paste the Web3Forms access key here to switch on emailing
+// Payfast — sandbox test credentials (swap for the live merchant_id/merchant_key to go live)
+const PF = { url:'https://sandbox.payfast.co.za/eng/process', merchant_id:'10000100', merchant_key:'46f0cd694581a' };
+
 function tSurf(el){ const s=el.dataset.surf; state.surf[s]=!state.surf[s]; el.classList.toggle('sel',state.surf[s]); syncCards(); }
 function tHome(el){ document.querySelectorAll('#homeOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.home=el.dataset.home; }
 function tGarage(el){ document.querySelectorAll('#garageOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.garage=el.dataset.garage; }
@@ -304,20 +361,6 @@ function buildJobs(){
   return jobs;
 }
 
-function litresFor(job){
-  if(job.roof){
-    const rt = ROOFT[state.roof];
-    let L = job.area*rt.coats/rt.cover;
-    if(state.roof==='corrugated' && state.rust) L += job.area/RUST_COVER;
-    return L;
-  }
-  const cov = COVER[job.cat];
-  let L = job.area*2/cov;      // 2 coats
-  if(job.primer) L += job.area/cov;   // plaster primer coat
-  if(job.damp)   L += job.area/cov;   // damp primer coat
-  return L;
-}
-
 // Typical mid-range paint price per 20L for a category = [special avg, normal avg].
 // Used for the 3 headline options so the numbers stay clean; the "What to buy"
 // list below shows each paint's own price (budget → premium).
@@ -359,12 +402,10 @@ function calc(){
     labHi += job.area*LABOUR_M2[1]*job.condMult;
     const cr = CONTRACT[job.cat];
     conLo += job.area*cr[0]*job.condMult; conHi += job.area*cr[1]*job.condMult;
-    // per-surface summary (shows how the litres/tins are worked out)
-    const totalL = colourL + primerL;
-    const tins = Math.max(1, Math.ceil(totalL/20));
-    let s = `<b>${job.name}</b> — ~${job.area} m² · ${coats} topcoat${coats>1?'s':''} (${Math.ceil(colourL)} L)`;
-    if(primerL>0){ s += ` + 1 primer coat (${Math.ceil(primerL)} L)`; }
-    s += ` = ${Math.ceil(totalL)} L → <b>${tins} × 20L tin${tins>1?'s':''}</b>`;
+    // per-surface summary (topcoat tins; plaster primer is its own line/section)
+    const topTins = Math.max(1, Math.ceil(colourL/20));
+    let s = `<b>${job.name}</b> — ~${job.area} m² · ${coats} topcoat${coats>1?'s':''} = ${Math.ceil(colourL)} L → <b>${topTins} × 20L tin${topTins>1?'s':''}</b>`;
+    if(primerL>0){ s += ` <span class="sub">(+ ${Math.ceil(primerL)} L plaster primer — see Primer)</span>`; }
     surf += `<div class="bksurf">${s}</div>`;
   });
 
@@ -410,17 +451,21 @@ function calc(){
     if(pr.ds) h += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
     return h + `</div>`;
   };
-  let buy='';
+  let buy='', totalTins=0;
   jobs.forEach(job=>{
-    const L = litresFor(job);
+    const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
+    const coats = job.roof ? ROOFT[state.roof].coats : 2;
+    const L = job.roof ? job.area*coats/cov : job.area*2/cov;   // topcoat only (primer/damp/rust are separate sections)
     const tins = Math.max(1, Math.ceil(L/20));
+    totalTins += tins;
     buy += `<div class="surfhead">${job.name}</div>`;
-    buy += `<div class="surfneed">About ${tins} × 20L tin${tins>1?'s':''} needed (~${Math.ceil(L)} L)</div>`;
+    buy += `<div class="surfneed">About ${tins} × 20L tin${tins>1?'s':''} of topcoat (~${Math.ceil(L)} L)</div>`;
     PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins));
   });
   // Primer for chalky / flaky / bare areas
   if(wallPrimerL>0){
     const pt = Math.max(1, Math.ceil(wallPrimerL/20));
+    totalTins += pt;
     buy += `<div class="surfhead">Primer — chalky, flaky or bare areas</div>`;
     buy += `<div class="surfneed">1 full binding coat · about ${pt} × 20L tin${pt>1?'s':''} (~${Math.ceil(wallPrimerL)} L). Must be a <b>solvent-based</b> plaster primer.</div>`;
     PRODUCTS.primer.forEach(pr=> buy += prodCard(pr,pt));
@@ -441,11 +486,123 @@ function calc(){
   }
   document.getElementById('buylist').innerHTML = buy;
 
+  // teaser (free), scope + script (paid)
+  document.getElementById('teaser').innerHTML = `<div class="step">Your plan is ready</div><div style="font-size:13.5px;line-height:1.5">You'll need roughly <b>${totalTins} × 20L tin${totalTins>1?'s':''}</b> of paint &amp; primer in total. Unlock below for the exact paints to buy, today's Builders prices, and the step-by-step method for your walls.</div>`;
+  document.getElementById('scope').innerHTML = buildScope();
+  document.getElementById('script').innerHTML = buildScript();
+  document.getElementById('scopeDl').href = SCOPE_PDF;
+
+  // free vs paid
+  const paid=document.getElementById('paid'), uc=document.getElementById('unlockCard'), tz=document.getElementById('teaser');
+  paid.style.display = unlocked ? 'block' : 'none';
+  uc.style.display   = unlocked ? 'none'  : 'block';
+  tz.style.display   = unlocked ? 'none'  : 'block';
+
   // exclusions notice
   document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): plaster &amp; crack repairs, boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
 
   const res=document.getElementById('res'); res.classList.add('show'); res.scrollIntoView({behavior:'smooth'});
 }
+
+// ── Scope of works — tailored to what they picked ──────────────
+function buildScope(){
+  const walls = state.surf.interior || state.surf.exterior;
+  const rough = state.cond==='bad' || state.cond==='verybad';
+  let h='';
+  if(walls){
+    h += `<div class="scopeblk"><h4>Surface preparation</h4><ol>`;
+    h += `<li>High-pressure wash all wall surfaces to remove dirt, dust, chalk and any loose or failing paint.</li>`;
+    h += rough
+      ? `<li>Chip out badly damaged or hollow-sounding ("drummy") plaster; open cracks wider than 3&nbsp;mm and re-plaster (with a plaster-key bonding agent and waterproofing additive), then float to match the existing finish.</li>`
+      : `<li>Fill hairline cracks and chips; open any crack wider than 3&nbsp;mm, re-plaster and float to match the existing finish.</li>`;
+    h += `<li>Seal open gaps between the plaster and the window and door frames with a flexible acrylic sealant.</li></ol></div>`;
+    h += `<div class="scopeblk"><h4>Priming</h4><ol>`;
+    h += `<li>Prime all newly plastered areas with one coat of solvent-based plaster primer.</li>`;
+    if(rough) h += `<li><b>Apply one full coat of solvent-based plaster primer over every chalky, powdery or flaking area</b> to bind the surface, so the topcoats grip properly.</li>`;
+    h += `</ol></div>`;
+  }
+  if(state.damp){
+    h += `<div class="scopeblk"><h4>Damp repairs</h4>`;
+    h += `<div class="warn">⚠️ Find and fix the <b>cause</b> of the damp first. Do not paint over a wet wall — the paint will fail.</div>`;
+    h += `<ol><li>Remove all blistered or peeling paint where adhesion has failed due to damp.</li>`;
+    h += `<li>Let the wall dry out naturally for as long as possible (ideally to a moisture level below 10%).</li>`;
+    h += `<li>Re-plaster and float the affected areas, then patch a damp sealer onto those areas.</li></ol></div>`;
+  }
+  if(state.surf.roof){
+    h += `<div class="scopeblk"><h4>Roof</h4><ol>`;
+    h += `<li>High-pressure wash the roof and scrape or wire-brush any loose, flaking coating.</li>`;
+    if(state.roof==='corrugated' && state.rust) h += `<li>Wire-brush rust back to sound metal and patch-prime it with an anti-rust metal primer.</li>`;
+    h += `<li>Apply ${state.roof==='tiled'?'one thick coat':'two coats'} of roof paint, following the tin's drying &amp; overcoat times.</li></ol></div>`;
+  }
+  if(state.surf.ceiling){
+    h += `<div class="scopeblk"><h4>Ceilings</h4><ol><li>Prepare and apply two coats of ceiling paint, observing the recoat time on the tin.</li></ol></div>`;
+  }
+  if(walls){
+    h += `<div class="scopeblk"><h4>Finishing coats</h4><ol>`;
+    h += `<li>Apply two full coats of your chosen topcoat.</li>`;
+    h += `<li>Observe the drying and overcoating times stated on each product's Technical Data Sheet.</li></ol></div>`;
+  }
+  h += `<div class="colnote">Plaster &amp; crack repair materials are not included in the prices above.</div>`;
+  return h;
+}
+
+function buildScript(){
+  const items=[];
+  items.push('“Please give me two full coats — not one — of the paint I’ve chosen.”');
+  items.push('“High-pressure wash and prep everything before painting.”');
+  if(state.cond==='bad'||state.cond==='verybad') items.push('“Prime all chalky or flaking areas with a solvent-based plaster primer first.”');
+  if(state.damp) items.push('“The damp must be traced and fixed before any painting — I don’t want paint over wet walls.”');
+  if(state.surf.roof && state.rust) items.push('“Wire-brush the rust back to bare metal and prime it before the roof paint.”');
+  items.push('“Please confirm your price includes all prep, primer and both topcoats.”');
+  items.push('“Which exact products are you using, and how long between coats?”');
+  return '<ul class="script">'+items.map(i=>`<li>${i}</li>`).join('')+'</ul>';
+}
+
+// ── Payfast unlock (sandbox) ───────────────────────────────────
+function saveState(){ try{ localStorage.setItem('pc_state', JSON.stringify(state)); }catch(e){} }
+function loadState(){ try{ const s=JSON.parse(localStorage.getItem('pc_state')||'null'); if(s){ Object.assign(state,s); if(s.surf) Object.assign(state.surf,s.surf); } }catch(e){} }
+function restoreUI(){
+  document.querySelectorAll('.chk[data-surf]').forEach(el=>el.classList.toggle('sel', !!state.surf[el.dataset.surf]));
+  document.querySelectorAll('#homeOpts .opt').forEach(el=>el.classList.toggle('sel', el.dataset.home===state.home));
+  document.querySelectorAll('#garageOpts .opt').forEach(el=>el.classList.toggle('sel', el.dataset.garage===state.garage));
+  document.querySelectorAll('#bathOpts .opt').forEach(el=>el.classList.toggle('sel', el.dataset.bath===state.bath));
+  document.querySelectorAll('#condOpts .opt').forEach(el=>el.classList.toggle('sel', el.dataset.cond===state.cond));
+  document.querySelectorAll('#roofOpts .opt').forEach(el=>el.classList.toggle('sel', el.dataset.roof===state.roof));
+  document.querySelectorAll('.chk[data-extra]').forEach(el=>el.classList.toggle('sel', !!state[el.dataset.extra]));
+  syncCards();
+}
+function payR99(){
+  saveState();
+  const base = location.origin + location.pathname;
+  const f = document.createElement('form');
+  f.method='POST'; f.action=PF.url;
+  const fields = { merchant_id:PF.merchant_id, merchant_key:PF.merchant_key, return_url:base+'?unlocked=1', cancel_url:base+'?cancelled=1', amount:'99.00', item_name:'PaintCheck complete plan' };
+  for(const k in fields){ const i=document.createElement('input'); i.type='hidden'; i.name=k; i.value=fields[k]; f.appendChild(i); }
+  document.body.appendChild(f); f.submit();
+}
+function emailPlan(){
+  const email=(document.getElementById('leadEmail').value||'').trim();
+  const msg=document.getElementById('emailMsg');
+  if(!/.+@.+\..+/.test(email)){ msg.textContent='Please enter a valid email address.'; return; }
+  if(!WEB3FORMS_KEY){ msg.textContent='📧 Email sending switches on once the account key is added.'; return; }
+  msg.textContent='Sending…';
+  const body={ access_key:WEB3FORMS_KEY, subject:'Your PaintCheck plan', from_name:'PaintCheck', email:email,
+    plan: document.getElementById('scope').innerText + '\n\n' + document.getElementById('breakdown').innerText };
+  fetch('https://api.web3forms.com/submit',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{ msg.textContent = d.success ? '✅ Sent! Check your inbox.' : 'Could not send — please try again.'; })
+    .catch(()=>{ msg.textContent='Could not send right now — please try again.'; });
+}
+
+// ── On load: handle the return from Payfast ────────────────────
+(function init(){
+  const p = new URLSearchParams(location.search);
+  if(p.get('reset')==='1'){ try{ localStorage.removeItem('pc_unlocked'); localStorage.removeItem('pc_state'); }catch(e){} return; }
+  if(p.get('unlocked')==='1' || localStorage.getItem('pc_unlocked')==='1'){
+    unlocked = true; try{ localStorage.setItem('pc_unlocked','1'); }catch(e){}
+    loadState(); restoreUI();
+    if(state.home && Object.values(state.surf).some(Boolean)) calc();
+  }
+})();
 </script>
 </body>
 </html>
