@@ -188,7 +188,7 @@ input[type=password]{letter-spacing:5px}
 .snap-meta{font-size:12px;color:#8A8470;margin-bottom:18px}
 .snap-meta strong{color:#1A1A1A}
 .snap-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:4px}
-.snap-table{min-width:1200px;border-collapse:collapse;font-size:12px}
+.snap-table{min-width:1040px;border-collapse:collapse;font-size:12px}
 .snap-table th{padding:8px 10px;text-align:right;font-weight:700;color:#1A1A1A;border-bottom:2px solid #1A1A1A;white-space:nowrap;font-size:10.5px}
 .snap-table th:first-child{text-align:left}
 .snap-table td{padding:8px 10px;text-align:right;border-bottom:1px solid #EFECE3;white-space:nowrap}
@@ -198,6 +198,12 @@ input[type=password]{letter-spacing:5px}
 .snap-table tfoot td{border-top:2px solid #1A1A1A;border-bottom:none;font-weight:800;background:#F7F6F3}
 .snap-table tfoot td:first-child{background:#F7F6F3}
 .snap-table .bud{background:#EFF1F3;color:#98A0A8}
+.snap-table .alt{background:#F4F6F7}
+.snap-table .mini{font-size:8px;color:#9AA2AA;font-weight:700;letter-spacing:.3px;margin-right:4px}
+.snap-table .muted{color:#98A0A8}
+.snap2 .p-top td{border-bottom:none}
+.snap2 .p-bot td{border-bottom:2px solid #E6E2D8}
+.snap2 td{padding-top:6px;padding-bottom:6px}
 .snap-paybtn{background:#F4ECD8;color:#9C8049;border:none;border-radius:4px;padding:3px 7px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;width:100%}
 .snap-paybtn.paid{background:#5C7A6B;color:#fff}
 .snap-close-x{position:absolute;top:18px;right:20px;width:34px;height:34px;border-radius:50%;background:#F0EEE6;border:none;font-size:18px;cursor:pointer;color:#5C5748;display:flex;align-items:center;justify-content:center}
@@ -1501,7 +1507,8 @@ async function openMonthSnapshot(monthKey){
              outstanding: projInclVAT - invTotal,
              labourBudget:fin.labourBudget, labourActual:fin.labourActual,
              materialBudget:fin.materialBudget, materialActual:fin.material,
-             henk:fin.henk, dpd:dailyNet, monthNet:dailyNet*dim, totalNet:totalNet,
+             henk:fin.henk, henkPaid:((OWNER.costs[s.id]||{}).henk)||0, overheads:fin.overheads,
+             dpd:dailyNet, monthNet:dailyNet*dim, totalNet:totalNet,
              marginPct: projectValue>0 ? totalNet/projectValue : null };
   }).filter(Boolean).sort((a,b)=> new Date(b.site.started)-new Date(a.site.started));
 
@@ -1511,7 +1518,7 @@ async function openMonthSnapshot(monthKey){
   const money = (v,c) => c ? `<td style="color:${c};font-weight:800">${Rs(v)}</td>` : `<td>${Rs(v)}</td>`;
   const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
   const gProj=T('projectValue'), gInv=T('progInv'), gLabB=T('labourBudget'), gLabA=T('labourActual');
-  const gMatB=T('materialBudget'), gMatA=T('materialActual'), gHenk=T('henk'), gMonthNet=T('monthNet'), gDpd=T('dpd'), gOutstanding=T('outstanding');
+  const gMatB=T('materialBudget'), gMatA=T('materialActual'), gHenk=T('henk'), gMonthNet=T('monthNet'), gDpd=T('dpd'), gOutstanding=T('outstanding'), gOvh=T('overheads'), gHenkPaid=T('henkPaid');
   const gTotalNet = rows.reduce((a,r)=>a+ownerFin(r.site).net,0);
   const gMargin = gProj>0 ? gTotalNet/gProj : null;
 
@@ -1525,11 +1532,12 @@ async function openMonthSnapshot(monthKey){
     <div class="snap-grand-total">${Rs(gInv)}</div>
   </div>`;
 
-  h += `<div class="snap-scroll"><table class="snap-table">
+  const mini = t => `<span class="mini">${t}</span>`;
+  h += `<div class="snap-scroll"><table class="snap-table snap2">
     <thead><tr>
-      <th>Site</th><th>Project Value<br/><span style="font-weight:600;opacity:.6">incl VAT</span></th><th>Progress invoice</th><th>Outstanding Amount</th>
-      <th class="bud">Labour budget</th><th>Labour actual</th><th class="bud">Material budget</th><th>Material actual</th>
-      <th>Henk 10%</th><th>Profit / day</th><th>Profit for Month</th><th>Net profit</th>
+      <th>Site</th><th class="alt">Project Value<br/><span class="mini">incl VAT</span></th><th>Progress invoice</th><th class="alt">Outstanding</th>
+      <th>Labour<br/><span class="mini">budget / actual</span></th><th class="alt">Material<br/><span class="mini">budget / actual</span></th><th>Overheads</th><th class="alt">Henk<br/><span class="mini">10% / paid</span></th>
+      <th>Profit / day</th><th class="alt">Profit for Month</th><th>Net profit</th>
     </tr></thead>
     <tbody>
       ${rows.map(r=>{
@@ -1537,31 +1545,37 @@ async function openMonthSnapshot(monthKey){
         const matC = r.materialBudget>0 ? col(r.materialActual < r.materialBudget) : null;
         const dpdC = col(r.dpd >= PPD_TARGET);
         const netC = r.marginPct!=null ? col(r.marginPct >= NET_TARGET) : null;
-        return `<tr>
-          <td title="${r.site.name}">${r.site.name}</td>
-          <td>${Rs(r.projInclVAT)}</td>
-          <td style="white-space:nowrap">${r.progInv>0?`<div onclick="openProgressInvoice('${r.site.id}','${monthKey}')" style="cursor:pointer">${Rs(r.progInv)}${r.billPct!=null?` <span style="font-size:9px;color:#8A8470">${Math.round(r.billPct*100)}%</span>`:''}</div>`:''}<button onclick="openProgressInvoice('${r.site.id}','${monthKey}')" style="background:#f2f6fb;border:1px solid #cdddec;border-radius:6px;padding:4px 9px;font-size:11px;font-weight:800;color:#2c5f8a;cursor:pointer;font-family:inherit;margin-top:${r.progInv>0?'4px':'0'}">＋ Add</button></td>
-          <td>${Rs(r.outstanding)}</td>
-          <td class="bud">${Rs(r.labourBudget)}</td>
-          <td onclick="openSiteLabour('${r.site.id}','${monthKey}')" title="See labour payments" style="cursor:pointer;font-weight:800;color:${labC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.labourActual)}</td>
-          <td class="bud">${Rs(r.materialBudget)}</td>
-          <td onclick="openSiteMaterial('${r.site.id}','${monthKey}')" title="See material invoices" style="cursor:pointer;font-weight:800;color:${matC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.materialActual)}</td>
-          <td onclick="openSiteHenk('${r.site.id}','${monthKey}')" title="See Henk payments" style="cursor:pointer;font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.henk)}</td>
-          ${money(r.dpd, dpdC)}
-          <td style="font-weight:800">${Rs(r.monthNet)}</td>
-          <td style="font-weight:800;color:${netC||'inherit'}">${Rs(r.totalNet)}${r.marginPct!=null?` <span style="font-size:9px;opacity:.85">${Math.round(r.marginPct*100)}%</span>`:''}</td>
+        const sid = r.site.id;
+        return `<tr class="p-top">
+          <td rowspan="2" style="vertical-align:middle;font-weight:700" title="${r.site.name}">${r.site.name}</td>
+          <td rowspan="2" class="alt" style="vertical-align:middle">${Rs(r.projInclVAT)}</td>
+          <td rowspan="2" style="vertical-align:middle;white-space:nowrap">${r.progInv>0?`<div onclick="openProgressInvoice('${sid}','${monthKey}')" style="cursor:pointer;font-weight:700">${Rs(r.progInv)}${r.billPct!=null?` <span class="mini">${Math.round(r.billPct*100)}%</span>`:''}</div>`:''}<button onclick="openProgressInvoice('${sid}','${monthKey}')" style="background:#f2f6fb;border:1px solid #cdddec;border-radius:5px;padding:2px 7px;font-size:10px;font-weight:800;color:#2c5f8a;cursor:pointer;font-family:inherit;margin-top:${r.progInv>0?'3px':'0'}">＋ Add</button></td>
+          <td rowspan="2" class="alt" style="vertical-align:middle">${Rs(r.outstanding)}</td>
+          <td class="muted">${mini('Bud')}${Rs(r.labourBudget)}</td>
+          <td class="alt muted">${mini('Bud')}${Rs(r.materialBudget)}</td>
+          <td rowspan="2" onclick="openSiteOverheads('${sid}','${monthKey}')" title="See overheads" style="cursor:pointer;vertical-align:middle;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.overheads)}</td>
+          <td class="alt muted">${mini('10%')}${Rs(r.henk)}</td>
+          <td rowspan="2" style="vertical-align:middle;font-weight:800;color:${dpdC}">${Rs(r.dpd)}</td>
+          <td rowspan="2" class="alt" style="vertical-align:middle;font-weight:800">${Rs(r.monthNet)}</td>
+          <td rowspan="2" style="vertical-align:middle;font-weight:800;color:${netC||'inherit'}">${Rs(r.totalNet)}${r.marginPct!=null?` <span class="mini">${Math.round(r.marginPct*100)}%</span>`:''}</td>
+        </tr>
+        <tr class="p-bot">
+          <td onclick="openSiteLabour('${sid}','${monthKey}')" title="See labour payments" style="cursor:pointer;font-weight:800;color:${labC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${mini('Act')}${Rs(r.labourActual)}</td>
+          <td class="alt" onclick="openSiteMaterial('${sid}','${monthKey}')" title="See material invoices" style="cursor:pointer;font-weight:800;color:${matC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${mini('Act')}${Rs(r.materialActual)}</td>
+          <td class="alt" onclick="openSiteHenk('${sid}','${monthKey}')" title="See Henk payments" style="cursor:pointer;font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${mini('Paid')}${Rs(r.henkPaid)}</td>
         </tr>`;
       }).join('')}
     </tbody>
     <tfoot>
       <tr>
         <td>TOTAL</td>
-        <td>${Rs(gProj*1.15)}</td><td>${Rs(gInv)}</td><td>${Rs(gOutstanding)}</td>
-        <td class="bud">${Rs(gLabB)}</td>${money(gLabA, gLabB>0?col(gLabA<gLabB):null)}
-        <td class="bud">${Rs(gMatB)}</td>${money(gMatA, gMatB>0?col(gMatA<gMatB):null)}
-        <td>${Rs(gHenk)}</td>
-        ${money(gDpd, col(gDpd>=PPD_TARGET))}
-        <td style="font-weight:800">${Rs(gMonthNet)}</td>
+        <td class="alt">${Rs(gProj*1.15)}</td><td>${Rs(gInv)}</td><td class="alt">${Rs(gOutstanding)}</td>
+        <td style="color:${gLabB>0?col(gLabA<gLabB):'inherit'};font-weight:800">${Rs(gLabA)}</td>
+        <td class="alt" style="color:${gMatB>0?col(gMatA<gMatB):'inherit'};font-weight:800">${Rs(gMatA)}</td>
+        <td>${Rs(gOvh)}</td>
+        <td class="alt">${Rs(gHenkPaid)}</td>
+        <td style="color:#A39E8C">—</td>
+        <td class="alt" style="font-weight:800">${Rs(gMonthNet)}</td>
         <td style="font-weight:800;color:${gMargin!=null?col(gMargin>=NET_TARGET):'inherit'}">${Rs(gTotalNet)}${gMargin!=null?` ${Math.round(gMargin*100)}%`:''}</td>
       </tr>
     </tfoot>
@@ -1700,20 +1714,25 @@ async function removeMaterialInvoice(invId, siteId, monthKey){
 }
 
 // LABOUR / HENK — dated progress payments (site_costs), with add.
-function openSiteLabour(siteId, monthKey){ openSiteCostKind(siteId, monthKey, 'labour', 'Labour payments'); }
-function openSiteHenk(siteId, monthKey){ openSiteCostKind(siteId, monthKey, 'henk', 'Henk payments'); }
-async function openSiteCostKind(siteId, monthKey, kind, titleLbl){
+function costKindTitle(kind){ return ({labour:'Labour payments', henk:'Henk payments', additional:'Additional site costs (cherry / scaffold)', accommodation:'Team accommodation', petrol:'Petrol / Diesel'})[kind] || 'Payments'; }
+function openSiteLabour(siteId, monthKey){ openSiteCostKind(siteId, monthKey, 'labour'); }
+function openSiteHenk(siteId, monthKey){ openSiteCostKind(siteId, monthKey, 'henk'); }
+async function openSiteCostKind(siteId, monthKey, kind){
   const s=(OWNER.sites||[]).find(x=>x.id===siteId); if(!s) return;
   snapLoading('Loading payments…');
   const rows=await sbGetRows('site_costs','site_id=eq.'+encodeURIComponent(siteId)+'&kind=eq.'+kind+'&order=paid_date.desc');
-  renderSiteCostKind(s, monthKey, kind, titleLbl, Array.isArray(rows)?rows:[]);
+  renderSiteCostKind(s, monthKey, kind, Array.isArray(rows)?rows:[]);
 }
-function renderSiteCostKind(s, monthKey, kind, titleLbl, list){
+function renderSiteCostKind(s, monthKey, kind, list){
   const p=monthKey.split('-'), paid=list.reduce((a,c)=>a+(parseFloat(c.amount)||0),0);
-  const fin=ownerFin(s), target=(kind==='labour')?fin.labourActual:fin.henk, outstanding=target-paid;
+  const fin=ownerFin(s), hasTarget=(kind==='labour'||kind==='henk');
+  const target=(kind==='labour')?fin.labourActual:(kind==='henk'?fin.henk:0), outstanding=target-paid;
+  const meta = hasTarget
+    ? `${kind==='labour'?'Agreed labour':'Henk fee'} ${R(target)} · paid ${R(paid)} · <strong>${R(outstanding)} still to pay</strong>`
+    : `${list.length} payment${list.length!==1?'s':''} · ${R(paid)} total`;
   let h=`<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
-    <div class="snap-title">${titleLbl} — ${s.name}</div>
-    <div class="snap-meta">${kind==='labour'?'Agreed labour':'Henk fee'} ${R(target)} · paid ${R(paid)} · <strong>${R(outstanding)} still to pay</strong></div>`;
+    <div class="snap-title">${costKindTitle(kind)} — ${s.name}</div>
+    <div class="snap-meta">${meta}</div>`;
   if(list.length){
     h+=`<div class="ledger-card" style="padding:4px 16px;margin:14px 0">`;
     list.forEach(function(c){
@@ -1723,13 +1742,13 @@ function renderSiteCostKind(s, monthKey, kind, titleLbl, list){
       </div>`;
     });
     h+=`</div>`;
-  } else h+=`<div style="font-size:12.5px;color:#A39E8C;padding:10px 0">No payments logged yet.</div>`;
+  } else h+=`<div style="font-size:12.5px;color:#A39E8C;padding:10px 0">Nothing logged yet.</div>`;
   h+=`<div style="max-width:420px;margin-top:12px">
-    <div class="section-lbl" style="margin-top:0">Add a payment</div>
-    <label class="f-label">Amount paid</label><input class="f-input" id="cc_amt" type="number" step="0.01" placeholder="0.00" style="margin-bottom:8px"/>
-    <label class="f-label">Date paid</label><input class="f-input" id="cc_date" type="date" value="${p[0]}-${p[1]}-15" style="margin-bottom:12px"/>
-    <button class="cta-btn" onclick="saveCostRow('${s.id}','${monthKey}','${kind}')">Add payment</button>
-    ${snapBackBtn(monthKey)}
+    <div class="section-lbl" style="margin-top:0">Add ${hasTarget?'a payment':'a cost'}</div>
+    <label class="f-label">Amount</label><input class="f-input" id="cc_amt" type="number" step="0.01" placeholder="0.00" style="margin-bottom:8px"/>
+    <label class="f-label">Date</label><input class="f-input" id="cc_date" type="date" value="${p[0]}-${p[1]}-15" style="margin-bottom:12px"/>
+    <button class="cta-btn" onclick="saveCostRow('${s.id}','${monthKey}','${kind}')">Add</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="${['additional','accommodation','petrol'].indexOf(kind)>=0?`openSiteOverheads('${s.id}','${monthKey}')`:`openMonthSnapshot('${monthKey}')`}">← Back</button>
   </div>`;
   $('monthSnapshotContent').innerHTML=h; openModal('modalMonthSnapshot');
 }
@@ -1739,14 +1758,33 @@ async function saveCostRow(siteId, monthKey, kind){
   snapLoading('Saving…');
   await sbInsert('site_costs', { id: uid(), site_id: siteId, kind: kind, amount: amt, paid_date: date, note:'' });
   await loadOwnerFin();
-  openSiteCostKind(siteId, monthKey, kind, kind==='labour'?'Labour payments':'Henk payments');
+  openSiteCostKind(siteId, monthKey, kind);
 }
 async function removeCostRow(id, siteId, monthKey, kind){
-  if(!confirm('Remove this payment?')) return;
+  if(!confirm('Remove this?')) return;
   snapLoading('Removing…');
   await sbDelete('site_costs','id=eq.'+encodeURIComponent(id));
   await loadOwnerFin();
-  openSiteCostKind(siteId, monthKey, kind, kind==='labour'?'Labour payments':'Henk payments');
+  openSiteCostKind(siteId, monthKey, kind);
+}
+// OVERHEADS — the three site-cost categories (cherry/scaffold, accommodation, petrol),
+// same as the site tab. Tap a line to see its payments + add.
+function openSiteOverheads(siteId, monthKey){
+  const s=(OWNER.sites||[]).find(x=>x.id===siteId); if(!s) return;
+  const c=OWNER.costs[siteId]||{};
+  const rowsDef=[['additional','Additional site costs (cherry / scaffold)'],['accommodation','Team accommodation'],['petrol','Petrol / Diesel']];
+  const total=(c.additional||0)+(c.accommodation||0)+(c.petrol||0);
+  let h=`<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
+    <div class="snap-title">Overheads — ${s.name}</div>
+    <div class="snap-meta">Cherry picker / scaffold, accommodation &amp; petrol · <strong>${R(total)} total</strong></div>
+    <div class="ledger-card" style="padding:2px 16px;margin:14px 0">`;
+  rowsDef.forEach(function(rd){
+    h+=`<div onclick="openSiteCostKind('${siteId}','${monthKey}','${rd[0]}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #EFECE3;cursor:pointer">
+      <span style="font-size:13px;font-weight:600">${rd[1]}</span>
+      <span class="disp" style="font-weight:800">${R(c[rd[0]]||0)} <span style="color:#8A8470;font-size:11px">›</span></span></div>`;
+  });
+  h+=`</div>${snapBackBtn(monthKey)}`;
+  $('monthSnapshotContent').innerHTML=h; openModal('modalMonthSnapshot');
 }
 
 // Per-site, per-month, per-split paid-out tracking
