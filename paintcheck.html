@@ -217,6 +217,15 @@ const PRODUCTS = {
     {n:'Duram Adhesion Primer',       p:[949,1029],  ds:'https://www.duram.co.za/product/adhesion-primer/'},
     {n:'Plascon Sure Coat Primer',    p:[1149,1399], ds:'https://plascon.co.za/wp-content/uploads/2025/01/UC-56-Plaster-primer.pdf'},
     {n:'Dulux Maxicover Plaster Primer', p:[1359,1559], ds:'https://msp.images.akzonobel.com/prd/dh/ezadlx/documents/bc/89/df/36/12_maxicover_2_1_en_prep_plaster_primer_2019_rev4.pdf'}
+  ],
+  // Damp sealer — PATCH prime the affected area only (5L, Builders has no 20L)
+  damp: [
+    {n:'Plascon Dampseal Waterproof Sealer', p:[849,959], size:5, ds:'https://plascon.co.za/wp-content/uploads/2022/04/plascon_dampseal_tds.pdf'}
+  ],
+  // Anti-rust metal primer — PATCH prime affected rust spots only (5L)
+  rust: [
+    {n:'Duram NS4 Anti-Rust Primer',      p:[629,629], size:5, ds:'https://www.duram.co.za/product/ns4-anti-rust-primer/'},
+    {n:'Dulux Rustshield Metal Primer',   p:[789,789], size:5, ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux_rustshield_anti_rust_metal_primer.pdf'}
   ]
 };
 
@@ -333,12 +342,12 @@ function calc(){
     const rep = repPrice(job.cat);                       // typical mid-range paint
     const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
     const coats = job.roof ? ROOFT[state.roof].coats : 2;
-    // colour/topcoat litres (roof rust primer folds into the roof paint line)
-    let colourL = job.roof ? job.area*coats/cov : job.area*2/cov;
-    if(job.roof && state.roof==='corrugated' && state.rust) colourL += job.area/RUST_COVER;
-    // wall primer coats (chalky/flaky + damp) use a separate solvent-based plaster primer @ 6.5 m²/L
+    // colour/topcoat litres
+    const colourL = job.roof ? job.area*coats/cov : job.area*2/cov;
+    // chalky/flaky walls get 1 full binding coat of solvent-based plaster primer @ 6.5 m²/L
+    // (damp & rust are handled as separate patch-prime add-ons below, not full coats)
     let primerL = 0;
-    if(!job.roof){ if(job.primer) primerL += job.area/PRIMER_COVER; if(job.damp) primerL += job.area/PRIMER_COVER; }
+    if(!job.roof && job.primer) primerL += job.area/PRIMER_COVER;
     wallPrimerL += primerL;
     const cLo=colourL*rep[0]/20, cHi=colourL*rep[1]/20;
     const prLo=primerL*primerRep[0]/20, prHi=primerL*primerRep[1]/20;
@@ -359,15 +368,23 @@ function calc(){
     surf += `<div class="bksurf">${s}</div>`;
   });
 
+  // Patch-prime add-ons — fixed ~1 × 5L tin on the affected area only (not area-scaled)
+  const patch = arr => [Math.min(...arr.map(p=>p.p[0])), Math.max(...arr.map(p=>p.p[1]))];
+  let dampLo=0,dampHi=0, rustLo=0,rustHi=0;
+  if(state.damp){ [dampLo,dampHi]=patch(PRODUCTS.damp); }
+  if(state.surf.roof && state.roof==='corrugated' && state.rust){ [rustLo,rustHi]=patch(PRODUCTS.rust); }
+
   const consLo=paintLo*CONSUMABLE_PCT, consHi=paintHi*CONSUMABLE_PCT;
-  const matLo=paintLo+consLo, matHi=paintHi+consHi;              // option 1
-  const indLo=matLo+labLo, indHi=matHi+labHi;                    // option 2
+  const matLo=paintLo+consLo+dampLo+rustLo, matHi=paintHi+consHi+dampHi+rustHi;   // option 1
+  const indLo=matLo+labLo, indHi=matHi+labHi;                                     // option 2
 
   // 2-column Minimum / Maximum table
   const row=(n,lo,hi,sub,cls)=>`<tr${cls?' class="'+cls+'"':''}><td class="n">${n}${sub?'<br/><span class="sub">'+sub+'</span>':''}</td><td class="a">${R(lo)}</td><td class="a">${R(hi)}</td></tr>`;
   let bh = surf + '<table class="bk"><tr><th class="l"></th><th>Minimum</th><th>Maximum</th></tr>';
   paintRows.forEach(r=> bh += row(r.label, r.lo, r.hi));
   if(primerHi>0) bh += row('Plaster primer', primerLo, primerHi, 'solvent-based, 1 binding coat on chalky/flaky areas');
+  if(rustHi>0) bh += row('Rust primer', rustLo, rustHi, 'patch affected metal only (5L)');
+  if(dampHi>0) bh += row('Damp sealer', dampLo, dampHi, 'patch affected area only (5L)');
   bh += row('Consumables', consLo, consHi, 'brushes, rollers, sheets, filler, silicone');
   bh += row('Materials subtotal', matLo, matHi, 'option 1 · just the paint', 'sub');
   bh += row('Painter labour', labLo, labHi, 'individual, R20–25/m²');
@@ -382,12 +399,13 @@ function calc(){
 
   // What to buy at Builders — products per surface, best quality first
   const prodCard=(pr,tins)=>{
+    const sz = pr.size||20;
     const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
     const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1];
     const jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
     let h = `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
-    h += `<div class="pp">${priceTxt} per 20L tin</div>`;
-    h += `<div class="pj">${tins} × 20L = ${jobTxt}</div>`;
+    h += `<div class="pp">${priceTxt} per ${sz}L tin</div>`;
+    h += `<div class="pj">${tins} × ${sz}L = ${jobTxt}</div>`;
     if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
     if(pr.ds) h += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
     return h + `</div>`;
@@ -407,6 +425,19 @@ function calc(){
     buy += `<div class="surfneed">1 full binding coat · about ${pt} × 20L tin${pt>1?'s':''} (~${Math.ceil(wallPrimerL)} L). Must be a <b>solvent-based</b> plaster primer.</div>`;
     PRODUCTS.primer.forEach(pr=> buy += prodCard(pr,pt));
     buy += `<div class="colnote"><b>Why:</b> chalky or flaking walls need one full coat of solvent-based plaster primer over those areas to bind the surface, so the topcoats grip properly. <b>Note:</b> plaster &amp; crack repairs are NOT included in these prices — but any new plaster must also get a coat of this same primer.</div>`;
+  }
+  // Rust primer — patch affected metal only
+  if(state.surf.roof && state.roof==='corrugated' && state.rust){
+    buy += `<div class="surfhead">Rust primer — affected metal only</div>`;
+    buy += `<div class="surfneed">Patch-prime the rusty spots only (not the whole roof) · about 1 × 5L. Wire-brush rust back to sound metal first.</div>`;
+    PRODUCTS.rust.forEach(pr=> buy += prodCard(pr,1));
+  }
+  // Damp sealer — patch affected area only, with the critical warning
+  if(state.damp){
+    buy += `<div class="surfhead">Damp — affected area only</div>`;
+    buy += `<div class="surfneed">Patch-seal the damp patch only · about 1 × 5L (sold in 5L, not 20L).</div>`;
+    PRODUCTS.damp.forEach(pr=> buy += prodCard(pr,1));
+    buy += `<div class="colnote"><b>⚠️ Read this first:</b> find and fix the <b>cause</b> of the damp before anything else. Sealing over a still-wet wall will NOT solve the problem — the source of the damp must be traced and rectified, then this waterproofer patched onto the affected area.</div>`;
   }
   document.getElementById('buylist').innerHTML = buy;
 
