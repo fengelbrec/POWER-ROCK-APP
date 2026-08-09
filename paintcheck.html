@@ -111,8 +111,8 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
         <div class="opt sel" data-bath="1" onclick="tBath(this)">1</div>
         <div class="opt" data-bath="2plus" onclick="tBath(this)">2 or more</div>
       </div>
-      <div class="chk" data-extra="storey" onclick="tExtra(this)" style="margin-top:12px"><span class="box">✓</span> Double storey (more outside wall)</div>
-      <div class="chk" data-extra="ceilings" onclick="tExtra(this)"><span class="box">✓</span> Also painting ceilings inside</div>
+      <div class="chk" data-extra="storey" id="storeyChk" onclick="tExtra(this)" style="margin-top:12px;display:none"><span class="box">✓</span> Double storey (more outside wall)</div>
+      <div class="chk" data-extra="ceilings" id="ceilChk" onclick="tExtra(this)" style="display:none"><span class="box">✓</span> Also painting ceilings inside</div>
     </div>
 
     <div class="card cond" id="wallCard">
@@ -121,7 +121,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       <div class="opts" id="condOpts">
         <div class="opt" data-cond="good" onclick="tCond(this)">Good</div>
         <div class="opt" data-cond="fair" onclick="tCond(this)">Fair</div>
-        <div class="opt" data-cond="bad" onclick="tCond(this)">Bad (chalky)</div>
+        <div class="opt" data-cond="bad" onclick="tCond(this)">Bad</div>
         <div class="opt" data-cond="verybad" onclick="tCond(this)">Very bad</div>
       </div>
       <div class="hint">Bad/very bad = old, powdery or flaking — needs a plaster primer coat first.</div>
@@ -248,6 +248,14 @@ function tExtra(el){ const k=el.dataset.extra; state[k]=!state[k]; el.classList.
 function syncCards(){
   document.getElementById('wallCard').classList.toggle('show', state.surf.interior||state.surf.exterior);
   document.getElementById('roofCard').classList.toggle('show', state.surf.roof);
+  // ceilings only make sense with inside walls
+  const cc=document.getElementById('ceilChk');
+  if(state.surf.interior){ cc.style.display='flex'; }
+  else { cc.style.display='none'; state.ceilings=false; cc.classList.remove('sel'); }
+  // double storey only affects outside walls
+  const sc=document.getElementById('storeyChk');
+  if(state.surf.exterior){ sc.style.display='flex'; }
+  else { sc.style.display='none'; state.storey=false; sc.classList.remove('sel'); }
 }
 
 const R = n => 'R ' + Math.round(n).toLocaleString('en-ZA');
