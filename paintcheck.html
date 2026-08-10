@@ -58,7 +58,8 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .excl{background:#fbf7ee;border:1px solid #e6dcc2;border-radius:12px;padding:13px 14px;font-size:11.5px;color:#7a6a42;line-height:1.6;margin-bottom:14px}
 .foot{font-size:11px;color:#93a2b1;text-align:center;padding:6px 6px;line-height:1.6}
 .tune{background:#fffceb;border:1px dashed #d8c98a;border-radius:10px;padding:10px 12px;font-size:11px;color:#8a7420;margin-bottom:14px;line-height:1.5}
-.surfhead{font-size:17px;font-weight:800;color:#12324e;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 6px;padding-bottom:6px;border-bottom:2px solid #12324e}
+.surfhead{font-size:17px;font-weight:800;color:#12324e;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 6px;padding-bottom:6px;border-bottom:2px solid #12324e;text-align:center}
+.optlbl{display:inline-block;border:2px solid #16222e;border-radius:6px;padding:3px 11px;font-size:12px;font-weight:800;letter-spacing:1px;color:#16222e;margin-bottom:9px}
 .surfhead:first-child{margin-top:2px}
 .surfneed{font-size:13px;color:#16222e;font-weight:600;margin-bottom:11px;line-height:1.5}
 .prod{border:1px solid #e3e8ee;border-radius:12px;padding:11px 12px;margin-bottom:8px;background:#fff}
@@ -90,8 +91,12 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .bk td.a{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .bk tr.sub td{font-weight:800;color:#12324e;border-top:1.5px solid #cdd6df}
 .unlock{background:#12324e;color:#fff;border-radius:16px;padding:20px 18px;margin-bottom:14px}
-.unlock .ulh{font-size:19px;font-weight:800;margin-bottom:6px}
+.unlock .ulh{font-size:19px;font-weight:800;margin-bottom:2px;text-align:center}
+.unlock .ulprice{font-size:32px;font-weight:800;color:#37c07a;text-align:center;letter-spacing:.5px;margin:2px 0 16px}
 .unlock .ulsub{font-size:13px;color:#cfe0ee;margin-bottom:14px;line-height:1.5}
+.unlock .ulsub2{list-style:disc;margin:6px 0 2px 22px;padding:0}
+.unlock .ulsub2 li{font-size:12.5px;line-height:1.4;padding:2px 0 2px 2px;color:#cfe0ee;position:static}
+.unlock .ulsub2 li:before{content:none}
 .unlock .ulanchor{font-size:12.5px;color:#fff;background:rgba(55,192,122,0.16);border:1px solid rgba(55,192,122,0.5);border-radius:10px;padding:11px 13px;margin:4px 0 14px;line-height:1.55}
 .ulist{list-style:none;margin:0 0 4px;padding:0}
 .ulist li{font-size:13px;line-height:1.5;padding:6px 0 6px 26px;position:relative;color:#e7eef5}
@@ -122,8 +127,8 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
     <div class="card">
       <div class="step">Step 1 · What are you painting?</div>
       <div class="chk" data-surf="exterior" onclick="tSurf(this)"><span class="box">✓</span> Outside walls (textured, hard-wearing)</div>
-      <div class="chk" data-surf="interior" onclick="tSurf(this)"><span class="box">✓</span> Inside walls (washable low-sheen)</div>
-      <div class="chk" data-surf="ceiling" onclick="tSurf(this)"><span class="box">✓</span> Interior ceilings</div>
+      <div class="chk" data-surf="interior" onclick="tSurf(this)"><span class="box">✓</span> Inside walls (Sheen / Low-Sheen washable finish)</div>
+      <div class="chk" data-surf="ceiling" onclick="tSurf(this)"><span class="box">✓</span> Interior ceilings (White Matt finish)</div>
       <div class="chk" data-surf="roof" onclick="tSurf(this)"><span class="box">✓</span> Roof</div>
     </div>
 
@@ -203,12 +208,16 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
       <div class="card" id="teaser"></div>
 
       <div class="unlock" id="unlockCard">
-        <div class="ulh">🔓 Your complete paint plan — just <b>R99</b></div>
-        <div class="ulsub">Everything a professional would work out for you — so you buy the right paint, at the best price, and never get overcharged.</div>
+        <div class="ulh">🔓 Your complete paint plan</div>
+        <div class="ulprice">ONLY <b>R99</b></div>
         <ul class="ulist">
-          <li><b>Exactly which paints &amp; primers to buy</b> — with the <b>cheapest shop for each</b> (we compare Builders Warehouse, Makro, Chamberlains &amp; Takealot for you)</li>
-          <li><b>Precisely how much you need</b> — no wasted tins, no second trips</li>
-          <li><b>Your full cost, itemised</b> — paint, primer, damp/rust &amp; labour — so no one can pad the bill</li>
+          <li><b>Exactly which paints to use</b>, and the current price of each at:
+            <ul class="ulsub2"><li>Builders Warehouse</li><li>Makro</li><li>Chamberlains</li><li>Takealot</li></ul>
+          </li>
+          <li><b>An accurate estimate of how much paint you need</b> — plus:
+            <ul class="ulsub2"><li>Estimated painter (labour) rates</li><li>Estimated paint-contractor rates</li></ul>
+          </li>
+          <li><b>Full product cost — itemised</b> (paint, primer, damp/rust &amp; labour), so no one can pad the bill</li>
           <li>A <b>step-by-step scope of works</b> for your exact walls — a professional PDF you hand to any painter</li>
           <li><b>What to say to your painter</b>, so you're never taken for a ride</li>
           <li>The whole plan <b>emailed to you</b>, ready to take to the shop</li>
@@ -485,8 +494,7 @@ function calc(){
   // What to buy at Builders — products per surface, best quality first
   const prodCard=(pr,tins,opt)=>{
     const sz = pr.size||20;
-    const nm = opt ? `Option ${opt}: ${pr.n}` : pr.n;
-    let h = `<div class="prod"><div class="ph"><span class="pn">${nm}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
+    let h = `<div class="prod">${opt?`<div class="optlbl">OPTION ${opt}</div>`:''}<div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
     if(pr.ds) h += `<a class="ds dstop" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet — drying &amp; overcoat times</a>`;
     if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
     if(pr.stores){
