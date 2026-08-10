@@ -251,46 +251,63 @@ const ROOFT = { tiled:{cover:2.25, coats:1}, corrugated:{cover:10, coats:2} }; /
 const RUST_COVER = 10;                              // rust primer, 1 coat
 const PRIMER_COVER = 6.5;                           // solvent-based plaster primer, 1 coat, ~6–7 m²/L
 
-// Recommended paints at Builders (price per 20L = [special, normal]); score /10; datasheet link
+// Products with per-store prices (checked Aug 2026 — Chamberlains/Takealot fetched, Builders/Makro from shelf).
+// Update weekly. score /10; datasheet link; img tin photo. Prices are a guide and vary by store & special.
 const PRODUCTS = {
   exterior: [
     {n:'Dulux Weatherguard', s:8.5, img:'img/weatherguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf',
-      stores:[{n:'Builders Warehouse',p:1249},{n:'Chamberlains',p:1299},{n:'Makro',p:1099},{n:'Takealot',p:1799}]},
+      stores:[{n:'Builders Warehouse',p:1099},{n:'Chamberlains',p:1299},{n:'Makro',p:1099},{n:'Takealot',p:1799}]},
     {n:'Plascon Micatex',    s:8,   img:'img/micatex.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/04/BBO-Range-TMX-Tint-Bases-TDS-2.pdf',
       stores:[{n:'Builders Warehouse',p:1149},{n:'Chamberlains',p:1299},{n:'Makro',p:1099},{n:'Takealot',p:1099}]},
     {n:'Duram Armatex',      s:6.5, img:'img/armatex.jpg', ds:'https://www.duram.co.za/product/armatex/',
       stores:[{n:'Builders Warehouse',p:899},{n:'Chamberlains',p:899},{n:'Makro',p:899}]}
   ],
   interior: [
-    {n:'Plascon Double Velvet', s:9.5, p:[2799,2999], img:'img/double-velvet.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/12/VEL-Double-Velvet-TDV-Tintbases-TDS.pdf', note:'Pastel colours only — no plain standard colours'},
-    {n:'Dulux Luxurious Silk',  s:8.5, p:[2299,2599], img:'img/luxurious-silk.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20luxurious%20silk.pdf', note:'White; tinted colours cost more'},
-    {n:'Duram Satin Touch',     s:7.5, p:[1899,1999], img:'img/satin-touch.jpg', ds:'https://www.duram.co.za/product/satin-touch/'},
-    {n:'Duram Durasheen',       s:6.5, p:[1029,1099], img:'img/durasheen.jpg', ds:'https://www.duram.co.za/product/dura-sheen/'}
+    {n:'Plascon Double Velvet', s:9.5, img:'img/double-velvet.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/12/VEL-Double-Velvet-TDV-Tintbases-TDS.pdf', note:'Pastel colours only — no plain standard colours',
+      stores:[{n:'Builders Warehouse',p:2799},{n:'Chamberlains',p:3099},{n:'Takealot',p:2899}]},
+    {n:'Dulux Luxurious Silk',  s:8.5, img:'img/luxurious-silk.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20luxurious%20silk.pdf', note:'White; tinted colours cost more',
+      stores:[{n:'Builders Warehouse',p:2299},{n:'Chamberlains',p:2749},{n:'Takealot',p:3495}]},
+    {n:'Duram Satin Touch',     s:7.5, img:'img/satin-touch.jpg', ds:'https://www.duram.co.za/product/satin-touch/',
+      stores:[{n:'Builders Warehouse',p:1899},{n:'Chamberlains',p:1999}]},
+    {n:'Duram Durasheen',       s:6.5, img:'img/durasheen.jpg', ds:'https://www.duram.co.za/product/dura-sheen/',
+      stores:[{n:'Builders Warehouse',p:1029},{n:'Chamberlains',p:1069}]}
   ],
   roof: [
-    {n:'Plascon Nuroof Cool', s:9, p:[1399,1599], img:'img/nuroof.jpg', ds:'https://plascon.co.za/wp-content/uploads/2025/02/TRP-200-Range-Nuroof-Cool-TDS.pdf'},
-    {n:'Dulux Roofguard',     s:9, p:[1399,1699], img:'img/roofguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20roofguard.pdf'},
-    {n:'Duram Weather Roof',  s:7, p:[999,1069],  img:'img/weather-roof.jpg', ds:'https://www.duram.co.za/product/weather-roof/'}
+    {n:'Plascon Nuroof Cool', s:9, img:'img/nuroof.jpg', ds:'https://plascon.co.za/wp-content/uploads/2025/02/TRP-200-Range-Nuroof-Cool-TDS.pdf',
+      stores:[{n:'Builders Warehouse',p:1399},{n:'Chamberlains',p:1599},{n:'Takealot',p:1299}]},
+    {n:'Dulux Roofguard',     s:9, img:'img/roofguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20roofguard.pdf',
+      stores:[{n:'Builders Warehouse',p:1399},{n:'Chamberlains',p:1799},{n:'Takealot',p:2393}]},
+    {n:'Duram Weather Roof',  s:7, img:'img/weather-roof.jpg', ds:'https://www.duram.co.za/product/weather-roof/',
+      stores:[{n:'Builders Warehouse',p:999},{n:'Chamberlains',p:1069},{n:'Takealot',p:1893}]}
   ],
   ceiling: [
-    {n:'Duram Wall & Ceiling', s:8,   p:[1029,1129], img:'img/wall-ceiling.jpg', ds:'https://www.duram.co.za/product/wall-ceiling/'},
-    {n:'Duram Matt Acrylic',   s:7.5, p:[859,859],   img:'img/matt-acrylic.jpg', ds:'https://www.duram.co.za/product/matt-acrylic/'},
-    {n:'Bergermaster Nukote',  s:7,   p:[749,849],   img:'img/bergermaster.jpg', ds:''}
+    {n:'Duram Wall & Ceiling', s:8,   img:'img/wall-ceiling.jpg', ds:'https://www.duram.co.za/product/wall-ceiling/',
+      stores:[{n:'Builders Warehouse',p:1029},{n:'Chamberlains',p:1129}]},
+    {n:'Duram Matt Acrylic',   s:7.5, img:'img/matt-acrylic.jpg', ds:'https://www.duram.co.za/product/matt-acrylic/',
+      stores:[{n:'Builders Warehouse',p:859},{n:'Chamberlains',p:849}]},
+    {n:'Bergermaster Nukote',  s:7,   img:'img/bergermaster.jpg', ds:'',
+      stores:[{n:'Builders Warehouse',p:749},{n:'Chamberlains',p:849},{n:'Takealot',p:1099}]}
   ],
   // Solvent-based plaster primers for chalky / flaky / bare areas — 1 full binding coat
   primer: [
-    {n:'Duram Adhesion Primer',       p:[949,1029],  img:'img/adhesion-primer.jpg', ds:'https://www.duram.co.za/product/adhesion-primer/'},
-    {n:'Plascon Sure Coat Primer',    p:[1149,1399], img:'img/surecoat.jpg', ds:'https://plascon.co.za/wp-content/uploads/2025/01/UC-56-Plaster-primer.pdf'},
-    {n:'Dulux Maxicover Plaster Primer', p:[1359,1559], img:'img/maxicover.jpg', ds:'https://msp.images.akzonobel.com/prd/dh/ezadlx/documents/bc/89/df/36/12_maxicover_2_1_en_prep_plaster_primer_2019_rev4.pdf'}
+    {n:'Duram Adhesion Primer',       img:'img/adhesion-primer.jpg', ds:'https://www.duram.co.za/product/adhesion-primer/',
+      stores:[{n:'Builders Warehouse',p:949},{n:'Chamberlains',p:1049}]},
+    {n:'Plascon Sure Coat Primer',    img:'img/surecoat.jpg', ds:'https://plascon.co.za/wp-content/uploads/2025/01/UC-56-Plaster-primer.pdf',
+      stores:[{n:'Builders Warehouse',p:1149},{n:'Chamberlains',p:1299}]},
+    {n:'Dulux Maxicover Plaster Primer', img:'img/maxicover.jpg', ds:'https://msp.images.akzonobel.com/prd/dh/ezadlx/documents/bc/89/df/36/12_maxicover_2_1_en_prep_plaster_primer_2019_rev4.pdf',
+      stores:[{n:'Builders Warehouse',p:1359},{n:'Chamberlains',p:1299}]}
   ],
   // Damp sealer — PATCH prime the affected area only (5L, Builders has no 20L)
   damp: [
-    {n:'Plascon Dampseal Waterproof Sealer', p:[849,959], size:5, img:'img/dampseal.jpg', ds:'https://plascon.co.za/wp-content/uploads/2022/04/plascon_dampseal_tds.pdf'}
+    {n:'Plascon Dampseal Waterproof Sealer', size:5, img:'img/dampseal.jpg', ds:'https://plascon.co.za/wp-content/uploads/2022/04/plascon_dampseal_tds.pdf',
+      stores:[{n:'Builders Warehouse',p:849},{n:'Chamberlains',p:1049}]}
   ],
   // Anti-rust metal primer — PATCH prime affected rust spots only (5L)
   rust: [
-    {n:'Duram NS4 Anti-Rust Primer',      p:[629,629], size:5, img:'img/ns4.jpg', ds:'https://www.duram.co.za/product/ns4-anti-rust-primer/'},
-    {n:'Dulux Rustshield Metal Primer',   p:[789,789], size:5, img:'img/rustshield.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux_rustshield_anti_rust_metal_primer.pdf'}
+    {n:'Duram NS4 Anti-Rust Primer',      size:5, img:'img/ns4.jpg', ds:'https://www.duram.co.za/product/ns4-anti-rust-primer/',
+      stores:[{n:'Builders Warehouse',p:629},{n:'Chamberlains',p:629}]},
+    {n:'Dulux Rustshield Metal Primer',   size:5, img:'img/rustshield.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux_rustshield_anti_rust_metal_primer.pdf',
+      stores:[{n:'Builders Warehouse',p:789},{n:'Chamberlains',p:829}]}
   ]
 };
 
@@ -428,7 +445,7 @@ function calc(){
   });
 
   // Patch-prime add-ons — fixed ~1 × 5L tin on the affected area only (not area-scaled)
-  const patch = arr => [Math.min(...arr.map(p=>p.p[0])), Math.max(...arr.map(p=>p.p[1]))];
+  const patch = arr => [Math.min(...arr.map(p=>PR(p)[0])), Math.max(...arr.map(p=>PR(p)[1]))];
   let dampLo=0,dampHi=0, rustLo=0,rustHi=0;
   if(state.damp){ [dampLo,dampHi]=patch(PRODUCTS.damp); }
   if(state.surf.roof && state.roof==='corrugated' && state.rust){ [rustLo,rustHi]=patch(PRODUCTS.rust); }
@@ -463,7 +480,7 @@ function calc(){
     if(pr.stores){
       const sorted=[...pr.stores].sort((a,b)=> a.p-b.p || a.n.localeCompare(b.n));  // cheapest first; ties alphabetical
       h += `<div class="pp">Prices per store — you need ${tins} × ${sz}L:</div>`;
-      h += `<div class="stores"><div class="strow shead"><span class="sname">Store</span><span class="scol">Per ${sz}L</span><span class="scq">Tins</span><span class="scol">Total</span></div>`;
+      h += `<div class="stores"><div class="strow shead"><span class="sname">Store</span><span class="scol">Per ${sz}L</span><span class="scq">Qty</span><span class="scol">Total</span></div>`;
       sorted.forEach(st=> h += `<div class="strow"><span class="sname">${st.n}</span><span class="scol">${R(st.p)}</span><span class="scq">${tins}</span><span class="scol stot">${R(tins*st.p)}</span></div>`);
       h += `</div>`;
     } else {
