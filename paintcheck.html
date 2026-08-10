@@ -21,6 +21,7 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;back
 .opt{flex:1;min-width:calc(50% - 4px);border:1.5px solid #d7dee6;border-radius:10px;padding:11px 8px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;background:#fff}
 .opt.sel{border-color:#12324e;background:#12324e;color:#fff}
 .opt.q4{min-width:calc(25% - 6px)}
+.opt.q3{min-width:calc(33.333% - 6px)}
 .opt .od{display:block;font-size:10.5px;font-weight:600;color:#8494a3;margin-top:4px;line-height:1.35}
 .opt.sel .od{color:#c5d8e8}
 .chk{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid #d7dee6;border-radius:10px;margin-bottom:8px;cursor:pointer;font-size:14px;font-weight:600}
@@ -124,9 +125,9 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       </div>
       <div class="q" style="margin-top:14px">Garage</div>
       <div class="opts" id="garageOpts">
-        <div class="opt sel" data-garage="none" onclick="tGarage(this)">None</div>
-        <div class="opt" data-garage="single" onclick="tGarage(this)">Single</div>
-        <div class="opt" data-garage="double" onclick="tGarage(this)">Double</div>
+        <div class="opt q3 sel" data-garage="none" onclick="tGarage(this)">None</div>
+        <div class="opt q3" data-garage="single" onclick="tGarage(this)">Single</div>
+        <div class="opt q3" data-garage="double" onclick="tGarage(this)">Double</div>
       </div>
       <div class="q" style="margin-top:14px">Bathrooms</div>
       <div class="opts" id="bathOpts">
