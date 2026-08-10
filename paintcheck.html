@@ -88,11 +88,12 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .colnote{font-size:11px;color:#8494a3;line-height:1.5;margin-top:6px}
 .bksurf{font-size:11.5px;color:#5a6b7b;line-height:1.5;margin-bottom:5px}
 .bk{width:100%;border-collapse:collapse;margin-top:8px}
-.bk th{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#8494a3;text-align:right;padding:0 0 7px}
+.bk th{font-size:9px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:#8494a3;text-align:right;padding:0 0 7px}
 .bk th.l{text-align:left}
-.bk td{font-size:13px;padding:9px 0;border-top:1px solid #eef1f4;vertical-align:top}
+.bk td{font-size:11.5px;padding:8px 0;border-top:1px solid #eef1f4;vertical-align:top}
 .bk td.n{color:#41505f;padding-right:8px}
-.bk td.a{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bk td.a,.bk th.a{width:76px;padding-left:16px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bk td.a{font-weight:700}
 .bk tr.sub td{font-weight:800;color:#12324e;border-top:1.5px solid #cdd6df}
 .unlock{background:#12324e;color:#fff;border-radius:16px;padding:20px 18px;margin-bottom:14px}
 .unlock .ulh{font-size:19px;font-weight:800;margin-bottom:2px;text-align:center}
@@ -472,20 +473,24 @@ function calc(){
   if(state.damp){ [dampLo,dampHi]=patch(PRODUCTS.damp); }
   if(state.surf.roof && state.roof==='corrugated' && state.rust){ [rustLo,rustHi]=patch(PRODUCTS.rust); }
 
-  const consLo=paintLo*CONSUMABLE_PCT, consHi=paintHi*CONSUMABLE_PCT;
-  const matLo=paintLo+consLo+dampLo+rustLo, matHi=paintHi+consHi+dampHi+rustHi;   // option 1
-  const indLo=matLo+labLo, indHi=matHi+labHi;                                     // option 2
+  // Consumables & labour do NOT change with the paint you pick — fix them.
+  const consFixed = paintLo*CONSUMABLE_PCT;              // 15% of the minimum paint
+  const labAvg = (labLo+labHi)/2;                        // average of R20/m² and R25/m²
+  const matLo=paintLo+consFixed+dampLo+rustLo, matHi=paintHi+consFixed+dampHi+rustHi;   // option 1
+  const indLo=matLo+labAvg, indHi=matHi+labAvg;                                         // option 2
 
   // 2-column Minimum / Maximum table
   const row=(n,lo,hi,sub,cls)=>`<tr${cls?' class="'+cls+'"':''}><td class="n">${n}${sub?'<br/><span class="sub">'+sub+'</span>':''}</td><td class="a">${R(lo)}</td><td class="a">${R(hi)}</td></tr>`;
-  let bh = surf + '<table class="bk"><tr><th class="l"></th><th>Minimum</th><th>Maximum</th></tr>';
+  let bh = surf + '<table class="bk"><tr><th class="l"></th><th class="a">Minimum</th><th class="a">Maximum</th></tr>';
   paintRows.forEach(r=> bh += row(r.label, r.lo, r.hi));
-  if(primerHi>0) bh += row('Plaster primer', primerLo, primerHi, 'solvent-based, 1 binding coat on chalky/flaky areas');
+  if(primerHi>0) bh += row('Plaster primer', primerLo, primerHi, 'solvent-based, 1 coat on chalky/flaky areas');
   if(rustHi>0) bh += row('Rust primer', rustLo, rustHi, 'patch affected metal only (5L)');
   if(dampHi>0) bh += row('Damp sealer', dampLo, dampHi, 'patch affected area only (5L)');
-  bh += row('Consumables', consLo, consHi, 'brushes, rollers, sheets, filler, silicone');
+  bh += row('Consumables', consFixed, consFixed, 'brushes, rollers, sheets, filler — fixed, same for any paint');
   bh += row('Materials subtotal', matLo, matHi, 'option 1 · just the paint', 'sub');
-  bh += row('Painter labour', labLo, labHi, 'individual, R20–25/m²');
+  // Painter labour — rates shown on the left; the average is used in both columns
+  const labLeft = `Painter labour<br/><span class="sub">R20/m² = ${R(labLo)}<br/>R25/m² = ${R(labHi)}<br/><b>Average estimate labour = ${R(labAvg)}</b></span>`;
+  bh += `<tr><td class="n">${labLeft}</td><td class="a">${R(labAvg)}</td><td class="a">${R(labAvg)}</td></tr>`;
   bh += row('Paint + painter total', indLo, indHi, 'option 2', 'sub');
   bh += '</table>';
   document.getElementById('breakdown').innerHTML = bh;
