@@ -1614,9 +1614,13 @@ function renderProgressInvoiceEditor(s, monthKey){
     });
     h += `</div>`;
   }
+  const projIncl = (parseFloat(s.quote_value)||0)*1.15;
   h += `<div style="max-width:420px;margin-top:14px">
+    <label class="f-label">% of project value (optional)</label>
+    <input class="f-input" id="pi_pct" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 30" oninput="piPctToAmt(${projIncl})" style="margin-bottom:6px"/>
+    <div class="hint" style="margin:0 0 12px">Project value incl VAT: <strong>${R(projIncl)}</strong> — type a % and the amount fills in, or just enter the amount below.</div>
     <label class="f-label">Amount (incl VAT)</label>
-    <input class="f-input" id="pi_amt" type="number" step="0.01" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px"/>
+    <input class="f-input" id="pi_amt" type="number" step="0.01" inputmode="decimal" placeholder="0.00" oninput="piAmtToPct(${projIncl})" style="margin-bottom:10px"/>
     <label class="f-label">Invoice date</label>
     <input class="f-input" id="pi_date" type="date" value="${yy}-${mm}-15" style="margin-bottom:10px"/>
     <label class="f-label">Upload the invoice (PDF or photo)</label>
@@ -1627,6 +1631,9 @@ function renderProgressInvoiceEditor(s, monthKey){
   $('monthSnapshotContent').innerHTML = h;
   openModal('modalMonthSnapshot');
 }
+// Type a % of the project value → fill the amount; type an amount → show the %.
+function piPctToAmt(projIncl){ const pct=parseFloat($('pi_pct').value); if(!isNaN(pct)&&$('pi_amt')) $('pi_amt').value=(projIncl*pct/100).toFixed(2); }
+function piAmtToPct(projIncl){ const amt=parseFloat($('pi_amt').value); if(!isNaN(amt)&&projIncl>0&&$('pi_pct')) $('pi_pct').value=(amt/projIncl*100).toFixed(1); }
 async function saveProgressInvoice(siteId){
   const s = (OWNER.sites||[]).find(x=>x.id===siteId); if(!s) return;
   const amt = parseFloat($('pi_amt').value)||0;
