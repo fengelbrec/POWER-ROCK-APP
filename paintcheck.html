@@ -67,8 +67,11 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .prod .pn{font-size:13.5px;font-weight:800;flex:1;min-width:0}
 .pimg{flex:0 0 90px;display:flex;align-items:center;justify-content:center}
 .ptin{height:74px;width:auto;max-width:84px;object-fit:contain}
-.prod .score{font-size:11px;font-weight:800;color:#1e7d4f;background:#eaf6ef;border-radius:20px;padding:3px 9px;white-space:nowrap;flex:0 0 auto;min-width:52px;text-align:center}
+.scorewrap{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;width:60px}
+.scorelbl{font-size:8px;font-weight:800;color:#8494a3;text-transform:uppercase;letter-spacing:.3px;text-align:center;line-height:1.15}
+.prod .score{font-size:11px;font-weight:800;color:#1e7d4f;background:#eaf6ef;border-radius:20px;padding:3px 9px;white-space:nowrap;min-width:52px;text-align:center}
 .prod .pp{font-size:12px;color:#41505f;margin-top:4px}
+.cnote{color:#a86e14;font-weight:700}
 .choose{font-size:12.5px;font-weight:800;color:#12324e;margin:7px 0 3px}
 .stores{margin:5px 0 2px}
 .strow{display:flex;align-items:baseline;gap:6px;font-size:12px;padding:5px 0;border-bottom:1px solid #f2f5f8;color:#41505f}
@@ -495,7 +498,7 @@ function calc(){
   // What to buy at Builders — products per surface, best quality first
   const prodCard=(pr,tins,opt)=>{
     const sz = pr.size||20;
-    let h = `<div class="prod">${opt?`<div class="optlbl">OPTION ${opt}</div>`:''}<div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
+    let h = `<div class="prod">${opt?`<div class="optlbl">OPTION ${opt}</div>`:''}<div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="scorewrap"><span class="scorelbl">PaintCheck rating</span><span class="score">${pr.s}/10</span></span>`:''}</div>`;
     if(pr.ds) h += `<a class="ds dstop" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet — drying &amp; overcoat times</a>`;
     if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
     if(pr.stores){
@@ -516,7 +519,8 @@ function calc(){
     const tins = tinCount(L);
     totalTins += tins;
     buy += `<div class="surfhead">${job.name}</div>`;
-    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>. Here are your options — pick any one:</div>`;
+    const cn = job.cat==='exterior'?'standard colours only' : job.cat==='interior'?'white &amp; pastel colours only' : job.cat==='ceiling'?'white only' : '';
+    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>${cn?` <span class="cnote">(${cn})</span>`:''}. Here are your options — pick any one:</div>`;
     let opt=0;
     PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins,++opt));
   });
