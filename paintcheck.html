@@ -235,7 +235,6 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
         <div class="hint">The amount depends on which paint and supplier you choose — unlock to see the exact price per store.</div>
       </div>
 
-      <div class="card" id="teaser"></div>
 
       <div class="unlock" id="unlockCard">
         <div class="ulh">🔓 Your complete paint plan</div>
@@ -249,7 +248,6 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
           </li>
           <li><b>Full product cost — itemised</b> (paint, primer, damp/rust &amp; labour), so no one can pad the bill</li>
           <li>A <b>step-by-step scope of works</b> for your exact walls — a professional PDF you hand to any painter</li>
-          <li><b>What to say to your painter</b>, so you're never taken for a ride</li>
           <li>The whole plan <b>emailed to you</b>, ready to take to the shop</li>
         </ul>
         <div class="ulanchor">💡 One inflated quote can cost you <b>thousands</b>. This costs <b>R99</b> — and usually saves you far, far more than it costs.</div>
@@ -275,10 +273,6 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
           <div class="step">Your scope of works</div>
           <div id="scope"></div>
           <div id="scopeDls"></div>
-        </div>
-        <div class="card">
-          <div class="step">What to say to your painter</div>
-          <div id="script"></div>
         </div>
         <div class="card">
           <div class="step">Email me my plan</div>
@@ -609,7 +603,6 @@ function calc(){
   document.getElementById('buylist').innerHTML = buy;
 
   // teaser (free), scope + script (paid)
-  document.getElementById('teaser').innerHTML = `<div class="step">Your plan is ready</div><div style="font-size:13.5px;line-height:1.5">You'll need roughly <b>${totalTins} × 20L tin${totalTins>1?'s':''}</b> of paint &amp; primer in total. Unlock below for the exact paints to buy, today's prices, where to get them, and the step-by-step method for your walls.</div>`;
 
   // Tap-to-expand baits under each of the 3 options
   const payBtn = unlocked ? '' : `<button class="cta ulbtn" onclick="event.stopPropagation();payR99()">🔓 Unlock the full plan — R99 →</button>`;
@@ -621,10 +614,9 @@ function calc(){
     `You'll need about <b>${totalTins} × 20L</b> of paint &amp; primer, plus a painter for the labour.`,
     `We'll also give you painter-labour estimates, the exact shopping list, and the cheapest prices per store.`);
   document.getElementById('optexp3').innerHTML = bait(
-    `See what a professional contractor should charge — broken down <b>per surface</b> (outside walls, inside walls, roof &amp; ceilings).`,
+    `Get an estimated costing of how a painting contractor's quotation should look — broken down <b>per surface</b> (outside walls, inside walls, roof &amp; ceilings).`,
     `Check any contractor's quote area by area, so you know each one's fair price.`);
   document.getElementById('scope').innerHTML = buildScope();
-  document.getElementById('script').innerHTML = buildScript();
   let dl='';
   if(state.surf.interior||state.surf.exterior){
     const wl=(state.surf.interior&&state.surf.exterior)?'Interior &amp; Exterior Wall Surfaces':state.surf.exterior?'Exterior Wall Surfaces':'Interior Wall Surfaces';
@@ -634,10 +626,9 @@ function calc(){
   document.getElementById('scopeDls').innerHTML = dl;
 
   // free vs paid
-  const paid=document.getElementById('paid'), uc=document.getElementById('unlockCard'), tz=document.getElementById('teaser');
+  const paid=document.getElementById('paid'), uc=document.getElementById('unlockCard');
   paid.style.display = unlocked ? 'block' : 'none';
   uc.style.display   = unlocked ? 'none'  : 'block';
-  tz.style.display   = unlocked ? 'none'  : 'block';
 
   // exclusions notice
   document.getElementById('excl').innerHTML = '<b>Not included</b> (each adds to a real quote): plaster &amp; crack repairs, boundary walls, gutters &amp; downpipes, window frames, wooden roof trusses, and steelwork like handrails or carports.';
@@ -730,8 +721,17 @@ function emailPlan(){
   if(!/.+@.+\..+/.test(email)){ msg.textContent='Please enter a valid email address.'; return; }
   if(!WEB3FORMS_KEY){ msg.textContent='📧 Email sending switches on once the account key is added.'; return; }
   msg.textContent='Sending…';
-  const body={ access_key:WEB3FORMS_KEY, subject:'Your PaintCheck plan', from_name:'PaintCheck', email:email,
-    plan: document.getElementById('scope').innerText + '\n\n' + document.getElementById('breakdown').innerText };
+  const T = id => (document.getElementById(id)||{}).innerText || '';
+  const plan = [
+    'YOUR PAINTCHECK PLAN',
+    '========================',
+    '', 'WHAT TO BUY', '-----------', T('buylist'),
+    '', 'COST BREAKDOWN', '--------------', T('breakdown'),
+    '', 'WHAT A CONTRACTOR SHOULD CHARGE (per surface)', '--------------------------------------------', T('contractorBd'),
+    '', 'SCOPE OF WORKS', '--------------', T('scope'),
+    '', '— PaintCheck · independent paint guidance'
+  ].join('\n');
+  const body={ access_key:WEB3FORMS_KEY, subject:'Your PaintCheck plan', from_name:'PaintCheck', email:email, plan:plan };
   fetch('https://api.web3forms.com/submit',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{ msg.textContent = d.success ? '✅ Sent! Check your inbox.' : 'Could not send — please try again.'; })
     .catch(()=>{ msg.textContent='Could not send right now — please try again.'; });
