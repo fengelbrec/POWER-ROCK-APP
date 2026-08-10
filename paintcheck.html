@@ -66,6 +66,10 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .ptin{height:74px;width:auto;max-width:84px;object-fit:contain}
 .prod .score{font-size:11px;font-weight:800;color:#1e7d4f;background:#eaf6ef;border-radius:20px;padding:3px 9px;white-space:nowrap;flex:0 0 auto;min-width:52px;text-align:center}
 .prod .pp{font-size:12px;color:#41505f;margin-top:4px}
+.stores{margin:5px 0 2px}
+.strow{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f2f5f8;color:#41505f}
+.strow:last-child{border-bottom:none}
+.strow.best{font-weight:800;color:#1e7d4f}
 .prod .pj{font-size:12.5px;font-weight:800;color:#12324e;margin-top:2px}
 .prod .pnote{font-size:11px;color:#9a8248;margin-top:3px}
 .prod a.ds{display:inline-block;font-size:11.5px;color:#2c5f8a;text-decoration:none;font-weight:700;margin-top:6px}
@@ -246,9 +250,12 @@ const PRIMER_COVER = 6.5;                           // solvent-based plaster pri
 // Recommended paints at Builders (price per 20L = [special, normal]); score /10; datasheet link
 const PRODUCTS = {
   exterior: [
-    {n:'Dulux Weatherguard', s:8.5, p:[1099,1249], img:'img/weatherguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf'},
-    {n:'Plascon Micatex',    s:8,   p:[1149,1299], img:'img/micatex.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/04/BBO-Range-TMX-Tint-Bases-TDS-2.pdf'},
-    {n:'Duram Armatex',      s:6.5, p:[899,899],   img:'img/armatex.jpg', ds:'https://www.duram.co.za/product/armatex/'}
+    {n:'Dulux Weatherguard', s:8.5, img:'img/weatherguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf',
+      stores:[{n:'Builders',p:1249},{n:'Makro',p:1099},{n:'Takealot',p:1799}]},
+    {n:'Plascon Micatex',    s:8,   img:'img/micatex.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/04/BBO-Range-TMX-Tint-Bases-TDS-2.pdf',
+      stores:[{n:'Builders',p:1149},{n:'Makro',p:1099},{n:'Takealot',p:1099}]},
+    {n:'Duram Armatex',      s:6.5, img:'img/armatex.jpg', ds:'https://www.duram.co.za/product/armatex/',
+      stores:[{n:'Builders',p:899},{n:'Makro',p:899}]}
   ],
   interior: [
     {n:'Plascon Double Velvet', s:9.5, p:[2799,2999], img:'img/double-velvet.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/12/VEL-Double-Velvet-TDV-Tintbases-TDS.pdf', note:'Pastel colours only — no plain standard colours'},
@@ -367,10 +374,12 @@ function buildJobs(){
 // Typical mid-range paint price per 20L for a category = [special avg, normal avg].
 // Used for the 3 headline options so the numbers stay clean; the "What to buy"
 // list below shows each paint's own price (budget → premium).
+// price range for a product: from its per-store list if present, else its [special,normal]
+const PR = pr => pr.stores ? [Math.min(...pr.stores.map(s=>s.p)), Math.max(...pr.stores.map(s=>s.p))] : pr.p;
 function repPrice(cat){
   const list = PRODUCTS[cat];
-  const lo = list.reduce((s,p)=>s+p.p[0],0)/list.length;
-  const hi = list.reduce((s,p)=>s+p.p[1],0)/list.length;
+  const lo = list.reduce((s,p)=>s+PR(p)[0],0)/list.length;
+  const hi = list.reduce((s,p)=>s+PR(p)[1],0)/list.length;
   return [lo,hi];
 }
 
@@ -444,12 +453,19 @@ function calc(){
   // What to buy at Builders — products per surface, best quality first
   const prodCard=(pr,tins)=>{
     const sz = pr.size||20;
-    const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
-    const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1];
-    const jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
     let h = `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
-    h += `<div class="pp">${priceTxt} per ${sz}L tin</div>`;
-    h += `<div class="pj">${tins} × ${sz}L = ${jobTxt}</div>`;
+    if(pr.stores){
+      const sorted=[...pr.stores].sort((a,b)=>a.p-b.p), cheap=sorted[0];
+      h += `<div class="pp">Price per ${sz}L tin at each store:</div><div class="stores">`;
+      sorted.forEach(st=> h += `<div class="strow${st===cheap?' best':''}"><span>${st.n}${st===cheap?' · cheapest':''}</span><span>${R(st.p)}</span></div>`);
+      h += `</div>`;
+      h += `<div class="pj">${tins} × ${sz}L ≈ ${R(tins*cheap.p)} at ${cheap.n}</div>`;
+    } else {
+      const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
+      const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1], jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
+      h += `<div class="pp">${priceTxt} per ${sz}L tin</div>`;
+      h += `<div class="pj">${tins} × ${sz}L = ${jobTxt}</div>`;
+    }
     if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
     if(pr.ds) h += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
     return h + `</div>`;
