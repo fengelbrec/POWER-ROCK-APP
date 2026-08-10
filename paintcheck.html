@@ -67,9 +67,13 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .prod .score{font-size:11px;font-weight:800;color:#1e7d4f;background:#eaf6ef;border-radius:20px;padding:3px 9px;white-space:nowrap;flex:0 0 auto;min-width:52px;text-align:center}
 .prod .pp{font-size:12px;color:#41505f;margin-top:4px}
 .stores{margin:5px 0 2px}
-.strow{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f2f5f8;color:#41505f}
+.strow{display:flex;align-items:baseline;gap:6px;font-size:12px;padding:5px 0;border-bottom:1px solid #f2f5f8;color:#41505f}
 .strow:last-child{border-bottom:none}
-.strow.best{font-weight:800;color:#1e7d4f}
+.strow .sname{flex:1;min-width:0}
+.strow .scol{flex:0 0 56px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.strow .scq{flex:0 0 30px;text-align:right;font-variant-numeric:tabular-nums}
+.strow .stot{font-weight:800;color:#12324e}
+.strow.shead{font-size:9.5px;font-weight:800;color:#8494a3;text-transform:uppercase;letter-spacing:.3px}
 .prod .pj{font-size:12.5px;font-weight:800;color:#12324e;margin-top:2px}
 .prod .pnote{font-size:11px;color:#9a8248;margin-top:3px}
 .prod a.ds{display:inline-block;font-size:11.5px;color:#2c5f8a;text-decoration:none;font-weight:700;margin-top:6px}
@@ -458,12 +462,10 @@ function calc(){
     let h = `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
     if(pr.stores){
       const sorted=[...pr.stores].sort((a,b)=> a.p-b.p || a.n.localeCompare(b.n));  // cheapest first; ties alphabetical
-      const cheap=sorted[0], dear=sorted[sorted.length-1];
-      h += `<div class="pp">Price per ${sz}L tin at each store:</div><div class="stores">`;
-      sorted.forEach(st=> h += `<div class="strow"><span>${st.n}</span><span>${R(st.p)}</span></div>`);
+      h += `<div class="pp">Prices per store — you need ${tins} × ${sz}L:</div>`;
+      h += `<div class="stores"><div class="strow shead"><span class="sname">Store</span><span class="scol">Per ${sz}L</span><span class="scq">Tins</span><span class="scol">Total</span></div>`;
+      sorted.forEach(st=> h += `<div class="strow"><span class="sname">${st.n}</span><span class="scol">${R(st.p)}</span><span class="scq">${tins}</span><span class="scol stot">${R(tins*st.p)}</span></div>`);
       h += `</div>`;
-      const totTxt = cheap.p===dear.p ? R(tins*cheap.p) : Rr(tins*cheap.p, tins*dear.p);
-      h += `<div class="pj">${tins} × ${sz}L ≈ ${totTxt}</div>`;
     } else {
       const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
       const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1], jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
