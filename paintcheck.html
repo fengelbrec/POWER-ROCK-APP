@@ -366,7 +366,7 @@ const LABOUR_M2 = [20, 25];                        // individual painter, R/m² 
 // Contractor all-in R/m² (material + accessories + labour — nothing else needed) = [min, max]
 const CONTRACT = { interior:[65,79], exterior:[72,88], ceiling:[55,64], roofTiled:[75,91], roofCorr:[61,77] };
 const CONTRACT_DAMP = [15,25];   // charged on ~10% of the total painted area
-const CONTRACT_RUST = [15,25];   // charged on ~15% of the corrugated roof area
+const CONTRACT_RUST = [27,38];   // charged on ~15% of the corrugated roof area
 
 const CONSUMABLE_PCT = 0.15;                        // brushes, rollers, sheets, filler, silicone
 const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add a plaster-primer coat?
@@ -542,8 +542,8 @@ function calc(){
   // What a contractor should charge — per surface
   let cbd = '<table class="bk"><tr><th class="l"></th><th class="a">Minimum</th><th class="a">Maximum</th></tr>';
   contractRows.forEach(r=> cbd += row(r.name, r.lo, r.hi, r.sub));
-  if(cDampHi>0) cbd += row('Damp treatment', cDampLo, cDampHi, '~10% of the area @ R15–R25/m²');
-  if(cRustHi>0) cbd += row('Rust treatment', cRustLo, cRustHi, '~15% of the metal roof @ R15–R25/m²');
+  if(cDampHi>0) cbd += row('Damp treatment', cDampLo, cDampHi, `~10% of the area @ R${CONTRACT_DAMP[0]}–R${CONTRACT_DAMP[1]}/m²`);
+  if(cRustHi>0) cbd += row('Rust treatment', cRustLo, cRustHi, `~15% of the metal roof @ R${CONTRACT_RUST[0]}–R${CONTRACT_RUST[1]}/m²`);
   cbd += row('Contractor total', conLo, conHi, 'everything included — nothing else to buy', 'sub');
   cbd += '</table>';
   document.getElementById('contractorBd').innerHTML = cbd;
