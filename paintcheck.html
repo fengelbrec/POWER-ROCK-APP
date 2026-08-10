@@ -387,6 +387,7 @@ const state = { surf:{interior:false,exterior:false,ceiling:false,roof:false}, h
 
 let unlocked = false;
 const SCOPE_PDF = 'PaintCheck-Scope-of-Works-Exterior-Walls.pdf';
+const INTERIOR_SCOPE_PDF = 'PaintCheck-Scope-of-Works-Interior-Walls-Ceilings.pdf';
 const ROOF_SCOPE_PDF = 'PaintCheck-Scope-of-Works-Roofs.pdf';
 const WEB3FORMS_KEY = '';          // paste the Web3Forms access key here to switch on emailing
 // Payfast — sandbox test credentials (swap for the live merchant_id/merchant_key to go live)
@@ -618,11 +619,9 @@ function calc(){
     `Check any contractor's quote area by area, so you know each one's fair price.`);
   document.getElementById('scope').innerHTML = buildScope();
   let dl='';
-  if(state.surf.interior||state.surf.exterior){
-    const wl=(state.surf.interior&&state.surf.exterior)?'Interior &amp; Exterior Wall Surfaces':state.surf.exterior?'Exterior Wall Surfaces':'Interior Wall Surfaces';
-    dl += `<a class="cta dlbtn" href="${SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: ${wl} — SCOPE OF WORKS</a>`;
-  }
-  if(state.surf.roof) dl += `<a class="cta dlbtn" href="${ROOF_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: Roof Surfaces — SCOPE OF WORKS</a>`;
+  if(state.surf.exterior) dl += `<a class="cta dlbtn" href="${SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: EXTERIOR WALL SURFACES — SCOPE OF WORKS</a>`;
+  if(state.surf.interior||state.surf.ceiling) dl += `<a class="cta dlbtn" href="${INTERIOR_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: INTERIOR WALLS &amp; CEILINGS — SCOPE OF WORKS</a>`;
+  if(state.surf.roof) dl += `<a class="cta dlbtn" href="${ROOF_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: ROOF SURFACES — SCOPE OF WORKS</a>`;
   document.getElementById('scopeDls').innerHTML = dl;
 
   // free vs paid
