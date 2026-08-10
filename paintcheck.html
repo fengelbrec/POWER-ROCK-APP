@@ -32,6 +32,8 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;back
 input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
 .hint{font-size:11.5px;color:#8494a3;margin-top:5px;line-height:1.5}
 .cta{width:100%;background:#37c07a;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer;margin-top:4px}
+a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box}
+.dlbtn{background:#12324e;font-size:14px;margin-top:10px}
 .cond{display:none}.cond.show{display:block}
 .res{display:none}.res.show{display:block}
 .bigrange{background:#12324e;color:#fff;border-radius:14px;padding:20px;text-align:center;margin-bottom:14px}
@@ -56,9 +58,9 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .excl{background:#fbf7ee;border:1px solid #e6dcc2;border-radius:12px;padding:13px 14px;font-size:11.5px;color:#7a6a42;line-height:1.6;margin-bottom:14px}
 .foot{font-size:11px;color:#93a2b1;text-align:center;padding:6px 6px;line-height:1.6}
 .tune{background:#fffceb;border:1px dashed #d8c98a;border-radius:10px;padding:10px 12px;font-size:11px;color:#8a7420;margin-bottom:14px;line-height:1.5}
-.surfhead{font-size:13px;font-weight:800;color:#12324e;margin:14px 0 2px}
+.surfhead{font-size:17px;font-weight:800;color:#12324e;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 6px;padding-bottom:6px;border-bottom:2px solid #12324e}
 .surfhead:first-child{margin-top:2px}
-.surfneed{font-size:11.5px;color:#7c8b99;font-weight:600;margin-bottom:8px}
+.surfneed{font-size:13px;color:#16222e;font-weight:600;margin-bottom:11px;line-height:1.5}
 .prod{border:1px solid #e3e8ee;border-radius:12px;padding:11px 12px;margin-bottom:8px;background:#fff}
 .prod .ph{display:flex;align-items:center;gap:8px}
 .prod .pn{font-size:13.5px;font-weight:800;flex:1;min-width:0}
@@ -77,6 +79,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .prod .pj{font-size:12.5px;font-weight:800;color:#12324e;margin-top:2px}
 .prod .pnote{font-size:11px;color:#9a8248;margin-top:3px}
 .prod a.ds{display:inline-block;font-size:11.5px;color:#2c5f8a;text-decoration:none;font-weight:700;margin-top:6px}
+.prod a.dstop{margin:3px 0 9px}
 .colnote{font-size:11px;color:#8494a3;line-height:1.5;margin-top:6px}
 .bksurf{font-size:11.5px;color:#5a6b7b;line-height:1.5;margin-bottom:5px}
 .bk{width:100%;border-collapse:collapse;margin-top:8px}
@@ -87,8 +90,10 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 .bk td.a{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .bk tr.sub td{font-weight:800;color:#12324e;border-top:1.5px solid #cdd6df}
 .unlock{background:#12324e;color:#fff;border-radius:16px;padding:20px 18px;margin-bottom:14px}
-.unlock .ulh{font-size:18px;font-weight:800;margin-bottom:12px}
-.ulist{list-style:none;margin:0 0 16px;padding:0}
+.unlock .ulh{font-size:19px;font-weight:800;margin-bottom:6px}
+.unlock .ulsub{font-size:13px;color:#cfe0ee;margin-bottom:14px;line-height:1.5}
+.unlock .ulanchor{font-size:12.5px;color:#fff;background:rgba(55,192,122,0.16);border:1px solid rgba(55,192,122,0.5);border-radius:10px;padding:11px 13px;margin:4px 0 14px;line-height:1.55}
+.ulist{list-style:none;margin:0 0 4px;padding:0}
 .ulist li{font-size:13px;line-height:1.5;padding:6px 0 6px 26px;position:relative;color:#e7eef5}
 .ulist li:before{content:"✓";position:absolute;left:0;top:6px;color:#37c07a;font-weight:800}
 .ulbtn{margin-top:0}
@@ -198,16 +203,19 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       <div class="card" id="teaser"></div>
 
       <div class="unlock" id="unlockCard">
-        <div class="ulh">🔓 Unlock your complete plan — <b>R99</b></div>
+        <div class="ulh">🔓 Your complete paint plan — just <b>R99</b></div>
+        <div class="ulsub">Everything a professional would work out for you — so you buy the right paint, at the best price, and never get overcharged.</div>
         <ul class="ulist">
-          <li>Exact shopping list &amp; today's prices — every paint &amp; primer</li>
-          <li>Full cost breakdown (paint, primer, damp/rust, labour)</li>
-          <li>Step-by-step <b>scope of works</b> for your walls (PDF to download)</li>
-          <li>What to say to your painter, so you don't get caught out</li>
-          <li>Emailed to you to take to the shop</li>
+          <li><b>Exactly which paints &amp; primers to buy</b> — with the <b>cheapest shop for each</b> (we compare Builders Warehouse, Makro, Chamberlains &amp; Takealot for you)</li>
+          <li><b>Precisely how much you need</b> — no wasted tins, no second trips</li>
+          <li><b>Your full cost, itemised</b> — paint, primer, damp/rust &amp; labour — so no one can pad the bill</li>
+          <li>A <b>step-by-step scope of works</b> for your exact walls — a professional PDF you hand to any painter</li>
+          <li><b>What to say to your painter</b>, so you're never taken for a ride</li>
+          <li>The whole plan <b>emailed to you</b>, ready to take to the shop</li>
         </ul>
-        <button class="cta ulbtn" onclick="payR99()">Pay R99 with Payfast →</button>
-        <div class="ulnote">🔒 Secure card &amp; EFT payment via Payfast. <span id="sbxNote">Test mode — no real money is charged.</span></div>
+        <div class="ulanchor">💡 One inflated quote can cost you <b>thousands</b>. This costs <b>R99</b> — and usually saves you far, far more than it costs.</div>
+        <button class="cta ulbtn" onclick="payR99()">Get my complete plan — R99 →</button>
+        <div class="ulnote">🔒 Secure card &amp; EFT via Payfast. <span id="sbxNote">Test mode — no real money is charged.</span></div>
       </div>
 
       <div id="paid" style="display:none">
@@ -223,7 +231,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
         <div class="card">
           <div class="step">Your scope of works</div>
           <div id="scope"></div>
-          <a class="cta dlbtn" id="scopeDl" href="#" target="_blank" rel="noopener">📄 Download the scope of works (PDF)</a>
+          <div id="scopeDls"></div>
         </div>
         <div class="card">
           <div class="step">What to say to your painter</div>
@@ -340,6 +348,7 @@ const state = { surf:{interior:false,exterior:false,ceiling:false,roof:false}, h
 
 let unlocked = false;
 const SCOPE_PDF = 'PaintCheck-Scope-of-Works-Exterior-Walls.pdf';
+const ROOF_SCOPE_PDF = 'PaintCheck-Scope-of-Works-Roofs.pdf';
 const WEB3FORMS_KEY = '';          // paste the Web3Forms access key here to switch on emailing
 // Payfast — sandbox test credentials (swap for the live merchant_id/merchant_key to go live)
 const PF = { url:'https://sandbox.payfast.co.za/eng/process', merchant_id:'10000100', merchant_key:'46f0cd694581a' };
@@ -474,23 +483,19 @@ function calc(){
   document.getElementById('rangeMain').textContent = Rr(matLo, conHi);
 
   // What to buy at Builders — products per surface, best quality first
-  const prodCard=(pr,tins)=>{
+  const prodCard=(pr,tins,opt)=>{
     const sz = pr.size||20;
-    let h = `<div class="prod"><div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
+    const nm = opt ? `Option ${opt}: ${pr.n}` : pr.n;
+    let h = `<div class="prod"><div class="ph"><span class="pn">${nm}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="score">${pr.s}/10</span>`:''}</div>`;
+    if(pr.ds) h += `<a class="ds dstop" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet — drying &amp; overcoat times</a>`;
+    if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
     if(pr.stores){
       const sorted=[...pr.stores].sort((a,b)=> a.p-b.p || a.n.localeCompare(b.n));  // cheapest first; ties alphabetical
       h += `<div class="pp">Prices per store — you need ${tins} × ${sz}L:</div>`;
       h += `<div class="stores"><div class="strow shead"><span class="sname">Store</span><span class="scol">Per ${sz}L</span><span class="scq">Qty</span><span class="scol">Total</span></div>`;
       sorted.forEach(st=> h += `<div class="strow"><span class="sname">${st.n}</span><span class="scol">${R(st.p)}</span><span class="scq">${tins}</span><span class="scol stot">${R(tins*st.p)}</span></div>`);
       h += `</div>`;
-    } else {
-      const priceTxt = pr.p[0]===pr.p[1] ? R(pr.p[0]) : Rr(pr.p[0],pr.p[1]);
-      const jobLo=tins*pr.p[0], jobHi=tins*pr.p[1], jobTxt = jobLo===jobHi ? R(jobLo) : Rr(jobLo,jobHi);
-      h += `<div class="pp">${priceTxt} per ${sz}L tin</div>`;
-      h += `<div class="pj">${tins} × ${sz}L = ${jobTxt}</div>`;
     }
-    if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
-    if(pr.ds) h += `<a class="ds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet (drying &amp; overcoat times)</a>`;
     return h + `</div>`;
   };
   let buy='', totalTins=0;
@@ -501,23 +506,26 @@ function calc(){
     const tins = tinCount(L);
     totalTins += tins;
     buy += `<div class="surfhead">${job.name}</div>`;
-    buy += `<div class="surfneed">About ${tins} × 20L tin${tins>1?'s':''} of topcoat (~${Math.ceil(L)} L)</div>`;
-    PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins));
+    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>. Here are your options — pick any one:</div>`;
+    let opt=0;
+    PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins,++opt));
   });
   // Primer for chalky / flaky / bare areas
   if(wallPrimerL>0){
     const pt = tinCount(wallPrimerL);
     totalTins += pt;
     buy += `<div class="surfhead">Primer — chalky, flaky or bare areas</div>`;
-    buy += `<div class="surfneed">1 full binding coat · about ${pt} × 20L tin${pt>1?'s':''} (~${Math.ceil(wallPrimerL)} L). Must be a <b>solvent-based</b> plaster primer.</div>`;
-    PRODUCTS.primer.forEach(pr=> buy += prodCard(pr,pt));
+    buy += `<div class="surfneed">You will need approximately <b>${pt} × 20L</b> — 1 full binding coat. Must be a <b>solvent-based</b> plaster primer. Here are your options:</div>`;
+    let po=0;
+    PRODUCTS.primer.forEach(pr=> buy += prodCard(pr,pt,++po));
     buy += `<div class="colnote"><b>Why:</b> chalky or flaking walls need one full coat of solvent-based plaster primer over those areas to bind the surface, so the topcoats grip properly. <b>Note:</b> plaster &amp; crack repairs are NOT included in these prices — but any new plaster must also get a coat of this same primer.</div>`;
   }
   // Rust primer — patch affected metal only
   if(state.surf.roof && state.roof==='corrugated' && state.rust){
     buy += `<div class="surfhead">Rust primer — affected metal only</div>`;
-    buy += `<div class="surfneed">Patch-prime the rusty spots only (not the whole roof) · about 1 × 5L. Wire-brush rust back to sound metal first.</div>`;
-    PRODUCTS.rust.forEach(pr=> buy += prodCard(pr,1));
+    buy += `<div class="surfneed">Patch-prime the rusty spots only (not the whole roof) · about <b>1 × 5L</b>. Wire-brush rust back to sound metal first. Here are your options:</div>`;
+    let ro=0;
+    PRODUCTS.rust.forEach(pr=> buy += prodCard(pr,1,++ro));
   }
   // Damp sealer — patch affected area only, with the critical warning
   if(state.damp){
@@ -532,7 +540,10 @@ function calc(){
   document.getElementById('teaser').innerHTML = `<div class="step">Your plan is ready</div><div style="font-size:13.5px;line-height:1.5">You'll need roughly <b>${totalTins} × 20L tin${totalTins>1?'s':''}</b> of paint &amp; primer in total. Unlock below for the exact paints to buy, today's prices, where to get them, and the step-by-step method for your walls.</div>`;
   document.getElementById('scope').innerHTML = buildScope();
   document.getElementById('script').innerHTML = buildScript();
-  document.getElementById('scopeDl').href = SCOPE_PDF;
+  let dl='';
+  if(state.surf.interior||state.surf.exterior||state.surf.ceiling) dl += `<a class="cta dlbtn" href="${SCOPE_PDF}" target="_blank" rel="noopener">📄 Download the wall scope of works (PDF)</a>`;
+  if(state.surf.roof) dl += `<a class="cta dlbtn" href="${ROOF_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download the roof scope of works (PDF)</a>`;
+  document.getElementById('scopeDls').innerHTML = dl;
 
   // free vs paid
   const paid=document.getElementById('paid'), uc=document.getElementById('unlockCard'), tz=document.getElementById('teaser');
