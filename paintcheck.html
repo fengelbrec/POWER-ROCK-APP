@@ -20,6 +20,16 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;back
 .opts{display:flex;flex-wrap:wrap;gap:8px}
 .opt{flex:1;min-width:calc(50% - 4px);border:1.5px solid #d7dee6;border-radius:10px;padding:11px 8px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;background:#fff}
 .opt.sel{border-color:#12324e;background:#12324e;color:#fff}
+/* Wall-condition colour coding (pastel: good→green, fair→muted green, bad→orange, very bad→red) */
+#condOpts .opt[data-cond="good"]{background:#e7f6ec;border-color:#bfe3ca}
+#condOpts .opt[data-cond="fair"]{background:#e3edcf;border-color:#c9dda4}
+#condOpts .opt[data-cond="bad"]{background:#fdecd2;border-color:#f2cf9a}
+#condOpts .opt[data-cond="verybad"]{background:#fbe0e0;border-color:#efb6b6}
+#condOpts .opt.sel[data-cond="good"]{background:#4bbd82;border-color:#3aa76c;color:#fff}
+#condOpts .opt.sel[data-cond="fair"]{background:#93b25c;border-color:#7d9c48;color:#fff}
+#condOpts .opt.sel[data-cond="bad"]{background:#e6a04c;border-color:#d68e36;color:#fff}
+#condOpts .opt.sel[data-cond="verybad"]{background:#d9645c;border-color:#c8534b;color:#fff}
+#condOpts .opt.sel .od{color:rgba(255,255,255,0.9)}
 .opt.q4{min-width:calc(25% - 6px)}
 .opt.q3{min-width:calc(33.333% - 6px)}
 .opt .od{display:block;font-size:10.5px;font-weight:600;color:#8494a3;margin-top:4px;line-height:1.35}
@@ -40,10 +50,19 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .bigrange .k{font-size:11px;font-weight:800;letter-spacing:1px;color:#9fc3e0;text-transform:uppercase}
 .bigrange .v{font-size:26px;font-weight:800;margin:6px 0 2px;letter-spacing:-0.5px}
 .bigrange .s{font-size:12px;color:#c5d8e8}
-.route{border:1px solid #e3e8ee;border-radius:12px;padding:13px 14px;margin-bottom:10px}
-.route .rh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.route .rn{font-size:14px;font-weight:800}
-.route .ra{font-size:15px;font-weight:800;white-space:nowrap;color:#12324e}
+.route{border:1px solid #e3e8ee;border-radius:12px;padding:13px 14px;margin-bottom:10px;cursor:pointer}
+.tapmore{color:#2c5f8a;font-weight:800;white-space:nowrap}
+.optexp{display:none;margin:-4px 0 12px}
+.optbait{background:#12324e;color:#fff;border-radius:14px;padding:15px 16px}
+.optbait .obq{font-size:13.5px;font-weight:700;margin-bottom:6px;line-height:1.5}
+.optbait .obt{font-size:12.5px;color:#cfe0ee;margin-bottom:12px;line-height:1.5}
+.optbait .ulbtn{margin-top:0}
+.route .rh{display:flex;align-items:baseline;gap:6px}
+.route .rn{font-size:14px;font-weight:800;flex:1;min-width:0}
+.route .ra{font-size:13.5px;font-weight:800;white-space:nowrap;color:#12324e;flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+.optcolhdr{display:flex;gap:6px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#8494a3;padding:0 15px 5px}
+.optcolhdr .ocn{flex:1}
+.optcolhdr span:not(.ocn){flex:0 0 72px;text-align:right}
 .route .rd{font-size:11.5px;color:#7c8b99;margin-top:3px;line-height:1.5}
 .r1{background:#eaf6ef;border-color:#bfe6cf}.r1 .ra{color:#1e7d4f}
 .line{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid #eef1f4;font-size:13px}
@@ -195,20 +214,24 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
         <div class="s">from doing it yourself to a full contractor</div>
       </div>
       <div class="card">
-        <div class="step">Your 3 options</div>
-        <div class="route r1">
-          <div class="rh"><span class="rn">1 · Just the paint (do it yourself)</span><span class="ra" id="r1a">—</span></div>
-          <div class="rd">Buy the paint &amp; the bits, and do the work yourself. See exactly what to buy (and where) below.</div>
+        <div class="step">Your 3 options — tap one</div>
+        <div class="optcolhdr"><span class="ocn"></span><span>Minimum</span><span>Maximum</span></div>
+        <div class="route r1" onclick="toggleOpt(1)">
+          <div class="rh"><span class="rn">1 · Just the paint (do it yourself)</span><span class="ra" id="r1min">—</span><span class="ra" id="r1max">—</span></div>
+          <div class="rd">Buy the paint &amp; the bits, and do the work yourself. <span class="tapmore">Tap for more ▾</span></div>
         </div>
-        <div class="route">
-          <div class="rh"><span class="rn">2 · Buy paint + hire a painter</span><span class="ra" id="r2a">—</span></div>
-          <div class="rd">You buy the paint, and pay an individual painter for the labour only (about R20–25 per m²). You manage the job.</div>
+        <div class="optexp" id="optexp1"></div>
+        <div class="route" onclick="toggleOpt(2)">
+          <div class="rh"><span class="rn">2 · Buy paint + hire a painter</span><span class="ra" id="r2min">—</span><span class="ra" id="r2max">—</span></div>
+          <div class="rd">You buy the paint, and pay an individual painter for the labour only (about R20–25 per m²). <span class="tapmore">Tap for more ▾</span></div>
         </div>
-        <div class="route">
-          <div class="rh"><span class="rn">3 · Full contractor</span><span class="ra" id="r3a">—</span></div>
-          <div class="rd">A contractor buys all the paint &amp; materials, brings transport, ladders, tools and safety equipment, and does the whole job. The priciest option, but by far the least hassle — nothing for you to arrange.</div>
+        <div class="optexp" id="optexp2"></div>
+        <div class="route" onclick="toggleOpt(3)">
+          <div class="rh"><span class="rn">3 · Full contractor</span><span class="ra" id="r3min">—</span><span class="ra" id="r3max">—</span></div>
+          <div class="rd">A contractor buys everything, brings transport, ladders, tools and safety gear, and does the whole job — priciest, but least hassle. <span class="tapmore">Tap for more ▾</span></div>
         </div>
-        <div class="hint">Options 1 &amp; 2 assume typical mid-range paint. Unlock below for the exact paint, prices and method.</div>
+        <div class="optexp" id="optexp3"></div>
+        <div class="hint">The amount depends on which paint and supplier you choose — unlock to see the exact price per store.</div>
       </div>
 
       <div class="card" id="teaser"></div>
@@ -241,6 +264,11 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
         <div class="card">
           <div class="step">Breakdown</div>
           <div id="breakdown"></div>
+        </div>
+        <div class="card">
+          <div class="step">What a contractor should charge · per surface</div>
+          <div id="contractorBd"></div>
+          <div class="colnote">A professional contractor's fair price for each area (paint, prep, labour, equipment &amp; profit all included). Check any contractor's quote against this — surface by surface.</div>
         </div>
         <div class="card">
           <div class="step">Your scope of works</div>
@@ -334,8 +362,10 @@ const PRODUCTS = {
 };
 
 const LABOUR_M2 = [20, 25];                        // individual painter, R/m² (option 2)
-// Contractor all-in R/m² from real 2026 quotes = [lo, hi]
-const CONTRACT = { interior:[69,76], exterior:[74,84], ceiling:[49,59], roof:[71,80] };
+// Contractor all-in R/m² (material + accessories + labour — nothing else needed) = [min, max]
+const CONTRACT = { interior:[65,79], exterior:[72,88], ceiling:[55,64], roofTiled:[75,91], roofCorr:[61,77] };
+const CONTRACT_DAMP = [15,25];   // charged on ~10% of the total painted area
+const CONTRACT_RUST = [15,25];   // charged on ~15% of the corrugated roof area
 
 const CONSUMABLE_PCT = 0.15;                        // brushes, rollers, sheets, filler, silicone
 const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add a plaster-primer coat?
@@ -386,6 +416,7 @@ function syncCards(){
 const R = n => 'R ' + Math.round(n).toLocaleString('en-ZA');
 // 20L tins needed: allow up to 5L over a full tin before buying another (e.g. 63L → 3 tins, 26L → 2)
 const tinCount = L => { const rem = L - Math.floor(L/20)*20; return Math.max(1, rem<=5 ? Math.floor(L/20) : Math.ceil(L/20)); };
+function toggleOpt(n){ for(let i=1;i<=3;i++){ const e=document.getElementById('optexp'+i); if(!e) continue; e.style.display = (i===n && e.style.display!=='block') ? 'block' : 'none'; } }
 const Rr = (a,b) => R(a) + ' – ' + R(b);
 
 // Build the list of paint jobs from the choices
@@ -436,8 +467,9 @@ function calc(){
 
   const jobs = buildJobs();
   const primerRep = repPrice('primer');
-  let paintLo=0,paintHi=0, primerLo=0,primerHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='', wallPrimerL=0;
+  let paintLo=0,paintHi=0, primerLo=0,primerHi=0, labLo=0,labHi=0, conLo=0,conHi=0, surf='', wallPrimerL=0, totalArea=0, roofArea=0;
   const paintRows=[];   // one per surface: colour-coat paint only
+  const contractRows=[];   // one per surface: what a contractor should charge
 
   jobs.forEach(job=>{
     const rep = repPrice(job.cat);                       // typical mid-range paint
@@ -458,8 +490,13 @@ function calc(){
     paintLo += cLo+prLo; paintHi += cHi+prHi;
     labLo += job.area*LABOUR_M2[0]*job.condMult;
     labHi += job.area*LABOUR_M2[1]*job.condMult;
-    const cr = CONTRACT[job.cat];
-    conLo += job.area*cr[0]*job.condMult; conHi += job.area*cr[1]*job.condMult;
+    totalArea += job.area; if(job.roof) roofArea = job.area;
+    // contractor all-in rate per surface (roof rate depends on tiled vs corrugated)
+    const ccat = job.roof ? (state.roof==='tiled'?'roofTiled':'roofCorr') : job.cat;
+    const cr = CONTRACT[ccat];
+    const cLoS = job.area*cr[0], cHiS = job.area*cr[1];
+    conLo += cLoS; conHi += cHiS;
+    contractRows.push({name:job.name, lo:cLoS, hi:cHiS, sub:`~${job.area} m² @ R${cr[0]}–R${cr[1]}/m²`});
     // per-surface summary (topcoat tins; plaster primer is its own line/section)
     const topTins = tinCount(colourL);
     let s = `<b>${job.name}</b> — ~${job.area} m² · ${coats} topcoat${coats>1?'s':''} = ${Math.ceil(colourL)} L → <b>${topTins} × 20L tin${topTins>1?'s':''}</b>`;
@@ -472,6 +509,12 @@ function calc(){
   let dampLo=0,dampHi=0, rustLo=0,rustHi=0;
   if(state.damp){ [dampLo,dampHi]=patch(PRODUCTS.damp); }
   if(state.surf.roof && state.roof==='corrugated' && state.rust){ [rustLo,rustHi]=patch(PRODUCTS.rust); }
+
+  // Contractor damp/rust — charged on only a fraction of the area, added to the contractor total
+  let cDampLo=0,cDampHi=0, cRustLo=0,cRustHi=0;
+  if(state.damp){ const a=totalArea*0.10; cDampLo=a*CONTRACT_DAMP[0]; cDampHi=a*CONTRACT_DAMP[1]; }
+  if(state.surf.roof && state.roof==='corrugated' && state.rust){ const a=roofArea*0.15; cRustLo=a*CONTRACT_RUST[0]; cRustHi=a*CONTRACT_RUST[1]; }
+  conLo += cDampLo+cRustLo; conHi += cDampHi+cRustHi;
 
   // Consumables & labour do NOT change with the paint you pick — fix them.
   const consFixed = paintLo*CONSUMABLE_PCT;              // 15% of the minimum paint
@@ -495,9 +538,18 @@ function calc(){
   bh += '</table>';
   document.getElementById('breakdown').innerHTML = bh;
 
-  document.getElementById('r1a').textContent = Rr(matLo,matHi);
-  document.getElementById('r2a').textContent = Rr(indLo,indHi);
-  document.getElementById('r3a').textContent = Rr(conLo,conHi);
+  // What a contractor should charge — per surface
+  let cbd = '<table class="bk"><tr><th class="l"></th><th class="a">Minimum</th><th class="a">Maximum</th></tr>';
+  contractRows.forEach(r=> cbd += row(r.name, r.lo, r.hi, r.sub));
+  if(cDampHi>0) cbd += row('Damp treatment', cDampLo, cDampHi, '~10% of the area @ R15–R25/m²');
+  if(cRustHi>0) cbd += row('Rust treatment', cRustLo, cRustHi, '~15% of the metal roof @ R15–R25/m²');
+  cbd += row('Contractor total', conLo, conHi, 'everything included — nothing else to buy', 'sub');
+  cbd += '</table>';
+  document.getElementById('contractorBd').innerHTML = cbd;
+
+  document.getElementById('r1min').textContent = R(matLo); document.getElementById('r1max').textContent = R(matHi);
+  document.getElementById('r2min').textContent = R(indLo); document.getElementById('r2max').textContent = R(indHi);
+  document.getElementById('r3min').textContent = R(conLo); document.getElementById('r3max').textContent = R(conHi);
   document.getElementById('rangeMain').textContent = Rr(matLo, conHi);
 
   // What to buy at Builders — products per surface, best quality first
@@ -557,6 +609,19 @@ function calc(){
 
   // teaser (free), scope + script (paid)
   document.getElementById('teaser').innerHTML = `<div class="step">Your plan is ready</div><div style="font-size:13.5px;line-height:1.5">You'll need roughly <b>${totalTins} × 20L tin${totalTins>1?'s':''}</b> of paint &amp; primer in total. Unlock below for the exact paints to buy, today's prices, where to get them, and the step-by-step method for your walls.</div>`;
+
+  // Tap-to-expand baits under each of the 3 options
+  const payBtn = unlocked ? '' : `<button class="cta ulbtn" onclick="event.stopPropagation();payR99()">🔓 Unlock the full plan — R99 →</button>`;
+  const bait = (q,t) => `<div class="optbait"><div class="obq">${q}</div><div class="obt">${t}</div>${payBtn}</div>`;
+  document.getElementById('optexp1').innerHTML = bait(
+    `You'll need about <b>${totalTins} × 20L</b> of paint &amp; primer for this job.`,
+    `Let us help you buy the right paint at the best price — and show you exactly how to do it yourself.`);
+  document.getElementById('optexp2').innerHTML = bait(
+    `You'll need about <b>${totalTins} × 20L</b> of paint &amp; primer, plus a painter for the labour.`,
+    `We'll also give you painter-labour estimates, the exact shopping list, and the cheapest prices per store.`);
+  document.getElementById('optexp3').innerHTML = bait(
+    `See what a professional contractor should charge — broken down <b>per surface</b> (outside walls, inside walls, roof &amp; ceilings).`,
+    `Check any contractor's quote area by area, so you know each one's fair price.`);
   document.getElementById('scope').innerHTML = buildScope();
   document.getElementById('script').innerHTML = buildScript();
   let dl='';
