@@ -665,6 +665,11 @@ function emailPlan(){
 (function init(){
   const p = new URLSearchParams(location.search);
   if(p.get('reset')==='1'){ try{ localStorage.removeItem('pc_unlocked'); localStorage.removeItem('pc_state'); }catch(e){} return; }
+  // TEST PREVIEW: ?preview=1 jumps straight into the full unlocked plan with a demo home (no payment). REMOVE before go-live.
+  if(p.get('preview')==='1'){
+    Object.assign(state, {surf:{interior:true,exterior:true,ceiling:true,roof:true}, home:'3bed', garage:'double', bath:'2plus', storey:false, cond:'bad', damp:true, roof:'corrugated', rust:true});
+    unlocked = true; restoreUI(); calc(); return;
+  }
   if(p.get('unlocked')==='1' || localStorage.getItem('pc_unlocked')==='1'){
     unlocked = true; try{ localStorage.setItem('pc_unlocked','1'); }catch(e){}
     loadState(); restoreUI();
