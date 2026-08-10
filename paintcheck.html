@@ -102,7 +102,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
     <div class="tagline">What should it really cost to paint your home? · South Africa</div>
   </div>
   <div class="body">
-    <div class="tune">⚙️ Test build — now runs on real Builders Warehouse prices &amp; real R/m² rates. Try a few combos and tell me what to change.</div>
+    <div class="tune">⚙️ Test build — now runs on real retail prices &amp; real R/m² rates. Try a few combos and tell me what to change.</div>
 
     <div class="card">
       <div class="step">Step 1 · What are you painting?</div>
@@ -172,7 +172,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
         <div class="step">Your 3 options</div>
         <div class="route r1">
           <div class="rh"><span class="rn">1 · Just the paint (do it yourself)</span><span class="ra" id="r1a">—</span></div>
-          <div class="rd">Buy the paint &amp; the bits, and do the work yourself. See exactly what to buy at Builders below.</div>
+          <div class="rd">Buy the paint &amp; the bits, and do the work yourself. See exactly what to buy (and where) below.</div>
         </div>
         <div class="route">
           <div class="rh"><span class="rn">2 · Buy paint + hire a painter</span><span class="ra" id="r2a">—</span></div>
@@ -190,7 +190,7 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
       <div class="unlock" id="unlockCard">
         <div class="ulh">🔓 Unlock your complete plan — <b>R99</b></div>
         <ul class="ulist">
-          <li>Exact shopping list &amp; today's Builders prices — every paint &amp; primer</li>
+          <li>Exact shopping list &amp; today's prices — every paint &amp; primer</li>
           <li>Full cost breakdown (paint, primer, damp/rust, labour)</li>
           <li>Step-by-step <b>scope of works</b> for your walls (PDF to download)</li>
           <li>What to say to your painter, so you don't get caught out</li>
@@ -202,9 +202,9 @@ input[type=number]{width:100%;border:1.5px solid #d7dee6;border-radius:10px;padd
 
       <div id="paid" style="display:none">
         <div class="card">
-          <div class="step">What to buy at Builders</div>
+          <div class="step">What to buy</div>
           <div id="buylist"></div>
-          <div class="colnote">Prices are for standard colours only and may vary — checked at Builders Warehouse. Tap a paint's spec sheet for drying &amp; overcoat times.</div>
+          <div class="colnote">Guide prices for standard colours (checked Aug 2026) — they vary by store &amp; special. These paints are stocked at most paint &amp; hardware stores: <b>Builders, Cashbuild, Buildit, Chamberlains</b> and others. Tap a paint's spec sheet for drying &amp; overcoat times.</div>
         </div>
         <div class="card">
           <div class="step">Breakdown</div>
@@ -488,7 +488,7 @@ function calc(){
   document.getElementById('buylist').innerHTML = buy;
 
   // teaser (free), scope + script (paid)
-  document.getElementById('teaser').innerHTML = `<div class="step">Your plan is ready</div><div style="font-size:13.5px;line-height:1.5">You'll need roughly <b>${totalTins} × 20L tin${totalTins>1?'s':''}</b> of paint &amp; primer in total. Unlock below for the exact paints to buy, today's Builders prices, and the step-by-step method for your walls.</div>`;
+  document.getElementById('teaser').innerHTML = `<div class="step">Your plan is ready</div><div style="font-size:13.5px;line-height:1.5">You'll need roughly <b>${totalTins} × 20L tin${totalTins>1?'s':''}</b> of paint &amp; primer in total. Unlock below for the exact paints to buy, today's prices, where to get them, and the step-by-step method for your walls.</div>`;
   document.getElementById('scope').innerHTML = buildScope();
   document.getElementById('script').innerHTML = buildScript();
   document.getElementById('scopeDl').href = SCOPE_PDF;
