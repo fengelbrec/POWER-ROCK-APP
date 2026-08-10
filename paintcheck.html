@@ -109,6 +109,7 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .ulbtn{margin-top:0}
 .ulnote{font-size:11px;color:#a9c4db;margin-top:10px;text-align:center;line-height:1.5}
 .dlbtn{background:#12324e;display:block;text-align:center;text-decoration:none}
+.scopehd{font-size:14px;font-weight:800;color:#12324e;text-transform:uppercase;letter-spacing:.5px;margin:6px 0 8px;padding-bottom:5px;border-bottom:2px solid #12324e}
 .scopeblk{margin-bottom:12px}
 .scopeblk h4{font-size:13px;font-weight:800;color:#12324e;margin:10px 0 5px}
 .scopeblk ol{margin:0 0 4px 18px;padding:0}
@@ -236,7 +237,6 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
         <div class="card">
           <div class="step">What to buy</div>
           <div id="buylist"></div>
-          <div class="colnote">Guide prices for standard colours (checked Aug 2026) — they vary by store &amp; special. These paints are stocked at most paint &amp; hardware stores: <b>Builders, Cashbuild, Buildit, Chamberlains</b> and others. Tap a paint's spec sheet for drying &amp; overcoat times.</div>
         </div>
         <div class="card">
           <div class="step">Breakdown</div>
@@ -525,7 +525,7 @@ function calc(){
     totalTins += tins;
     buy += `<div class="surfhead">${job.name}</div>`;
     const cn = job.cat==='exterior'?'standard colours only' : job.cat==='interior'?'white &amp; pastel colours only' : job.cat==='ceiling'?'white only' : '';
-    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>${cn?` <span class="cnote">(${cn})</span>`:''}. Here are your options — pick any one:</div>`;
+    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>${cn?` <span class="cnote">(${cn})</span>`:''}. Here are your options:</div>`;
     let opt=0;
     PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins,++opt));
   });
@@ -560,8 +560,11 @@ function calc(){
   document.getElementById('scope').innerHTML = buildScope();
   document.getElementById('script').innerHTML = buildScript();
   let dl='';
-  if(state.surf.interior||state.surf.exterior||state.surf.ceiling) dl += `<a class="cta dlbtn" href="${SCOPE_PDF}" target="_blank" rel="noopener">📄 Download the wall scope of works (PDF)</a>`;
-  if(state.surf.roof) dl += `<a class="cta dlbtn" href="${ROOF_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download the roof scope of works (PDF)</a>`;
+  if(state.surf.interior||state.surf.exterior){
+    const wl=(state.surf.interior&&state.surf.exterior)?'Interior &amp; Exterior Wall Surfaces':state.surf.exterior?'Exterior Wall Surfaces':'Interior Wall Surfaces';
+    dl += `<a class="cta dlbtn" href="${SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: ${wl} — SCOPE OF WORKS</a>`;
+  }
+  if(state.surf.roof) dl += `<a class="cta dlbtn" href="${ROOF_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: Roof Surfaces — SCOPE OF WORKS</a>`;
   document.getElementById('scopeDls').innerHTML = dl;
 
   // free vs paid
@@ -580,8 +583,10 @@ function calc(){
 function buildScope(){
   const walls = state.surf.interior || state.surf.exterior;
   const rough = state.cond==='bad' || state.cond==='verybad';
+  const wallHdr = (state.surf.interior && state.surf.exterior) ? 'Interior &amp; exterior wall surfaces' : state.surf.exterior ? 'Exterior wall surfaces' : 'Interior wall surfaces';
   let h='';
   if(walls){
+    h += `<div class="scopehd">${wallHdr}</div>`;
     h += `<div class="scopeblk"><h4>Surface preparation</h4><ol>`;
     h += `<li>High-pressure wash all wall surfaces to remove dirt, dust, chalk and any loose or failing paint.</li>`;
     h += rough
@@ -600,6 +605,11 @@ function buildScope(){
     h += `<li>Let the wall dry out naturally for as long as possible (ideally to a moisture level below 10%).</li>`;
     h += `<li>Re-plaster and float the affected areas, then patch a damp sealer onto those areas.</li></ol></div>`;
   }
+  if(walls){
+    h += `<div class="scopeblk"><h4>Final coatings</h4><ol>`;
+    h += `<li>Apply 2 × final coats — product and colour of your choice.</li>`;
+    h += `<li>Minimum 4 hours drying time between coats. See the product's Technical Data Sheet for more information.</li></ol></div>`;
+  }
   if(state.surf.roof){
     h += `<div class="scopeblk"><h4>Roof</h4><ol>`;
     h += `<li>High-pressure wash the roof and scrape or wire-brush any loose, flaking coating.</li>`;
@@ -608,11 +618,6 @@ function buildScope(){
   }
   if(state.surf.ceiling){
     h += `<div class="scopeblk"><h4>Ceilings</h4><ol><li>Prepare and apply two coats of ceiling paint, observing the recoat time on the tin.</li></ol></div>`;
-  }
-  if(walls){
-    h += `<div class="scopeblk"><h4>Finishing coats</h4><ol>`;
-    h += `<li>Apply two full coats of your chosen topcoat.</li>`;
-    h += `<li>Observe the drying and overcoating times stated on each product's Technical Data Sheet.</li></ol></div>`;
   }
   h += `<div class="colnote">Plaster &amp; crack repair materials are not included in the prices above.</div>`;
   return h;
