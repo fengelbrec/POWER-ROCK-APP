@@ -572,9 +572,10 @@ function restoreUI(){
   document.querySelectorAll('.chk[data-extra]').forEach(el=>el.classList.toggle('sel', !!state[el.dataset.extra]));
   syncCards();
 }
+const LIVE_URL = 'https://fengelbrec.github.io/POWER-ROCK-APP/paintcheck.html'; // fallback if opened as a local file
 function payR99(){
   saveState();
-  const base = location.origin + location.pathname;
+  const base = (location.protocol==='http:'||location.protocol==='https:') ? (location.origin + location.pathname) : LIVE_URL;
   const f = document.createElement('form');
   f.method='POST'; f.action=PF.url;
   const fields = { merchant_id:PF.merchant_id, merchant_key:PF.merchant_key, return_url:base+'?unlocked=1', cancel_url:base+'?cancelled=1', amount:'99.00', item_name:'PaintCheck complete plan' };
