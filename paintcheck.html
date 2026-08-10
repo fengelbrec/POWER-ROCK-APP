@@ -244,40 +244,40 @@ const PRIMER_COVER = 6.5;                           // solvent-based plaster pri
 // Recommended paints at Builders (price per 20L = [special, normal]); score /10; datasheet link
 const PRODUCTS = {
   exterior: [
-    {n:'Dulux Weatherguard', s:8.5, p:[1099,1249], ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf'},
-    {n:'Plascon Micatex',    s:8,   p:[1149,1299], ds:'https://plascon.co.za/wp-content/uploads/2024/04/BBO-Range-TMX-Tint-Bases-TDS-2.pdf'},
-    {n:'Duram Armatex',      s:6.5, p:[899,899],   ds:'https://www.duram.co.za/product/armatex/'}
+    {n:'Dulux Weatherguard', s:8.5, p:[1099,1249], img:'img/weatherguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf'},
+    {n:'Plascon Micatex',    s:8,   p:[1149,1299], img:'img/micatex.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/04/BBO-Range-TMX-Tint-Bases-TDS-2.pdf'},
+    {n:'Duram Armatex',      s:6.5, p:[899,899],   img:'img/armatex.jpg', ds:'https://www.duram.co.za/product/armatex/'}
   ],
   interior: [
-    {n:'Plascon Double Velvet', s:9.5, p:[2799,2999], ds:'https://plascon.co.za/wp-content/uploads/2024/12/VEL-Double-Velvet-TDV-Tintbases-TDS.pdf', note:'Pastel colours only — no plain standard colours'},
-    {n:'Dulux Luxurious Silk',  s:8.5, p:[2299,2599], ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20luxurious%20silk.pdf', note:'White; tinted colours cost more'},
-    {n:'Duram Satin Touch',     s:7.5, p:[1899,1999], ds:'https://www.duram.co.za/product/satin-touch/'},
-    {n:'Duram Durasheen',       s:6.5, p:[1029,1099], ds:'https://www.duram.co.za/product/dura-sheen/'}
+    {n:'Plascon Double Velvet', s:9.5, p:[2799,2999], img:'img/double-velvet.jpg', ds:'https://plascon.co.za/wp-content/uploads/2024/12/VEL-Double-Velvet-TDV-Tintbases-TDS.pdf', note:'Pastel colours only — no plain standard colours'},
+    {n:'Dulux Luxurious Silk',  s:8.5, p:[2299,2599], img:'img/luxurious-silk.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20luxurious%20silk.pdf', note:'White; tinted colours cost more'},
+    {n:'Duram Satin Touch',     s:7.5, p:[1899,1999], img:'img/satin-touch.jpg', ds:'https://www.duram.co.za/product/satin-touch/'},
+    {n:'Duram Durasheen',       s:6.5, p:[1029,1099], img:'img/durasheen.jpg', ds:'https://www.duram.co.za/product/dura-sheen/'}
   ],
   roof: [
-    {n:'Plascon Nuroof Cool', s:9, p:[1399,1599], ds:'https://plascon.co.za/wp-content/uploads/2025/02/TRP-200-Range-Nuroof-Cool-TDS.pdf'},
-    {n:'Dulux Roofguard',     s:9, p:[1399,1699], ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20roofguard.pdf'},
-    {n:'Duram Weather Roof',  s:7, p:[999,1069],  ds:'https://www.duram.co.za/product/weather-roof/'}
+    {n:'Plascon Nuroof Cool', s:9, p:[1399,1599], img:'img/nuroof.jpg', ds:'https://plascon.co.za/wp-content/uploads/2025/02/TRP-200-Range-Nuroof-Cool-TDS.pdf'},
+    {n:'Dulux Roofguard',     s:9, p:[1399,1699], img:'img/roofguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20roofguard.pdf'},
+    {n:'Duram Weather Roof',  s:7, p:[999,1069],  img:'img/weather-roof.jpg', ds:'https://www.duram.co.za/product/weather-roof/'}
   ],
   ceiling: [
-    {n:'Duram Wall & Ceiling', s:8,   p:[1029,1129], ds:'https://www.duram.co.za/product/wall-ceiling/'},
-    {n:'Duram Matt Acrylic',   s:7.5, p:[859,859],   ds:'https://www.duram.co.za/product/matt-acrylic/'},
-    {n:'Bergermaster Nukote',  s:7,   p:[749,849],   ds:''}
+    {n:'Duram Wall & Ceiling', s:8,   p:[1029,1129], img:'img/wall-ceiling.jpg', ds:'https://www.duram.co.za/product/wall-ceiling/'},
+    {n:'Duram Matt Acrylic',   s:7.5, p:[859,859],   img:'img/matt-acrylic.jpg', ds:'https://www.duram.co.za/product/matt-acrylic/'},
+    {n:'Bergermaster Nukote',  s:7,   p:[749,849],   img:'img/bergermaster.jpg', ds:''}
   ],
   // Solvent-based plaster primers for chalky / flaky / bare areas — 1 full binding coat
   primer: [
-    {n:'Duram Adhesion Primer',       p:[949,1029],  ds:'https://www.duram.co.za/product/adhesion-primer/'},
-    {n:'Plascon Sure Coat Primer',    p:[1149,1399], ds:'https://plascon.co.za/wp-content/uploads/2025/01/UC-56-Plaster-primer.pdf'},
-    {n:'Dulux Maxicover Plaster Primer', p:[1359,1559], ds:'https://msp.images.akzonobel.com/prd/dh/ezadlx/documents/bc/89/df/36/12_maxicover_2_1_en_prep_plaster_primer_2019_rev4.pdf'}
+    {n:'Duram Adhesion Primer',       p:[949,1029],  img:'img/adhesion-primer.jpg', ds:'https://www.duram.co.za/product/adhesion-primer/'},
+    {n:'Plascon Sure Coat Primer',    p:[1149,1399], img:'img/surecoat.jpg', ds:'https://plascon.co.za/wp-content/uploads/2025/01/UC-56-Plaster-primer.pdf'},
+    {n:'Dulux Maxicover Plaster Primer', p:[1359,1559], img:'img/maxicover.jpg', ds:'https://msp.images.akzonobel.com/prd/dh/ezadlx/documents/bc/89/df/36/12_maxicover_2_1_en_prep_plaster_primer_2019_rev4.pdf'}
   ],
   // Damp sealer — PATCH prime the affected area only (5L, Builders has no 20L)
   damp: [
-    {n:'Plascon Dampseal Waterproof Sealer', p:[849,959], size:5, ds:'https://plascon.co.za/wp-content/uploads/2022/04/plascon_dampseal_tds.pdf'}
+    {n:'Plascon Dampseal Waterproof Sealer', p:[849,959], size:5, img:'img/dampseal.jpg', ds:'https://plascon.co.za/wp-content/uploads/2022/04/plascon_dampseal_tds.pdf'}
   ],
   // Anti-rust metal primer — PATCH prime affected rust spots only (5L)
   rust: [
-    {n:'Duram NS4 Anti-Rust Primer',      p:[629,629], size:5, ds:'https://www.duram.co.za/product/ns4-anti-rust-primer/'},
-    {n:'Dulux Rustshield Metal Primer',   p:[789,789], size:5, ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux_rustshield_anti_rust_metal_primer.pdf'}
+    {n:'Duram NS4 Anti-Rust Primer',      p:[629,629], size:5, img:'img/ns4.jpg', ds:'https://www.duram.co.za/product/ns4-anti-rust-primer/'},
+    {n:'Dulux Rustshield Metal Primer',   p:[789,789], size:5, img:'img/rustshield.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux_rustshield_anti_rust_metal_primer.pdf'}
   ]
 };
 
