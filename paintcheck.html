@@ -139,6 +139,20 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .warn{background:#fdeceb;border:1px solid #e5a79f;border-radius:10px;padding:10px 12px;font-size:12px;color:#8f2d22;line-height:1.5;margin:8px 0}
 .script li{font-size:12.5px;color:#26323e;line-height:1.5;margin-bottom:7px}
 .script{margin-left:2px;padding-left:16px}
+#printhdr{display:none}
+@media print {
+  @page { margin: 12mm; }
+  body { background:#fff; }
+  .wrap { max-width:none; background:#fff; }
+  .body { padding:0; }
+  .top, .tune, .cta, .noprint, #unlockCard, .excl, .foot, .bigrange, .optcolhdr, .route, .optexp, .hint, .body > .card, #res > .card { display:none !important; }
+  #res { display:block !important; }
+  #paid { display:block !important; }
+  #paid .card { border:none; box-shadow:none; padding:2px 0 6px; margin-bottom:6px; break-inside:avoid; }
+  #printhdr { display:block !important; text-align:center; font-size:18px; font-weight:800; color:#12324e; border-bottom:3px solid #12324e; padding-bottom:8px; margin-bottom:14px; }
+  .prod, .bk, table, .scopeblk, .stores { break-inside:avoid; }
+  a { text-decoration:none; color:#2c5f8a; }
+}
 </style>
 </head>
 <body>
@@ -256,6 +270,11 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
       </div>
 
       <div id="paid" style="display:none">
+        <div id="printhdr">PaintCheck — Your Complete Paint Plan</div>
+        <div class="card noprint" style="text-align:center">
+          <button class="cta" onclick="window.print()">🖨️ Save your complete plan as a PDF</button>
+          <div class="hint" style="margin-top:8px">Includes the shopping list, prices, costs &amp; scope of works. Opens your phone's print screen — choose <b>"Save as PDF"</b>.</div>
+        </div>
         <div class="card">
           <div class="step">What to buy</div>
           <div id="buylist"></div>
@@ -274,9 +293,9 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
           <div id="scope"></div>
           <div id="scopeDls"></div>
         </div>
-        <div class="card">
+        <div class="card noprint" id="emailCard">
           <div class="step">Email me my plan</div>
-          <div class="hint" style="margin-top:0">We'll email this whole plan to you to take to the shop.</div>
+          <div class="hint" style="margin-top:0">We'll email you the links to your plan &amp; scope of works.</div>
           <input type="email" id="leadEmail" inputmode="email" placeholder="you@email.com" style="margin-top:8px"/>
           <button class="cta dlbtn" onclick="emailPlan()" style="margin-top:8px">Email it to me →</button>
           <div class="ulnote" id="emailMsg"></div>
@@ -721,16 +740,17 @@ function emailPlan(){
   if(!WEB3FORMS_KEY){ msg.textContent='📧 Email sending switches on once the account key is added.'; return; }
   msg.textContent='Sending…';
   const T = id => (document.getElementById(id)||{}).innerText || '';
-  const plan = [
-    'YOUR PAINTCHECK PLAN',
-    '========================',
-    '', 'WHAT TO BUY', '-----------', T('buylist'),
-    '', 'COST BREAKDOWN', '--------------', T('breakdown'),
-    '', 'WHAT A CONTRACTOR SHOULD CHARGE (per surface)', '--------------------------------------------', T('contractorBd'),
-    '', 'SCOPE OF WORKS', '--------------', T('scope'),
-    '', '— PaintCheck · independent paint guidance'
-  ].join('\n');
-  const body={ access_key:WEB3FORMS_KEY, subject:'Your PaintCheck plan', from_name:'PaintCheck', email:email, plan:plan };
+  const BASE='https://fengelbrec.github.io/POWER-ROCK-APP/';
+  const links=[];
+  if(state.surf.exterior) links.push('• Exterior walls: '+BASE+SCOPE_PDF);
+  if(state.surf.interior||state.surf.ceiling) links.push('• Interior walls & ceilings: '+BASE+INTERIOR_SCOPE_PDF);
+  if(state.surf.roof) links.push('• Roof: '+BASE+ROOF_SCOPE_PDF);
+  const message = ['Thanks for using PaintCheck! Your complete plan — shopping list, prices, contractor costs and scope of works — is ready.',
+    '','Tip: in the app, tap "Save your complete plan as a PDF" to keep the whole thing.',
+    '','Your scope-of-works documents:', ...links,
+    '','YOUR SHOPPING LIST','------------------', T('buylist'),
+    '','— PaintCheck · independent paint guidance'].join('\n');
+  const body={ access_key:WEB3FORMS_KEY, subject:'Your PaintCheck plan', from_name:'PaintCheck', email:email, message:message };
   fetch('https://api.web3forms.com/submit',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{ msg.textContent = d.success ? '✅ Sent! Check your inbox.' : 'Could not send — please try again.'; })
     .catch(()=>{ msg.textContent='Could not send right now — please try again.'; });
