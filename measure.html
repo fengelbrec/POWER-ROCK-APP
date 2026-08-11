@@ -13,13 +13,15 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#ee
 .top{background:#12324e;color:#fff;padding:16px 18px}
 .top .t{font-size:19px;font-weight:800}
 .top .s{font-size:12px;color:#a9c4db;margin-top:2px}
-.search{display:flex;gap:8px;padding:12px 14px}
+.search{display:flex;gap:8px;padding:12px 14px 4px}
 .search input{flex:1;border:1.5px solid #d7dee6;border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
 .search button{background:#37c07a;color:#fff;border:none;border-radius:10px;padding:0 18px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}
-#map{height:56vh;width:100%}
+.locbtn{width:calc(100% - 28px);margin:6px 14px 4px;background:#12324e;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer}
+#map{height:54vh;width:100%;margin-top:6px}
 .cnr{background:#37c07a;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.5)}
-.tip{font-size:12.5px;color:#41505f;text-align:center;padding:9px 14px 4px;font-weight:600}
-.panel{padding:8px 14px 30px}
+.mid{background:rgba(255,255,255,.85);border:2px dashed #37c07a;border-radius:50%;color:#1e7d4f;font-weight:800;font-size:13px;text-align:center;line-height:15px}
+.tip{font-size:12.5px;color:#41505f;padding:9px 14px 4px;font-weight:600;line-height:1.5}
+.panel{padding:6px 14px 30px}
 .card{background:#fff;border:1px solid #e3e8ee;border-radius:14px;padding:14px;margin-bottom:12px}
 .row{display:flex;gap:8px;margin-bottom:10px}
 .seg{flex:1}
@@ -43,62 +45,75 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#ee
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><div class="t">📍 Measure my house</div><div class="s">Prototype · type your address, drag the green box onto your roof</div></div>
+  <div class="top"><div class="t">📍 Measure my house</div><div class="s">Prototype · find your house, shape the outline over your roof</div></div>
   <div class="search"><input id="addr" placeholder="Type your address, suburb & city…" enterkeyhint="search"/><button onclick="go()">Find</button></div>
+  <button class="locbtn" onclick="useLocation()">📍 Or use my current location (stand at your house)</button>
   <div id="map"></div>
-  <div class="tip">Drag the 4 green dots to the corners of your roof.</div>
+  <div class="tip">Drag the <b>green dots</b> to your roof corners. Tap a <b>+</b> on an edge to add a corner (for L-shaped roofs). Double-tap a green dot to remove it.</div>
   <div class="panel">
     <div class="card">
       <div class="row">
-        <div class="seg"><div class="lbl">Roof type</div><div class="opts" id="roofOpts">
+        <div class="seg"><div class="lbl">Roof type</div><div class="opts">
           <label class="opt sel"><input type="radio" name="roof" value="corrugated" checked>Corrugated</label>
           <label class="opt"><input type="radio" name="roof" value="tiled">Tiled</label>
         </div></div>
-        <div class="seg"><div class="lbl">Storeys</div><div class="opts" id="storeyOpts">
+        <div class="seg"><div class="lbl">Storeys</div><div class="opts">
           <label class="opt sel"><input type="radio" name="storey" value="single" checked>Single</label>
           <label class="opt"><input type="radio" name="storey" value="double">Double</label>
         </div></div>
       </div>
       <div class="res">
-        <div class="rbox g"><div class="k">Roof to paint</div><div class="v" id="roofA">—</div><div class="u" id="roofSub">footprint × slope/profile</div></div>
-        <div class="rbox"><div class="k">Outside walls</div><div class="v" id="wallA">—</div><div class="u" id="wallSub">perimeter × height</div></div>
+        <div class="rbox g"><div class="k">Roof to paint</div><div class="v" id="roofA">—</div><div class="u">footprint × slope/profile</div></div>
+        <div class="rbox"><div class="k">Outside walls</div><div class="v" id="wallA">—</div><div class="u">perimeter × height</div></div>
       </div>
     </div>
     <div class="card">
       <div class="mini"><span>Roof footprint (measured)</span><b id="foot">—</b></div>
       <div class="mini"><span>Perimeter (measured)</span><b id="perim">—</b></div>
+      <div class="mini"><span>Corners on the outline</span><b id="ncorners">—</b></div>
       <div class="mini"><span>Roof factor</span><b id="rf">—</b></div>
       <div class="mini"><span>Wall height used</span><b id="ht">—</b></div>
-      <div class="note">This is a prototype to test the feel. Once you're happy, this measurement plugs straight into PaintCheck — roof &amp; outside walls become exact for each house; inside walls &amp; ceilings stay on the current estimate.</div>
+      <div class="note">Prototype to test the feel. In the real app these figures stay hidden until unlock — the client just sees "your accurate quote is ready". Roof &amp; outside walls come from this measurement; inside walls &amp; ceilings stay on the current estimate.</div>
     </div>
   </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 <script>
-const map = L.map('map', {zoomControl:true}).setView([-25.8730, 28.2870], 19); // default: Six Fountains area
+const map = L.map('map', {zoomControl:true}).setView([-25.8730, 28.2870], 19);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {maxZoom:21, maxNativeZoom:19, attribution:'Imagery © Esri'}).addTo(map);
 
-const dot = L.divIcon({className:'cnr', iconSize:[18,18], iconAnchor:[9,9]});
-let corners=[], markers=[], poly=null;
+const cnrIcon = L.divIcon({className:'cnr', iconSize:[18,18], iconAnchor:[9,9]});
+const midIcon = L.divIcon({className:'mid', html:'+', iconSize:[19,19], iconAnchor:[9.5,9.5]});
+let corners=[], layers=[], poly=null;
 
 function boxAround(c, m){
-  const dLat = m/111320, dLng = m/(111320*Math.cos(c.lat*Math.PI/180));
-  return [ L.latLng(c.lat+dLat, c.lng-dLng), L.latLng(c.lat+dLat, c.lng+dLng),
-           L.latLng(c.lat-dLat, c.lng+dLng), L.latLng(c.lat-dLat, c.lng-dLng) ];
+  const dLat=m/111320, dLng=m/(111320*Math.cos(c.lat*Math.PI/180));
+  return [ L.latLng(c.lat+dLat,c.lng-dLng), L.latLng(c.lat+dLat,c.lng+dLng),
+           L.latLng(c.lat-dLat,c.lng+dLng), L.latLng(c.lat-dLat,c.lng-dLng) ];
 }
-function makeBox(center){
-  markers.forEach(m=>map.removeLayer(m)); if(poly) map.removeLayer(poly); markers=[];
-  corners = boxAround(center, 8);
+function clearLayers(){ layers.forEach(l=>map.removeLayer(l)); layers=[]; if(poly){map.removeLayer(poly); poly=null;} }
+function rebuild(){
+  clearLayers();
   poly = L.polygon(corners, {color:'#37c07a', weight:3, fillColor:'#37c07a', fillOpacity:0.12}).addTo(map);
   corners.forEach((c,i)=>{
-    const mk = L.marker(c, {draggable:true, icon:dot}).addTo(map);
+    const mk = L.marker(c, {draggable:true, icon:cnrIcon}).addTo(map);
     mk.on('drag', e=>{ corners[i]=e.target.getLatLng(); poly.setLatLngs(corners); recompute(); });
-    markers.push(mk);
+    mk.on('dragend', rebuild);
+    mk.on('dblclick', ()=>{ if(corners.length>3){ corners.splice(i,1); rebuild(); } });
+    layers.push(mk);
   });
+  for(let i=0;i<corners.length;i++){
+    const a=corners[i], b=corners[(i+1)%corners.length];
+    const mid=L.latLng((a.lat+b.lat)/2,(a.lng+b.lng)/2);
+    const mm=L.marker(mid,{icon:midIcon}).addTo(map);
+    mm.on('click', ()=>{ corners.splice(i+1,0,mid); rebuild(); });
+    layers.push(mm);
+  }
   recompute();
 }
+function makeBox(center){ corners = boxAround(center, 8); rebuild(); }
 function recompute(){
   if(corners.length<3) return;
   const ring = corners.map(c=>[c.lng,c.lat]); ring.push(ring[0]);
@@ -110,23 +125,29 @@ function recompute(){
   const height = storey==='double' ? 6.5 : 3;
   document.getElementById('foot').textContent = Math.round(area)+' m²';
   document.getElementById('perim').textContent = perim.toFixed(1)+' m';
+  document.getElementById('ncorners').textContent = corners.length;
   document.getElementById('rf').textContent = '× '+roofF+(roofType==='corrugated'?' (21% profile × 20% slope)':' (tiled)');
   document.getElementById('ht').textContent = height+' m';
   document.getElementById('roofA').textContent = Math.round(area*roofF)+' m²';
   document.getElementById('wallA').textContent = Math.round(perim*height)+' m²';
 }
 function go(){
-  const q = document.getElementById('addr').value.trim(); if(!q) return;
-  fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q), {headers:{'Accept':'application/json'}})
-   .then(r=>r.json()).then(d=>{
-     if(d && d[0]){ const c=L.latLng(+d[0].lat, +d[0].lon); map.setView(c, 20); makeBox(c); }
-     else alert('Address not found — try adding the suburb and city.');
-   }).catch(()=>alert('Search failed — check your connection and try again.'));
+  const q=document.getElementById('addr').value.trim(); if(!q) return;
+  fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q))
+   .then(r=>r.json()).then(d=>{ if(d&&d[0]){ const c=L.latLng(+d[0].lat,+d[0].lon); map.setView(c,20); makeBox(c); }
+     else alert('Address not found on the free map. Try just your suburb & city, or tap "Use my current location".'); })
+   .catch(()=>alert('Search failed — check your connection and try again.'));
+}
+function useLocation(){
+  if(!navigator.geolocation){ alert('Location not supported on this device.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ const c=L.latLng(pos.coords.latitude,pos.coords.longitude); map.setView(c,20); makeBox(c); },
+    ()=>alert('Could not get your location — allow location access, or search your address.'),
+    {enableHighAccuracy:true, timeout:10000});
 }
 document.getElementById('addr').addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
 document.querySelectorAll('input[name=roof],input[name=storey]').forEach(el=>el.addEventListener('change', e=>{
-  const grp = e.target.name; document.querySelectorAll('input[name='+grp+']').forEach(r=>r.parentElement.classList.toggle('sel', r.checked));
-  recompute();
+  const g=e.target.name; document.querySelectorAll('input[name='+g+']').forEach(r=>r.parentElement.classList.toggle('sel', r.checked)); recompute();
 }));
 map.whenReady(()=> makeBox(map.getCenter()));
 </script>
