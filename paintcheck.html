@@ -317,7 +317,7 @@ const PRIMER_COVER = 6.5;                           // solvent-based plaster pri
 
 // Products with per-store prices (checked Aug 2026 — Chamberlains/Takealot fetched, Builders/Makro from shelf).
 // Update weekly. score /10; datasheet link; img tin photo. Prices are a guide and vary by store & special.
-const PRODUCTS = {
+const PRODUCTS_ZA = {
   exterior: [
     {n:'Dulux Weatherguard', s:8.5, img:'img/weatherguard.jpg', ds:'https://prdakzodecodocumentssa.blob.core.windows.net/public/tds/da/za/en/dulux%20weatherguard%20fine%20textured.pdf',
       stores:[{n:'Builders Warehouse',p:1099},{n:'Chamberlains',p:1299},{n:'Makro',p:1099},{n:'Takealot',p:1799}]},
@@ -375,11 +375,38 @@ const PRODUCTS = {
   ]
 };
 
-const LABOUR_M2 = [20, 25];                        // individual painter, R/m² (option 2)
+const LABOUR_M2_ZA = [20, 25];                     // individual painter, R/m² (option 2)
 // Contractor all-in R/m² (material + accessories + labour — nothing else needed) = [min, max]
-const CONTRACT = { interior:[65,79], exterior:[72,88], ceiling:[55,64], roofTiled:[75,91], roofCorr:[61,77] };
-const CONTRACT_DAMP = [15,25];   // charged on ~10% of the total painted area
-const CONTRACT_RUST = [27,38];   // charged on ~15% of the corrugated roof area
+const CONTRACT_ZA = { interior:[65,79], exterior:[72,88], ceiling:[55,64], roofTiled:[75,91], roofCorr:[61,77] };
+const CONTRACT_DAMP_ZA = [15,25];   // charged on ~10% of the total painted area
+const CONTRACT_RUST_ZA = [27,38];   // charged on ~15% of the corrugated roof area
+
+// ─── COUNTRIES ───────────────────────────────────────────────
+// Everything that changes per country lives in ONE block below. To add a country
+// (e.g. UK), copy the ZA block, swap in that country's products/prices/rates/currency,
+// then set ACTIVE to it. Paint coverage (COVER/ROOFT above) is physics — same everywhere.
+// NOTE: the "R" currency symbol & "m²" unit still appear in the on-screen text; swapping
+// those to cur/unit is the remaining step when a 2nd country actually goes live.
+const COUNTRIES = {
+  ZA: {
+    name:'South Africa', cur:'R', unit:'m²', tinL:20,
+    stores:['Builders Warehouse','Makro','Chamberlains','Takealot'],
+    products:PRODUCTS_ZA,
+    labourM2:LABOUR_M2_ZA,
+    contract:CONTRACT_ZA, contractDamp:CONTRACT_DAMP_ZA, contractRust:CONTRACT_RUST_ZA
+  }
+  // UK: { name:'United Kingdom', cur:'£', unit:'m²', tinL:10, stores:['B&Q','Screwfix',…],
+  //      products:PRODUCTS_UK, labourM2:[…], contract:{…}, contractDamp:[…], contractRust:[…] },
+};
+const ACTIVE = COUNTRIES.ZA;   // ← the one line to change to switch country
+
+// App-facing globals — come from the active country. The rest of the app uses these unchanged.
+const PRODUCTS      = ACTIVE.products;
+const LABOUR_M2     = ACTIVE.labourM2;
+const CONTRACT      = ACTIVE.contract;
+const CONTRACT_DAMP = ACTIVE.contractDamp;
+const CONTRACT_RUST = ACTIVE.contractRust;
+const CUR = ACTIVE.cur, UNIT = ACTIVE.unit, TINL = ACTIVE.tinL;  // ready for the currency/unit swap
 
 const CONSUMABLE_PCT = 0.15;                        // brushes, rollers, sheets, filler, silicone
 const COND_PRIMER = { good:false, fair:false, bad:true, verybad:true }; // add a plaster-primer coat?
