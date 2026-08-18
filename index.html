@@ -204,6 +204,13 @@ input[type=password]{letter-spacing:5px}
 .snap2 .p-top td{border-bottom:none}
 .snap2 .p-bot td{border-bottom:2px solid #E6E2D8}
 .snap2 td{padding-top:6px;padding-bottom:6px}
+/* Each site framed as its own grey block, easier to read */
+.snap2 tr.p-top td{border-top:3px solid #D8D3C6}
+.snap2 tr.p-top td:first-child{border-left:4px solid #C7C0AE}
+.snap2 tr.p-top td:last-child{border-right:3px solid #D8D3C6}
+.snap2 tr.p-bot td{border-bottom:3px solid #D8D3C6}
+.snap2 tr.p-bot td:last-child{border-right:3px solid #D8D3C6}
+.snap2 tr:hover td{background:#FBFAF6}
 .snap-paybtn{background:#F4ECD8;color:#9C8049;border:none;border-radius:4px;padding:3px 7px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;width:100%}
 .snap-paybtn.paid{background:#5C7A6B;color:#fff}
 .snap-close-x{position:absolute;top:18px;right:20px;width:34px;height:34px;border-radius:50%;background:#F0EEE6;border:none;font-size:18px;cursor:pointer;color:#5C5748;display:flex;align-items:center;justify-content:center}
@@ -1435,6 +1442,12 @@ function teamLeaderSites(leaderKey){
 function leaderMonthNet(leaderKey, monthKey){
   return leaderMonthSites(leaderKey, monthKey).reduce(function(a,r){ return a + r.monthNet; }, 0);
 }
+// Shift a YYYY-MM key by whole months (for the Cashflow sheet's month arrows).
+function shiftMonthKey(monthKey, delta){
+  const [y,m] = monthKey.split('-').map(Number);
+  const d = new Date(y, m-1+delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
 // Days elapsed in a month so far (current month → up to today; past month → whole month).
 function daysElapsedInMonth(monthKey){
   const [y,m] = monthKey.split('-').map(Number);
@@ -1583,7 +1596,7 @@ async function openMonthSnapshot(monthKey){
 
   h += `<div class="snap-top">
     <div>
-      <div class="snap-title">${monthName} ${y}</div>
+      <div class="snap-title"><span onclick="openMonthSnapshot('${shiftMonthKey(monthKey,-1)}')" title="Previous month" style="cursor:pointer;color:#B0AA98;padding:0 8px 0 0">‹</span>${monthName} ${y}<span onclick="openMonthSnapshot('${shiftMonthKey(monthKey,1)}')" title="Next month" style="cursor:pointer;color:#B0AA98;padding:0 0 0 8px">›</span></div>
       <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} · Turnover ${Rs(gInv)} (incl VAT) · ${monthName} profit <strong style="color:${gMargin!=null?col(gMargin>=NET_TARGET):'inherit'}">${Rs(gMonthNet)}</strong></div>
     </div>
     <div class="snap-grand-total">${Rs(gInv)}</div>
@@ -2937,6 +2950,7 @@ async function renderOverview(){
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Annual Performance</div>`;
 
   h += `<div class="headline-num">
+    <button onclick="openMonthSnapshot('${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}')" style="position:absolute;top:15px;right:15px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);color:#fff;border-radius:8px;padding:8px 13px;font-size:11px;font-weight:800;font-family:inherit;cursor:pointer;z-index:3;letter-spacing:.3px">📊 Cashflow Statement</button>
     <div class="headline-label">R${(target/1000000).toFixed(0)}M ANNUAL TARGET — ${now.getFullYear()} · JAN–MAY BACKFILLED, JUN+ LIVE</div>
     <div class="headline-figure">${R(ytd)}</div>
     <div class="headline-sub">${pct}% of annual target · ${monthsRemaining} month${monthsRemaining!==1?'s':''} remaining · ${R(ytdTurnoverInvoiced())} invoiced total</div>
@@ -2953,7 +2967,7 @@ async function renderOverview(){
         // Net profit only from July 2026 onward — the site data before then is
         // incomplete (app wasn't live), so Jan–Jun net is left blank for now.
         const showNet = net !== 0 && monthKey >= '2026-07';
-        return `<div class="month-cell ${val>0?'filled':''}" onclick="openMonthSnapshot('${monthKey}')" style="cursor:pointer">
+        return `<div class="month-cell ${val>0?'filled':''}">
           <div class="month-cell-lbl">${m}</div>
           <div class="month-cell-val">${val>0?R(val):'—'}</div>
           ${val>0?`<div style="font-size:8.5px;font-weight:700;letter-spacing:.6px;color:rgba(255,255,255,0.4)">TURNOVER</div>`:''}
