@@ -1433,20 +1433,52 @@ function teamLeaderSites(leaderKey){
 }
 // One leader's share of a given month's net profit — same day-apportioned rule as monthlyNetProfitMap.
 function leaderMonthNet(leaderKey, monthKey){
+  return leaderMonthSites(leaderKey, monthKey).reduce(function(a,r){ return a + r.monthNet; }, 0);
+}
+// Days elapsed in a month so far (current month → up to today; past month → whole month).
+function daysElapsedInMonth(monthKey){
+  const [y,m] = monthKey.split('-').map(Number);
+  const mStart = new Date(y, m-1, 1), mEnd = new Date(y, m, 0), now = new Date();
+  const to = now < mEnd ? now : mEnd;
+  return Math.max(1, Math.floor((to - mStart)/86400000)+1);
+}
+// Each of a leader's sites that ran any day in the month, with that month's profit share.
+function leaderMonthSites(leaderKey, monthKey){
   const [y,m] = monthKey.split('-').map(Number);
   const mStart = new Date(y, m-1, 1), mEnd = new Date(y, m, 0);
-  let total = 0;
-  teamLeaderSites(leaderKey).forEach(function(s){
-    if(!s.started) return;
+  return teamLeaderSites(leaderKey).map(function(s){
+    if(!s.started) return null;
     const start = new Date(s.started);
     const end = (s.status==='done' && s.end_date) ? new Date(s.end_date) : new Date();
-    if(isNaN(start.getTime()) || end < start) return;
-    const fin = ownerFin(s); const dailyNet = fin.net / fin.days;
-    const from = start > mStart ? start : mStart;
-    const to   = end   < mEnd   ? end   : mEnd;
-    if(to >= from){ const days = Math.floor((to - from)/86400000)+1; if(days>0) total += dailyNet*days; }
+    if(isNaN(start.getTime()) || end < mStart || start > mEnd) return null;
+    const from = start > mStart ? start : mStart, to = end < mEnd ? end : mEnd;
+    const dim = Math.floor((to - from)/86400000)+1; if(dim <= 0) return null;
+    const fin = ownerFin(s); const dpd = fin.net / fin.days;
+    return { site:s, name:s.name, dpd:dpd, monthNet:dpd*dim, totalNet:fin.net, quote:fin.quote,
+             marginPct: fin.quote>0 ? fin.net/fin.quote : null };
+  }).filter(Boolean).sort(function(a,b){ return b.monthNet - a.monthNet; });
+}
+// One leader's turnover (progress invoices, incl VAT) dated inside the month.
+function leaderMonthTurnover(leaderKey, monthKey){
+  const [y,m] = monthKey.split('-').map(Number);
+  let t = 0;
+  teamLeaderSites(leaderKey).forEach(function(s){
+    ((s.details && Array.isArray(s.details.progress_invoices)) ? s.details.progress_invoices : []).forEach(function(pi){
+      const d = new Date(pi.date); if(d.getFullYear()===y && d.getMonth()===m-1) t += (parseFloat(pi.amount)||0);
+    });
   });
-  return total;
+  return t;
+}
+// Whole-company turnover (all sites' progress invoices, incl VAT) dated inside the month.
+function monthTurnover(monthKey){
+  const [y,m] = monthKey.split('-').map(Number);
+  let t = 0;
+  (OWNER.sites||[]).forEach(function(s){
+    ((s.details && Array.isArray(s.details.progress_invoices)) ? s.details.progress_invoices : []).forEach(function(pi){
+      const d = new Date(pi.date); if(d.getFullYear()===y && d.getMonth()===m-1) t += (parseFloat(pi.amount)||0);
+    });
+  });
+  return t;
 }
 
 // ───────────────────────────────────────────
@@ -2809,39 +2841,71 @@ async function viewUpdate(id){
 // ───────────────────────────────────────────
 // OVERVIEW
 // ───────────────────────────────────────────
-// Drill-down for one team leader — profit/day, % net, this-month net, and each current project.
-async function openLeaderProfit(leaderKey){
+// Team breakdown for a month — every leader with turnover (incl VAT), net profit, avg profit/day.
+async function openTeamBreakdown(monthKey){
+  if(!OWNER.loaded) await loadOwnerFin();
+  const [y,m] = monthKey.split('-').map(Number);
+  const mn = MONTH_NAMES_FULL[m-1];
+  const days = daysElapsedInMonth(monthKey);
+  let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
+    <div class="snap-title">Teams — ${mn} ${y}</div>
+    <div class="snap-meta">Turnover (incl VAT) · net profit (ex VAT) · average profit per day (day ${days}). Greenhill excluded.</div>`;
+  LEADER_META.slice().map(function(lm){
+    return { lm:lm, net:leaderMonthNet(lm.key, monthKey), turn:leaderMonthTurnover(lm.key, monthKey) };
+  }).sort(function(a,b){ return b.net - a.net; }).forEach(function(row){
+    const lm=row.lm, net=row.net, turn=row.turn, avg=net/days;
+    h += `<div class="ledger-card" style="padding:13px 15px;margin:10px 0;cursor:pointer" onclick="openLeaderProfit('${lm.key}','${monthKey}')">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px">
+        <span style="width:12px;height:12px;border-radius:3px;background:${lm.colour}"></span>
+        <span style="font-weight:800;font-size:14px;color:#1A1A1A">${lm.name}</span><span style="color:#B0AA98;font-size:13px">›</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div><div style="font-size:9px;color:#8A8470;font-weight:700">TURNOVER · VAT</div><div class="disp" style="font-size:14px;font-weight:800;color:#1A1A1A">${R(turn)}</div></div>
+        <div><div style="font-size:9px;color:#8A8470;font-weight:700">NET PROFIT</div><div class="disp" style="font-size:14px;font-weight:800;color:${net>=0?'#3F7A54':'#B2342A'}">${R(net)}</div></div>
+        <div><div style="font-size:9px;color:#8A8470;font-weight:700">AVG / DAY</div><div class="disp" style="font-size:14px;font-weight:800;color:${avg>=0?'#3F7A54':'#B2342A'}">${R(avg)}</div></div>
+      </div>
+    </div>`;
+  });
+  h += `<button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalMonthSnapshot')">Close</button>`;
+  $('monthSnapshotContent').innerHTML = h;
+  openModal('modalMonthSnapshot');
+}
+
+// Drill-down for one leader in a month — 3 headline numbers + every site worked that month.
+async function openLeaderProfit(leaderKey, monthKey){
   if(!OWNER.loaded) await loadOwnerFin();
   const lm = (typeof LEADER_META!=='undefined' && LEADER_META.find(function(l){return l.key===leaderKey;})) || {name:leaderKey, colour:'#5C5748'};
   const now = new Date();
-  const curMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const active = teamLeaderSites(leaderKey).filter(function(s){ return s.status!=='done'; })
-    .sort(function(a,b){ return (ownerFin(b).net/ownerFin(b).days) - (ownerFin(a).net/ownerFin(a).days); });
-  let sumNet=0, sumQuote=0, sumPpd=0;
-  active.forEach(function(s){ const f=ownerFin(s); sumNet+=f.net; sumQuote+=f.quote; sumPpd += f.net/f.days; });
-  const pctNet = sumQuote>0 ? (sumNet/sumQuote*100) : 0;
-  const monthNet = leaderMonthNet(leaderKey, curMonthKey);
+  monthKey = monthKey || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const [y,m] = monthKey.split('-').map(Number);
+  const mn = MONTH_NAMES_FULL[m-1];
+  const rows = leaderMonthSites(leaderKey, monthKey);
+  const days = daysElapsedInMonth(monthKey);
+  const turn = leaderMonthTurnover(leaderKey, monthKey);
+  const net = rows.reduce(function(a,r){ return a + r.monthNet; }, 0);
+  const avg = net/days;
 
   let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
-    <div class="snap-title">${lm.name} — team profit</div>
-    <div class="snap-meta">${MONTH_NAMES_FULL[now.getMonth()]} ${now.getFullYear()} · ${active.length} active project${active.length!==1?'s':''}</div>
+    <div class="snap-title">${lm.name} — ${mn} ${y}</div>
+    <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} worked this month · day ${days}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:14px 0">
-      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">PROFIT / DAY</div><div class="disp" style="font-size:16px;font-weight:800;color:${sumPpd>=0?'#3F7A54':'#B2342A'};margin-top:3px">${R(sumPpd)}</div></div>
-      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">% NET PROFIT</div><div class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A;margin-top:3px">${pctNet.toFixed(0)}%</div></div>
-      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">THIS MONTH NET</div><div class="disp" style="font-size:16px;font-weight:800;color:${monthNet>=0?'#3F7A54':'#B2342A'};margin-top:3px">${R(monthNet)}</div></div>
+      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">TURNOVER · VAT</div><div class="disp" style="font-size:15px;font-weight:800;color:#1A1A1A;margin-top:3px">${R(turn)}</div></div>
+      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">NET PROFIT</div><div class="disp" style="font-size:15px;font-weight:800;color:${net>=0?'#3F7A54':'#B2342A'};margin-top:3px">${R(net)}</div></div>
+      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">AVG / DAY</div><div class="disp" style="font-size:15px;font-weight:800;color:${avg>=0?'#3F7A54':'#B2342A'};margin-top:3px">${R(avg)}</div></div>
     </div>
-    <div class="section-lbl" style="margin-top:4px">Current projects</div>`;
-  if(!active.length){
-    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">No active projects right now.</div>`;
+    <div class="section-lbl" style="margin-top:4px">Sites worked this month</div>`;
+  if(!rows.length){
+    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">No sites this month.</div>`;
   } else {
-    active.forEach(function(s){
-      const f=ownerFin(s); const ppd=f.net/f.days; const pct=f.quote>0?(f.net/f.quote*100):0;
+    rows.forEach(function(r){
+      const pct = r.marginPct!=null ? Math.round(r.marginPct*100) : null;
       h += `<div class="ledger-card" style="padding:12px 14px;margin-bottom:8px">
-        <div style="font-weight:800;font-size:13.5px;margin-bottom:9px;color:#1A1A1A">${s.name}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <div><div style="font-size:9.5px;color:#8A8470;font-weight:700">PROFIT/DAY</div><div class="disp" style="font-size:13.5px;font-weight:800;color:${ppd>=0?'#3F7A54':'#B2342A'}">${R(ppd)}</div></div>
-          <div><div style="font-size:9.5px;color:#8A8470;font-weight:700">TOTAL PROFIT</div><div class="disp" style="font-size:13.5px;font-weight:800;color:${f.net>=0?'#3F7A54':'#B2342A'}">${R(f.net)}</div></div>
-          <div><div style="font-size:9.5px;color:#8A8470;font-weight:700">% PROFIT</div><div class="disp" style="font-size:13.5px;font-weight:800;color:#1A1A1A">${pct.toFixed(0)}%</div></div>
+        <div style="font-weight:800;font-size:13.5px;margin-bottom:9px;color:#1A1A1A">${r.name}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px">
+          <div><div style="font-size:9px;color:#8A8470;font-weight:700">PROFIT/DAY</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${r.dpd>=0?'#3F7A54':'#B2342A'}">${R(r.dpd)}</div></div>
+          <div><div style="font-size:9px;color:#8A8470;font-weight:700">THIS MONTH</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${r.monthNet>=0?'#3F7A54':'#B2342A'}">${R(r.monthNet)}</div></div>
+          <div><div style="font-size:9px;color:#8A8470;font-weight:700">TOTAL</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${r.totalNet>=0?'#3F7A54':'#B2342A'}">${R(r.totalNet)}</div></div>
+          <div><div style="font-size:9px;color:#8A8470;font-weight:700">% PROFIT</div><div class="disp" style="font-size:12.5px;font-weight:800;color:#1A1A1A">${pct!=null?pct+'%':'—'}</div></div>
         </div>
       </div>`;
     });
@@ -2900,28 +2964,22 @@ async function renderOverview(){
     <div style="font-size:10.5px;color:rgba(255,255,255,0.45);margin-top:10px;line-height:1.6">Top figure = turnover for the month (all sites). Green = combined net profit, split day-by-day for jobs that run across months.</div>
   </div>`;
 
-  // ── Team net profit — this month (tap a name to drill in) ──
+  // ── This month: two big blocks (turnover + net profit) → tap for the per-team breakdown ──
   const curMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const curTurnover = monthMap[curMonthKey] || 0;
-  h += `<div class="section-lbl">Team net profit — ${MONTH_NAMES_FULL[now.getMonth()]} ${now.getFullYear()}</div>`;
-  h += `<div class="ledger-card" style="padding:15px 16px;margin-bottom:14px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding-bottom:11px;border-bottom:1px solid #EFECE3">
-      <span style="font-size:12px;color:#8A8470;font-weight:600">Invoiced so far this month<br/><span style="font-size:10.5px;color:#B0AA98">turnover · incl VAT</span></span>
-      <span class="disp" style="font-weight:800;font-size:17px;color:#1A1A1A;white-space:nowrap">${R(curTurnover)}</span>
-    </div>`;
-  let teamTotal = 0;
-  LEADER_META.forEach(function(lm){
-    const net = leaderMonthNet(lm.key, curMonthKey); teamTotal += net;
-    h += `<div onclick="openLeaderProfit('${lm.key}')" style="display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid #EFECE3;cursor:pointer">
-      <span style="display:flex;align-items:center;gap:9px;font-weight:700;font-size:13.5px;color:#1A1A1A"><span style="width:11px;height:11px;border-radius:3px;background:${lm.colour}"></span>${lm.name}<span style="color:#B0AA98;font-size:13px">›</span></span>
-      <span class="disp" style="font-weight:800;font-size:15px;color:${net>=0?'#3F7A54':'#B2342A'};white-space:nowrap">${R(net)}</span>
-    </div>`;
-  });
-  h += `<div style="display:flex;justify-content:space-between;align-items:center;padding:13px 0 2px">
-      <span style="font-weight:800;font-size:14px;color:#1A1A1A">Total team net profit</span>
-      <span class="disp" style="font-weight:800;font-size:17px;color:${teamTotal>=0?'#3F7A54':'#B2342A'};white-space:nowrap">${R(teamTotal)}</span>
+  const topTurnover = monthTurnover(curMonthKey);
+  const topNet = netMap[curMonthKey] || 0;
+  h += `<div class="section-lbl">This month — ${MONTH_NAMES_FULL[now.getMonth()]} ${now.getFullYear()}</div>`;
+  h += `<div onclick="openTeamBreakdown('${curMonthKey}')" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;cursor:pointer">
+    <div class="ledger-card" style="padding:17px 16px">
+      <div style="font-size:10.5px;color:#8A8470;font-weight:800;letter-spacing:.5px;margin-bottom:6px">TURNOVER · INCL VAT</div>
+      <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A">${R(topTurnover)}</div>
+      <div style="font-size:10.5px;color:#B0AA98;margin-top:4px">invoiced so far</div>
     </div>
-    <div style="font-size:10.5px;color:#A39E8C;margin-top:9px;line-height:1.5">Tap a name for that team's projects and daily profit. Greenhill is left out — its figures aren't final yet.</div>
+    <div class="ledger-card" style="padding:17px 16px">
+      <div style="font-size:10.5px;color:#8A8470;font-weight:800;letter-spacing:.5px;margin-bottom:6px">NET PROFIT · THIS MONTH</div>
+      <div class="disp" style="font-size:21px;font-weight:800;color:${topNet>=0?'#3F7A54':'#B2342A'}">${R(topNet)}</div>
+      <div style="font-size:10.5px;color:#3F7A54;font-weight:700;margin-top:4px">tap to see each team →</div>
+    </div>
   </div>`;
 
   h += `<div class="section-lbl">Quick access</div>`;
