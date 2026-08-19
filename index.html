@@ -2895,35 +2895,54 @@ async function openLeaderProfit(leaderKey, monthKey){
   const rows = leaderMonthSites(leaderKey, monthKey);
   const days = daysElapsedInMonth(monthKey);
   const turn = leaderMonthTurnover(leaderKey, monthKey);
-  const net = rows.reduce(function(a,r){ return a + r.monthNet; }, 0);
-  const avg = net/days;
+  const totProfit  = rows.reduce(function(a,r){ return a + r.totalNet; }, 0);
+  const totMonthNet= rows.reduce(function(a,r){ return a + r.monthNet; }, 0);
+  const totDpd     = rows.reduce(function(a,r){ return a + r.dpd; }, 0);
+  const totQuote   = rows.reduce(function(a,r){ return a + r.quote; }, 0);
+  const avg = days>0 ? totMonthNet/days : 0;
+  const totMarginPct = totQuote>0 ? Math.round(totProfit/totQuote*100) : null;
+  const gc = function(v){ return v>=0 ? '#3F7A54' : '#B2342A'; };
+  const tile = function(lbl,val,color){ return `<div class="ledger-card" style="padding:13px 12px;border:2.5px solid #C7C0AE"><div style="font-size:9.5px;font-weight:800;color:#8A8470;letter-spacing:.4px">${lbl}</div><div class="disp" style="font-size:15px;font-weight:800;color:${color};margin-top:4px">${val}</div></div>`; };
+  const COLS = '1.5fr 1fr 1fr 0.8fr';
+  const cell = function(txt,color){ return `<div class="disp" style="text-align:right;font-weight:800;font-size:12.5px;color:${color}">${txt}</div>`; };
 
   let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>
     <div class="snap-title">${lm.name} — ${mn} ${y}</div>
     <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} worked this month · day ${days}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:14px 0">
-      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">TURNOVER · VAT</div><div class="disp" style="font-size:15px;font-weight:800;color:#1A1A1A;margin-top:3px">${R(turn)}</div></div>
-      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">NET PROFIT</div><div class="disp" style="font-size:15px;font-weight:800;color:${net>=0?'#3F7A54':'#B2342A'};margin-top:3px">${R(net)}</div></div>
-      <div class="ledger-card" style="padding:12px"><div style="font-size:9px;font-weight:800;color:#8A8470;letter-spacing:.4px">AVG / DAY</div><div class="disp" style="font-size:15px;font-weight:800;color:${avg>=0?'#3F7A54':'#B2342A'};margin-top:3px">${R(avg)}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:9px;margin:14px 0">
+      ${tile('TOTAL TURNOVER', R(turn), '#1A1A1A')}
+      ${tile('TOTAL PROFIT', R(totProfit), gc(totProfit))}
+      ${tile('AVG DAILY PROFIT', R(avg), gc(avg))}
+      ${tile('TOTAL NET PROFIT %', (totMarginPct!=null?totMarginPct+'%':'—'), '#1A1A1A')}
     </div>
     <div class="section-lbl" style="margin-top:4px">Sites worked this month</div>`;
   if(!rows.length){
     h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">No sites this month.</div>`;
   } else {
+    h += `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div class="ledger-card" style="padding:0;min-width:520px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:${COLS};gap:8px;padding:11px 13px;border-bottom:2px solid #1A1A1A">
+        <div style="font-size:12.5px;font-weight:800;color:#1A1A1A">Site</div>
+        <div style="text-align:right;font-size:12.5px;font-weight:800;color:#1A1A1A">Daily Profit</div>
+        <div style="text-align:right;font-size:12.5px;font-weight:800;color:#1A1A1A">Total Profit</div>
+        <div style="text-align:right;font-size:12.5px;font-weight:800;color:#1A1A1A">Net Profit %</div>
+      </div>`;
     rows.forEach(function(r){
-      const pct = r.marginPct!=null ? Math.round(r.marginPct*100) : null;
-      h += `<div class="ledger-card" style="padding:12px 14px;margin-bottom:8px">
-        <div style="font-weight:800;font-size:13.5px;margin-bottom:9px;color:#1A1A1A">${r.name}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px">
-          <div><div style="font-size:9px;color:#8A8470;font-weight:700">PROFIT/DAY</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${r.dpd>=0?'#3F7A54':'#B2342A'}">${R(r.dpd)}</div></div>
-          <div><div style="font-size:9px;color:#8A8470;font-weight:700">THIS MONTH</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${r.monthNet>=0?'#3F7A54':'#B2342A'}">${R(r.monthNet)}</div></div>
-          <div><div style="font-size:9px;color:#8A8470;font-weight:700">TOTAL</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${r.totalNet>=0?'#3F7A54':'#B2342A'}">${R(r.totalNet)}</div></div>
-          <div><div style="font-size:9px;color:#8A8470;font-weight:700">% PROFIT</div><div class="disp" style="font-size:12.5px;font-weight:800;color:#1A1A1A">${pct!=null?pct+'%':'—'}</div></div>
-        </div>
+      const pct = r.marginPct!=null ? Math.round(r.marginPct*100)+'%' : '—';
+      h += `<div style="display:grid;grid-template-columns:${COLS};gap:8px;padding:11px 13px;border-bottom:1px solid #EFECE3;align-items:center">
+        <div style="font-weight:800;font-size:12.5px;color:#1A1A1A">${r.name}</div>
+        ${cell(R(r.dpd), gc(r.dpd))}
+        ${cell(R(r.totalNet), gc(r.totalNet))}
+        ${cell(pct, '#1A1A1A')}
       </div>`;
     });
+    h += `<div style="display:grid;grid-template-columns:${COLS};gap:8px;padding:12px 13px;border-top:2px solid #1A1A1A;background:#F7F6F3">
+        <div style="font-size:12.5px;font-weight:800;color:#1A1A1A">Total</div>
+        ${cell(R(totDpd), gc(totDpd))}
+        ${cell(R(totProfit), gc(totProfit))}
+        ${cell(totMarginPct!=null?totMarginPct+'%':'—', '#1A1A1A')}
+      </div></div></div>`;
   }
-  h += `<button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalMonthSnapshot')">Close</button>`;
+  h += `<button class="cta-btn ghost" style="margin-top:12px" onclick="closeModal('modalMonthSnapshot')">Close</button>`;
   $('monthSnapshotContent').innerHTML = h;
   openModal('modalMonthSnapshot');
 }
