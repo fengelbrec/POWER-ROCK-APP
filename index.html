@@ -5535,10 +5535,13 @@ function paintSiteSummaryBody(){
     </div>
     ${s.status === 'done'
       ? `<div style="background:rgba(95,122,107,0.25);border:1px solid #5C7A6B;border-radius:10px;padding:11px 14px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px">
-          <span style="font-size:12px;font-weight:800;color:#8FBF9F">✓ PROJECT COMPLETED${s.end_date?' · '+fd(s.end_date):''}</span>
+          <span style="font-size:12px;font-weight:800;color:#8FBF9F">✓ Started ${s.started?fd(s.started):'—'} → Completed ${s.end_date?fd(s.end_date):'—'}</span>
           <button onclick="reopenProject('${s.id}')" style="background:none;border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:7px;padding:5px 11px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">Reopen</button>
         </div>`
-      : `<button onclick="openCompleteProject('${s.id}')" style="width:100%;background:#B2342A;color:#fff;border:none;border-radius:10px;padding:13px;font-size:13.5px;font-weight:800;letter-spacing:0.4px;cursor:pointer;font-family:inherit;margin-top:14px">✓ PROJECT COMPLETE</button>`}
+      : `<div style="margin-top:14px">
+          <div style="font-size:11.5px;font-weight:700;color:rgba(255,255,255,0.65);margin-bottom:9px">Started ${s.started?fd(s.started):'—'} → still running</div>
+          <button onclick="openCompleteProject('${s.id}')" style="width:100%;background:#B2342A;color:#fff;border:none;border-radius:10px;padding:13px;font-size:13.5px;font-weight:800;letter-spacing:0.4px;cursor:pointer;font-family:inherit">✓ PROJECT COMPLETE</button>
+        </div>`}
   </div>`;
 
   // ── SITE PROFIT SHEET — one clickable list, no repeated blocks ──
