@@ -153,6 +153,25 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
   .prod, .bk, table, .scopeblk, .stores { break-inside:avoid; }
   a { text-decoration:none; color:#2c5f8a; }
 }
+/* Measure my house */
+.cta2{background:#37c07a;color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:800;font-family:inherit;width:100%;cursor:pointer}
+.acbox{width:100%}
+gmp-place-autocomplete{width:100%}
+.locbtn2{width:100%;margin:8px 0 0;background:#12324e;color:#fff;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}
+#pcMap{height:46vh;width:100%;margin-top:8px;border-radius:12px;background:#dde3ea}
+.mrow{display:flex;gap:8px;margin:12px 0 4px}
+.mseg{flex:1}
+.mlbl{font-size:11px;font-weight:800;letter-spacing:.4px;color:#5a6b7b;text-transform:uppercase;margin-bottom:5px}
+.mopts{display:flex;gap:6px}
+.mopt{flex:1;border:1.5px solid #d7dee6;border-radius:9px;padding:9px 6px;font-size:13px;font-weight:700;text-align:center;cursor:pointer;background:#fff}
+.mopt.sel{border-color:#12324e;background:#12324e;color:#fff}
+.mres{display:flex;gap:10px;margin-top:8px}
+.mbox{flex:1;background:#12324e;color:#fff;border-radius:12px;padding:12px;text-align:center}
+.mbox.g{background:#1e7d4f}
+.mbox .mk{font-size:10.5px;font-weight:800;letter-spacing:.4px;color:#9fc3e0;text-transform:uppercase}
+.mbox.g .mk{color:#bfe6cf}
+.mbox .mv{font-size:20px;font-weight:800;margin-top:3px}
+.mdone{background:#eaf7f0;border:1px solid #b7e0c9;color:#1e7d4f;font-weight:700;font-size:12.5px;padding:10px;border-radius:10px;margin-top:10px;text-align:center}
 </style>
 </head>
 <body>
@@ -170,6 +189,33 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
       <div class="chk" data-surf="interior" onclick="tSurf(this)"><span class="box">✓</span> Inside walls (Sheen / Low-Sheen washable finish)</div>
       <div class="chk" data-surf="ceiling" onclick="tSurf(this)"><span class="box">✓</span> Interior ceilings (White Matt finish)</div>
       <div class="chk" data-surf="roof" onclick="tSurf(this)"><span class="box">✓</span> Roof</div>
+    </div>
+
+    <div class="card" id="measureCard" style="display:none">
+      <div class="step">📍 Measure your house — for an exact price (optional)</div>
+      <div class="q" style="font-weight:600;color:#41505f;font-size:13px;line-height:1.5">Type your address and shape the outline over your roof. We'll use your <b>exact</b> roof, ceiling &amp; outside-wall size. Inside walls still use the quick estimate below.</div>
+      <button class="cta2" id="measureBtn" onclick="openMeasure()" style="margin-top:10px">📍 Measure my house</button>
+      <div id="measureWrap" style="display:none;margin-top:12px">
+        <div id="pcAcbox" class="acbox"></div>
+        <button class="locbtn2" onclick="pcUseLocation()">📍 Or use my current location (stand at your house)</button>
+        <div id="pcMap"></div>
+        <div class="hint">Drag the <b>white dots</b> to your roof corners. Tap a dot on an edge to add a corner (L-shapes). Right-click / long-press a dot to remove it.</div>
+        <div class="mrow">
+          <div class="mseg"><div class="mlbl">Roof type</div><div class="mopts">
+            <div class="mopt sel" id="pcRoofTiled" onclick="pcSetRoof('tiled')">Tiled</div>
+            <div class="mopt" id="pcRoofCorr" onclick="pcSetRoof('corrugated')">Corrugated</div>
+          </div></div>
+          <div class="mseg"><div class="mlbl">Storeys</div><div class="mopts">
+            <div class="mopt sel" id="pcStoreySingle" onclick="pcSetStorey(false)">Single</div>
+            <div class="mopt" id="pcStoreyDouble" onclick="pcSetStorey(true)">Double</div>
+          </div></div>
+        </div>
+        <div class="mres">
+          <div class="mbox g"><div class="mk">Roof to paint</div><div class="mv" id="pcRoofA">—</div></div>
+          <div class="mbox"><div class="mk">Outside walls</div><div class="mv" id="pcWallA">—</div></div>
+        </div>
+        <div class="mdone" id="pcNote">✓ Measured. <b>Outside walls</b> = perimeter × wall height, <b>less 15% for windows</b> — no paint is allowed or included for painting the windows themselves. <b>Ceilings</b> ≈ <span id="pcCeilA">—</span>. Inside walls still use your home-size estimate below.</div>
+      </div>
     </div>
 
     <div class="card">
@@ -429,7 +475,7 @@ const BATH_EXTRA_INTERIOR = 25;   // extra interior wall area for a 2nd+ bathroo
 const INTERIOR_WALL_FACTOR = 0.85;  // deduct ~15% for window frames & cupboards (no wall paint)
 // ──────────────────────────────────────────────────────────────
 
-const state = { surf:{interior:false,exterior:false,ceiling:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, cond:'good', damp:false, roof:'tiled', rust:false };
+const state = { surf:{interior:false,exterior:false,ceiling:false,roof:false}, home:null, garage:'none', bath:'1', storey:false, cond:'good', damp:false, roof:'tiled', rust:false, measuredFootprint:null, measuredRoof:null, measuredWall:null, measuredCeiling:null };
 
 let unlocked = false;
 const SCOPE_PDF = 'PaintCheck-Scope-of-Works-Exterior-Walls.pdf';
@@ -449,10 +495,96 @@ function tExtra(el){ const k=el.dataset.extra; state[k]=!state[k]; el.classList.
 function syncCards(){
   document.getElementById('wallCard').classList.toggle('show', state.surf.interior||state.surf.exterior);
   document.getElementById('roofCard').classList.toggle('show', state.surf.roof);
+  document.getElementById('measureCard').style.display = (state.surf.roof||state.surf.exterior||state.surf.ceiling) ? 'block' : 'none';
   // double storey only affects outside walls
   const sc=document.getElementById('storeyChk');
-  if(state.surf.exterior){ sc.style.display='flex'; }
-  else { sc.style.display='none'; state.storey=false; sc.classList.remove('sel'); }
+  sc.style.display = state.surf.exterior ? 'flex' : 'none';
+}
+
+// ── Measure my house (Google Maps) ─────────────────────────────
+const PC_GOOGLE_KEY = 'AIzaSyDtTS0nnGQEYf0_Kmr2Sqop3Iaoa6E3wTc';
+let pcMap=null, pcPoly=null, pcGoogleLoading=false, pcGoogleReady=false;
+const PC_DEFAULT = {lat:-25.8730, lng:28.2870};
+function openMeasure(){
+  document.getElementById('measureWrap').style.display='block';
+  document.getElementById('measureBtn').style.display='none';
+  loadPcGoogle();
+}
+function loadPcGoogle(){
+  if(pcGoogleReady){ pcInitMap(); return; }
+  if(pcGoogleLoading) return; pcGoogleLoading=true;
+  window.pcInitMap = pcInitMap;
+  const s=document.createElement('script');
+  s.src='https://maps.googleapis.com/maps/api/js?key='+PC_GOOGLE_KEY+'&libraries=places,geometry&callback=pcInitMap&v=weekly&loading=async';
+  s.async=true; document.head.appendChild(s);
+}
+async function pcInitMap(){
+  pcGoogleReady=true;
+  pcMap = new google.maps.Map(document.getElementById('pcMap'), {
+    center:PC_DEFAULT, zoom:19, mapTypeId:'satellite', tilt:0,
+    gestureHandling:'greedy', disableDefaultUI:true, zoomControl:true
+  });
+  try {
+    const ac = new google.maps.places.PlaceAutocompleteElement({ includedRegionCodes:['za'] });
+    ac.style.width='100%';
+    document.getElementById('pcAcbox').appendChild(ac);
+    ac.addEventListener('gmp-select', async (e)=>{
+      try { const p=e.placePrediction.toPlace(); await p.fetchFields({fields:['location']});
+        const loc=p.location; if(!loc) return; pcMap.setCenter(loc); pcMap.setZoom(20); pcPlaceRoof(loc);
+      } catch(err){}
+    });
+  } catch(err){}
+  pcPlaceRoof(new google.maps.LatLng(PC_DEFAULT.lat, PC_DEFAULT.lng));
+}
+function pcSquare(c,half){ const s=google.maps.geometry.spherical, n=s.computeOffset(c,half,0), so=s.computeOffset(c,half,180);
+  return [s.computeOffset(n,half,270), s.computeOffset(n,half,90), s.computeOffset(so,half,90), s.computeOffset(so,half,270)]; }
+function pcPlaceRoof(center){
+  if(pcPoly) pcPoly.setMap(null);
+  pcPoly = new google.maps.Polygon({ paths:pcSquare(center,8), editable:true, draggable:true,
+    strokeColor:'#37c07a', strokeWeight:3, fillColor:'#37c07a', fillOpacity:0.12, map:pcMap });
+  const path=pcPoly.getPath();
+  ['set_at','insert_at','remove_at'].forEach(ev=> path.addListener(ev, pcRecompute));
+  pcPoly.addListener('rightclick', e=>{ if(e.vertex!=null && path.getLength()>3) path.removeAt(e.vertex); });
+  pcRecompute();
+}
+function pcRecompute(){
+  if(!pcPoly) return;
+  const s=google.maps.geometry.spherical, path=pcPoly.getPath(), pts=path.getArray();
+  if(pts.length<3) return;
+  const footprint = s.computeArea(path);
+  let perim=0; for(let i=0;i<pts.length;i++) perim += s.computeDistanceBetween(pts[i], pts[(i+1)%pts.length]);
+  const height = state.storey ? 6.5 : 3.5;
+  const roofA = Math.round(footprint*1.56);            // footprint +21% profile +35% slope
+  const wallA = Math.round(perim*height*0.85);         // perimeter × height, less 15% windows
+  const ceilA = Math.round(footprint*(state.storey?1.75:1.0));
+  state.measuredFootprint = Math.round(footprint);
+  state.measuredRoof = roofA;
+  state.measuredWall = wallA;
+  state.measuredCeiling = ceilA;
+  document.getElementById('pcRoofA').textContent = roofA+' m²';
+  document.getElementById('pcWallA').textContent = wallA+' m²';
+  const ce=document.getElementById('pcCeilA'); if(ce) ce.textContent = ceilA+' m²';
+}
+function pcSetRoof(t){
+  state.roof = t;
+  document.getElementById('pcRoofTiled').classList.toggle('sel', t==='tiled');
+  document.getElementById('pcRoofCorr').classList.toggle('sel', t==='corrugated');
+  document.querySelectorAll('#roofOpts .opt').forEach(o=>o.classList.toggle('sel', o.dataset.roof===t));
+  const rc=document.getElementById('rustChk'); if(rc) rc.style.display = t==='corrugated' ? 'flex' : 'none';
+  pcRecompute();
+}
+function pcSetStorey(v){
+  state.storey = v;
+  document.getElementById('pcStoreySingle').classList.toggle('sel', !v);
+  document.getElementById('pcStoreyDouble').classList.toggle('sel', v);
+  const sc=document.getElementById('storeyChk'); if(sc) sc.classList.toggle('sel', v);
+  pcRecompute();
+}
+function pcUseLocation(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ if(!pcMap) return; const c=new google.maps.LatLng(pos.coords.latitude,pos.coords.longitude); pcMap.setCenter(c); pcMap.setZoom(20); pcPlaceRoof(c); },
+    ()=>{}, {enableHighAccuracy:true, timeout:10000});
 }
 
 const R = n => 'R ' + Math.round(n).toLocaleString('en-ZA');
@@ -465,27 +597,29 @@ const Rr = (a,b) => R(a) + ' – ' + R(b);
 function buildJobs(){
   const jobs=[];
   const g = state.garage!=='none' ? GARAGE[state.garage] : null;
-  let base = AREA[state.home].interior;
-  if(g) base += g.interior;
-  if(state.bath==='2plus') base += BATH_EXTRA_INTERIOR;
+  let base = 0;
+  if(state.home){ base = AREA[state.home].interior; if(g) base += g.interior; if(state.bath==='2plus') base += BATH_EXTRA_INTERIOR; }
   if(state.surf.interior){
     const wallArea = Math.round(base * INTERIOR_WALL_FACTOR); // less windows & cupboards
     const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
     jobs.push({cat:'interior', name:'Inside walls', area:wallArea, primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
   }
   if(state.surf.ceiling){
-    jobs.push({cat:'ceiling', name:'Ceilings', area:Math.round(base*CEIL_OF_INTERIOR), primer:false, damp:false, condMult:1});
+    const a = state.measuredCeiling!=null ? Math.round(state.measuredCeiling) : Math.round(base*CEIL_OF_INTERIOR);
+    jobs.push({cat:'ceiling', name:'Ceilings', area:a, primer:false, damp:false, condMult:1});
   }
   if(state.surf.exterior){
-    let a = AREA[state.home].exterior;
-    if(state.storey) a *= 2;
-    if(g) a += g.exterior;
+    let a;
+    if(state.measuredWall!=null){ a = state.measuredWall; }              // measured: perimeter × height, less 15% windows
+    else { a = AREA[state.home].exterior; if(state.storey) a *= 2; if(g) a += g.exterior; }
     const cm = 1 + (COND_LABOUR[state.cond]||0) + (state.damp?DAMP_LABOUR:0);
-    jobs.push({cat:'exterior', name:'Outside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm});
+    jobs.push({cat:'exterior', name:'Outside walls', area:Math.round(a), primer:COND_PRIMER[state.cond], damp:state.damp, condMult:cm, measured:state.measuredWall!=null});
   }
   if(state.surf.roof){
-    let f = FLOOR[state.home]||0; if(g) f += g.floor;
-    jobs.push({cat:'roof', name:'Roof', area:Math.round(f*ROOF_PITCH), roof:true, condMult:1});
+    let a;
+    if(state.measuredRoof!=null){ a = state.measuredRoof; }              // measured: footprint × 1.56
+    else { let f = FLOOR[state.home]||0; if(g) f += g.floor; a = f*ROOF_PITCH; }
+    jobs.push({cat:'roof', name:'Roof', area:Math.round(a), roof:true, condMult:1});
   }
   return jobs;
 }
@@ -505,7 +639,11 @@ function repPrice(cat){
 function calc(){
   const chosen = Object.keys(state.surf).filter(s=>state.surf[s]);
   if(!chosen.length){ alert('Tick at least one thing to paint (Step 1).'); return; }
-  if(!state.home){ alert('Choose your home size (Step 2).'); return; }
+  const needsHome = state.surf.interior
+    || (state.surf.ceiling && state.measuredCeiling==null)
+    || (state.surf.exterior && state.measuredWall==null)
+    || (state.surf.roof && state.measuredRoof==null);
+  if(needsHome && !state.home){ alert('Choose your home size (Step 2) — or measure your house above.'); return; }
 
   const jobs = buildJobs();
   const primerRep = repPrice('primer');
