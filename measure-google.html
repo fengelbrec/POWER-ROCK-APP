@@ -14,6 +14,8 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#ee
 .top .s{font-size:12px;color:#a9c4db;margin-top:2px}
 .search{display:flex;gap:8px;padding:12px 14px 4px}
 .search input{flex:1;border:1.5px solid #d7dee6;border-radius:10px;padding:12px;font-size:16px;font-family:inherit}
+.acbox{flex:1}
+gmp-place-autocomplete{width:100%}
 .locbtn{width:calc(100% - 28px);margin:6px 14px 4px;background:#12324e;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer}
 #map{height:54vh;width:100%;margin-top:6px;background:#dde3ea}
 .tip{font-size:12.5px;color:#41505f;padding:9px 14px 4px;font-weight:600;line-height:1.5}
@@ -43,7 +45,7 @@ body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#ee
 <body>
 <div class="wrap">
   <div class="top"><div class="t">📍 Measure my house</div><div class="s">Type your address, then shape the outline over your roof</div></div>
-  <div class="search"><input id="addr" placeholder="Start typing your address…" enterkeyhint="search" autocomplete="off"/></div>
+  <div class="search"><div id="acbox" class="acbox"></div></div>
   <button class="locbtn" onclick="useLocation()">📍 Or use my current location (stand at your house)</button>
   <div class="err" id="err"></div>
   <div id="map"></div>
@@ -98,22 +100,27 @@ function loadGoogle(){
   document.head.appendChild(s);
 }
 
-function initMap(){
+async function initMap(){
   map = new google.maps.Map(document.getElementById('map'), {
     center: DEFAULT, zoom: 19, mapTypeId: 'satellite', tilt: 0,
     gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: true, rotateControl: false
   });
-  const input = document.getElementById('addr');
-  autocomplete = new google.maps.places.Autocomplete(input, {
-    fields:['geometry'], componentRestrictions:{country:'za'}
-  });
-  autocomplete.addListener('place_changed', ()=>{
-    const p = autocomplete.getPlace();
-    if(!p.geometry){ showErr('Pick an address from the dropdown list.'); return; }
-    const loc = p.geometry.location;
-    map.setCenter(loc); map.setZoom(20);
-    placeRoof(loc);
-  });
+  try {
+    const ac = new google.maps.places.PlaceAutocompleteElement({ includedRegionCodes:['za'] });
+    ac.style.width = '100%';
+    document.getElementById('acbox').appendChild(ac);
+    ac.addEventListener('gmp-select', async (event)=>{
+      try {
+        const place = event.placePrediction.toPlace();
+        await place.fetchFields({ fields:['location'] });
+        const loc = place.location;
+        if(!loc){ showErr('Could not locate that address — try another, or use your location.'); return; }
+        map.setCenter(loc); map.setZoom(20); placeRoof(loc);
+      } catch(e){ showErr('Address lookup problem: '+(e.message||e)); }
+    });
+  } catch(e){
+    showErr('Address search needs "Places API (New)" turned on in Google Cloud — tell Claude and it will guide you.');
+  }
   placeRoof(new google.maps.LatLng(DEFAULT.lat, DEFAULT.lng));
 }
 
