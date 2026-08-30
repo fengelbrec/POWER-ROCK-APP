@@ -3754,22 +3754,30 @@ async function toggleSiteReport(i){
 }
 
 // ── COMPLETE / REACTIVATE — moves a site to Previous Sites, nothing is lost ──
-function completeSite(id){
+async function completeSite(id){
   if(!confirm('Mark this site as completed?\n\nIt moves to Previous Sites — all figures, stock history and daily reports stay saved and can be viewed any time.')) return;
   const s = siteById(id);
-  s.status = 'done';
-  s.endDate = new Date().toISOString().split('T')[0];
+  const date = new Date().toISOString().split('T')[0];
+  s.status = 'done'; s.endDate = date; s.end_date = date;
   saveData('Site moved to Previous Sites');
-  sbUpsert('sites', { id:s.id, name:s.name, client:s.client, team_leader:s.team, status:'done', started:s.started });
+  // Record the completion date in details.end_date, keeping the rest of details intact.
+  let d = {};
+  try { const rows = await sbGetRows('sites', 'select=details&id=eq.' + encodeURIComponent(id)); if(rows && rows[0] && rows[0].details) d = rows[0].details; } catch(e){}
+  if(s.details) d = Object.assign({}, d, s.details);
+  d.end_date = date; s.details = d;
+  await sbPatch('sites', 'id=eq.' + encodeURIComponent(id), { status:'done', details: d });
   closeModal('modalSiteDetail');
   renderDoor('sites');
 }
-function reactivateSite(id){
+async function reactivateSite(id){
   const s = siteById(id);
-  s.status = 'active';
-  s.endDate = '';
+  s.status = 'active'; s.endDate = ''; s.end_date = null;
   saveData('Site reactivated');
-  sbUpsert('sites', { id:s.id, name:s.name, client:s.client, team_leader:s.team, status:'active', started:s.started });
+  let d = {};
+  try { const rows = await sbGetRows('sites', 'select=details&id=eq.' + encodeURIComponent(id)); if(rows && rows[0] && rows[0].details) d = rows[0].details; } catch(e){}
+  if(s.details) d = Object.assign({}, d, s.details);
+  d.end_date = ''; s.details = d;
+  await sbPatch('sites', 'id=eq.' + encodeURIComponent(id), { status:'active', details: d });
   closeModal('modalSiteDetail');
   renderDoor('sites');
 }
