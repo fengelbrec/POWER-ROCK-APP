@@ -199,7 +199,8 @@ gmp-place-autocomplete{width:100%}
         <div id="pcAcbox" class="acbox"></div>
         <button class="locbtn2" onclick="pcUseLocation()">📍 Or use my current location (stand at your house)</button>
         <div id="pcMap"></div>
-        <div class="hint">Drag the <b>white dots</b> to your roof corners. Tap a dot on an edge to add a corner (L-shapes). Right-click / long-press a dot to remove it.</div>
+        <button class="locbtn2" onclick="pcResetBox()" style="background:#5a6b7b">↺ Reset outline — drop a fresh box on the house in the middle of the map</button>
+        <div class="hint"><b>Not on your exact house?</b> The address can land a house or two off. Just drag the map so <b>your</b> house is in the middle, then tap <b>↺ Reset outline</b>. Then drag the <b>white dots</b> to your roof corners (tap an edge to add a corner, long-press a dot to remove one).</div>
         <div class="mrow">
           <div class="mseg"><div class="mlbl">Roof type</div><div class="mopts">
             <div class="mopt sel" id="pcRoofTiled" onclick="pcSetRoof('tiled')">Tiled</div>
@@ -580,6 +581,7 @@ function pcSetStorey(v){
   const sc=document.getElementById('storeyChk'); if(sc) sc.classList.toggle('sel', v);
   pcRecompute();
 }
+function pcResetBox(){ if(pcMap) pcPlaceRoof(pcMap.getCenter()); }   // fresh box on whatever house is centred
 function pcUseLocation(){
   if(!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition(
