@@ -3340,6 +3340,17 @@ async function saveSite(){
   }
   $('as_err').style.display='none';
 
+  // Confirm the key details before the site is opened — catches mix-ups (e.g. the wrong team leader).
+  const _teamName = ((typeof LEADER_META !== 'undefined' && LEADER_META.find(function(l){ return l.key === team; })) || {}).name || team || '—';
+  if(!confirm('Please check this new site before it is opened:\n\n' +
+    '• Site: ' + name + '\n' +
+    '• Client: ' + (client || '—') + '\n' +
+    '• Team leader: ' + _teamName + '\n' +
+    '• Status: ' + status + '\n' +
+    '• Start date: ' + started + '\n' +
+    '• Quote (ex-VAT): R ' + Math.round(totalQuote).toLocaleString('en-ZA') + '\n\n' +
+    'Is everything correct? Press OK to open the site, or Cancel to go back and fix it.')) return;
+
   // Colours per surface
   const colours = {};
   document.querySelectorAll('[data-colour-surface]').forEach(inp=>{
@@ -5341,6 +5352,7 @@ function openSiteInfo(siteId, canEdit, editing){
   };
   const leaderOpts = LEADER_META.map(function(lm){ return `<option value="${lm.key}" ${s.team_leader===lm.key?'selected':''}>${lm.name}</option>`; }).join('');
   h += `<div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
+      ${fld('Site name', 'si_name', s.name)}
       ${fld('Client', 'si_client', s.client)}
       ${fld('Contact', 'si_contact', d.contact, 'Name — number')}
       ${fld('Site address', 'si_address', d.address, 'For the map link')}
@@ -5374,18 +5386,19 @@ async function saveSiteInfo(siteId){
   const quote = parseFloat(String(v('si_quote')).replace(/[^0-9.]/g,'')) || 0;
   const leader = v('si_leader') || s.team_leader;
   const started = v('si_started') || s.started || '';
+  const name = v('si_name').trim() || s.name;
   d.contact = v('si_contact').trim();
   d.address = v('si_address').trim();
   d.maps_link = d.address ? mapsLinkFor(d.address) : '';
   d.surfaces = v('si_surfaces').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   d.surfaces_text = v('si_surfaces').trim();
   d.colours_text = v('si_colours').trim();
-  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { client: client, quote_value: quote, team_leader: leader, started: started, details: d });
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { name: name, client: client, quote_value: quote, team_leader: leader, started: started, details: d });
   if(ok){
-    s.client = client; s.quote_value = quote; s.team_leader = leader; s.started = started; s.details = d;
+    s.name = name; s.client = client; s.quote_value = quote; s.team_leader = leader; s.started = started; s.details = d;
     // keep the archive's own copy of the site in step, if this was opened from there
     const du = (DU_SITELIST||[]).find(function(x){ return x.id === siteId; });
-    if(du && du !== s){ du.client = client; du.quote_value = quote; du.team_leader = leader; du.started = started; du.details = d; }
+    if(du && du !== s){ du.name = name; du.client = client; du.quote_value = quote; du.team_leader = leader; du.started = started; du.details = d; }
     showSaveToast('Site details saved');
     openSiteInfo(siteId, true, false);
     if(SUMMARY_SITE) paintSiteSummaryBody(); else paintUpdates();
@@ -5514,7 +5527,10 @@ function paintSiteSummaryBody(){
     ? `Started ${startTxt} → Completed ${s.end_date ? fd(s.end_date) : '—'} · ${days} days`
     : `Started ${startTxt} · active · Day ${days}`;
   h += `<div style="margin-bottom:16px">
-    <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A;line-height:1.2">${s.name}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A;line-height:1.2">${s.name}</div>
+      <button onclick="openSiteInfo('${s.id}', true, true)" style="flex:0 0 auto;background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">✎ Edit details</button>
+    </div>
     <div style="font-size:12px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${leaderName}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-top:2px">${datesLine}</div>
   </div>`;
