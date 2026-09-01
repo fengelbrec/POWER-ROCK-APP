@@ -4243,7 +4243,7 @@ async function renderInvoiceInbox(){
         </select>
         <div style="display:flex;gap:8px">
           <button class="cta-btn" style="flex:1" onclick="confirmInboxInvoice(${idx})">✓ Confirm — update cost &amp; stock</button>
-          <button class="cta-btn ghost" style="flex:0 0 100px" onclick="rejectInboxInvoice(${idx})">Reject</button>
+          <button class="cta-btn ghost" style="flex:0 0 120px" onclick="rejectInboxInvoice(${idx})">🗑 Delete</button>
         </div>
       </div>`;
     });
@@ -4503,9 +4503,9 @@ async function confirmInboxInvoice(idx){
 
 async function rejectInboxInvoice(idx){
   const inv = INBOX_CACHE[idx]; if(!inv) return;
-  if(!confirm('Reject this invoice? It will not touch any figures or stock.')) return;
+  if(!confirm('Delete this invoice?\n\nUse this if the invoice is wrong, or the order was cancelled / the paint returned. It will NOT be allocated to any site and will NOT count toward any costs or stock.')) return;
   await sbPatch('invoice_inbox', `id=eq.${encodeURIComponent(inv.id)}`, { status:'rejected', processed_at:new Date().toISOString() });
-  showSaveToast('Invoice rejected');
+  showSaveToast('Invoice deleted — not counted anywhere');
   renderInvoiceInbox();
 }
 
