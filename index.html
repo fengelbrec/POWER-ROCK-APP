@@ -816,7 +816,7 @@ function uid(){ return 'id_' + Date.now() + '_' + Math.floor(Math.random()*10000
 const NAV = [
   {id:'overview', label:'Overview', icon:'◆'},
   {id:'sites', label:'Sites', icon:'▦'},
-  {id:'financials', label:'Financials', icon:'▤'},
+  {id:'financials', label:'Site P+L', icon:'▤'},
   {id:'splitengine', label:'Payment Split', icon:'◫'},
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
   {id:'cashflow', label:'Cashflow', icon:'∿'},
@@ -1375,7 +1375,8 @@ function ownerFin(s){
   const overheads=additional+(c.accommodation||0)+(c.petrol||0);
   const henk=(quote-additional)*HENK_FEE_PCT;
   const net=quote-labourActual-material-overheads-henk;
-  return { quote, labourActual, labourBudget:parseFloat(s.labour_budget)||0, material, materialBudget:parseFloat(s.material_budget)||0, overheads, henk, net, days:ownerDays(s) };
+  return { quote, labourActual, labourBudget:parseFloat(s.labour_budget)||0, material, materialBudget:parseFloat(s.material_budget)||0,
+           overheads, additional, accommodation:(c.accommodation||0), petrol:(c.petrol||0), henk, net, days:ownerDays(s) };
 }
 function siteProfitPerDay(s){ return siteNetProfitLive(s) / siteDaysOnSite(s); }
 function slugId(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
@@ -3890,47 +3891,85 @@ function deleteSite(id){
 // ───────────────────────────────────────────
 // FINANCIALS
 // ───────────────────────────────────────────
-function renderFinancials(){
-  let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Financials</div>`;
-
-  const totLabourBudget = DATA.sites.reduce((a,s)=>a+(parseFloat(s.labourBudget)||0),0);
-  const totLabourActual = DATA.sites.reduce((a,s)=>a+(parseFloat(s.labourActual)||0),0);
-  const totMatBudget = DATA.sites.reduce((a,s)=>a+(parseFloat(s.materialBudget)||0),0);
-  const totMatActual = DATA.sites.reduce((a,s)=>a+siteMaterialActual(s),0);
-  const lPct = totLabourBudget ? Math.min(100,Math.round(totLabourActual/totLabourBudget*100)) : 0;
-  const mPct = totMatBudget ? Math.min(100,Math.round(totMatActual/totMatBudget*100)) : 0;
-
-  h += `<div class="section-lbl">Business-wide Budget vs Actual</div>`;
-  h += `<div class="ledger-card" style="margin-bottom:18px">
-    <div class="bva-block">
-      <div class="bva-head"><span class="bva-name">Labour</span><span class="bva-pct" style="color:#5C7A6B">${lPct}%</span></div>
-      <div class="bva-track"><div class="bva-fill" style="width:${lPct}%;background:#5C7A6B"></div><div class="bva-ceiling"></div></div>
-      <div class="bva-figures"><span>Actual: ${R(totLabourActual)}</span><span>Budget: ${R(totLabourBudget)}</span></div>
-    </div>
-    <div class="bva-block">
-      <div class="bva-head"><span class="bva-name">Material</span><span class="bva-pct" style="color:#9C8049">${mPct}%</span></div>
-      <div class="bva-track"><div class="bva-fill" style="width:${mPct}%;background:#9C8049"></div><div class="bva-ceiling"></div></div>
-      <div class="bva-figures"><span>Actual: ${R(totMatActual)}</span><span>Budget: ${R(totMatBudget)}</span></div>
-    </div>
-  </div>`;
-
-  h += `<div class="section-lbl">Per site P&amp;L (based on quote value)</div>`;
-  if(DATA.sites.length===0){
-    h += `<div class="empty-state ledger-card" style="padding:36px 20px"><div class="empty-state-ico">▤</div><div class="empty-state-txt">Add sites to see profit &amp; loss per site.</div></div>`;
-  } else {
-    DATA.sites.forEach(s=>{
-      const quote = siteQuoteValue(s);
-      const costs = siteLabourActual(s)+siteMaterialActual(s);
-      const net = quote - costs;
-      const margin = quote ? Math.round((net/quote)*100) : 0;
-      h += `<div class="ledger-card" style="padding:14px 16px;margin-bottom:9px;cursor:pointer" onclick="openSiteDetail('${s.id}')">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div><div class="site-name" style="font-size:13px">${s.name}</div><div class="site-meta">Margin: ${margin}% · ${sitePctInvoiced(s)}% invoiced</div></div>
-          <div class="disp" style="font-size:15px;font-weight:700;color:${net>=0?'#5C7A6B':'#B2342A'}">${R(net)}</div>
-        </div>
-      </div>`;
-    });
+// Site P+L — one spreadsheet row per site. Same money rules as the Site Profit
+// Sheet: turnover is the ex-VAT project value, Henk's 10% is taken after the
+// additional site costs come off, and the net is what's left.
+async function renderFinancials(){
+  if(!OWNER.loaded){
+    $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Site P+L</div><div style="text-align:center;padding:44px;color:#8A8470">Loading live figures…</div>`;
+    await loadOwnerFin();
   }
+
+  // Negatives read as -R34 200, not R-34 200.
+  const Rs = (n) => { const v = Math.round(n||0); return (v<0?'-R':'R') + Math.abs(v).toLocaleString("en-ZA"); };
+  const col = (good) => good ? '#3F5A4C' : '#B2342A';
+
+  let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Site P+L</div>`;
+
+  const rows = (OWNER.sites||[]).map(s=>{
+    const f = ownerFin(s);
+    return { site:s, name:s.name || 'Unnamed site', turnover:f.quote, material:f.material,
+             labour:f.labourActual, petrol:f.petrol, accommodation:f.accommodation,
+             other:f.additional, henk:f.henk, net:f.net };
+  });
+
+  if(rows.length === 0){
+    h += `<div class="empty-state ledger-card" style="padding:40px 20px"><div class="empty-state-ico">▤</div><div class="empty-state-txt">No sites in the shared database yet.</div></div>`;
+    $('pageBody').innerHTML = h;
+    return;
+  }
+
+  const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
+  const gTurn=T('turnover'), gMat=T('material'), gLab=T('labour'), gPet=T('petrol'),
+        gAcc=T('accommodation'), gOth=T('other'), gHenk=T('henk'), gNet=T('net');
+  const gPct = gTurn>0 ? Math.round(gNet/gTurn*100) : null;
+
+  h += `<div class="snap-meta" style="margin-bottom:12px">${rows.length} site${rows.length!==1?'s':''} · Turnover ${Rs(gTurn)} (ex VAT) · Net profit <strong style="color:${col(gNet>=0)}">${Rs(gNet)}${gPct!=null?` · ${gPct}%`:''}</strong><br/>Swipe the table sideways to see every column. Tap a site name for its full profit sheet.</div>`;
+
+  h += `<div class="ledger-card" style="padding:2px 14px 10px">
+    <div class="snap-scroll"><table class="snap-table" style="min-width:940px">
+    <thead><tr>
+      <th>Site</th>
+      <th class="alt">Turnover<br/><span class="mini">ex VAT</span></th>
+      <th>Material</th>
+      <th class="alt">Labour</th>
+      <th>Petrol</th>
+      <th class="alt">Accommodation</th>
+      <th>Other<br/><span class="mini">cherry picker etc</span></th>
+      <th class="alt">Henk<br/><span class="mini">10%</span></th>
+      <th>Net profit</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map(r=>{
+        const pct = r.turnover>0 ? Math.round(r.net/r.turnover*100) : null;
+        return `<tr>
+          <td onclick="openSiteSummary('${r.site.id}')" title="${r.name}" style="cursor:pointer">${r.name}</td>
+          <td class="alt">${Rs(r.turnover)}</td>
+          <td>${Rs(r.material)}</td>
+          <td class="alt">${Rs(r.labour)}</td>
+          <td>${Rs(r.petrol)}</td>
+          <td class="alt">${Rs(r.accommodation)}</td>
+          <td>${Rs(r.other)}</td>
+          <td class="alt">${Rs(r.henk)}</td>
+          <td style="font-weight:800;color:${col(r.net>=0)}">${Rs(r.net)}${pct!=null?` <span class="mini">${pct}%</span>`:''}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>TOTAL</td>
+        <td class="alt">${Rs(gTurn)}</td>
+        <td>${Rs(gMat)}</td>
+        <td class="alt">${Rs(gLab)}</td>
+        <td>${Rs(gPet)}</td>
+        <td class="alt">${Rs(gAcc)}</td>
+        <td>${Rs(gOth)}</td>
+        <td class="alt">${Rs(gHenk)}</td>
+        <td style="color:${col(gNet>=0)}">${Rs(gNet)}${gPct!=null?` <span class="mini">${gPct}%</span>`:''}</td>
+      </tr>
+    </tfoot>
+    </table></div>
+  </div>`;
 
   $('pageBody').innerHTML = h;
 }
