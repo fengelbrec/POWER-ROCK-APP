@@ -175,6 +175,26 @@ gmp-place-autocomplete{width:100%}
 .mbox .mv{font-size:20px;font-weight:800;margin-top:3px}
 .mdone{background:#eaf7f0;border:1px solid #b7e0c9;color:#1e7d4f;font-weight:700;font-size:12.5px;padding:10px;border-radius:10px;margin-top:10px;text-align:center}
 .mlive{background:#12324e;color:#fff;font-weight:800;font-size:15px;padding:11px 12px;border-radius:10px;margin-top:8px;text-align:center}
+/* comparison grid — What to buy (columns = products, rows = stores) */
+.cmpwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px 0 4px;border:1px solid #e3e8ee;border-radius:12px}
+table.cmp{border-collapse:collapse;width:100%}
+.cmp th,.cmp td{border-right:1px solid #eef1f4}
+.cmp th:last-child,.cmp td:last-child{border-right:none}
+.cmphead th{vertical-align:top;text-align:center;padding:9px 7px;background:#f6f8fa;border-bottom:2px solid #12324e}
+.cmpcorner{text-align:left!important;font-size:11px;font-weight:800;color:#5a6b7b;text-transform:uppercase;letter-spacing:.3px;min-width:82px}
+.cmpqty{font-size:10px;font-weight:700;color:#12324e;text-transform:none;letter-spacing:0;margin-top:3px}
+.cmpc{min-width:106px}
+.cmpc .optlbl{font-size:9.5px;font-weight:800;letter-spacing:.4px;color:#5a6b7b;border:1px solid #d7dee6;border-radius:5px;padding:1px 5px;display:inline-block}
+.cmpimg{width:50px;height:50px;object-fit:contain;display:block;margin:5px auto 3px}
+.cmpn{font-size:11px;font-weight:800;color:#12324e;line-height:1.2}
+.cmprate{display:inline-block;background:#eaf7f0;color:#1e7d4f;font-weight:800;font-size:11px;border-radius:6px;padding:1px 7px;margin-top:3px}
+.cmpds{display:block;font-size:9.5px;font-weight:700;color:#3a63c0;margin-top:3px;text-decoration:none}
+.cmpnote{font-size:9px;color:#8494a3;line-height:1.3;margin-top:3px}
+.cmpstore{font-size:11.5px;font-weight:700;color:#12324e;padding:9px 7px;white-space:nowrap;border-bottom:1px solid #eef1f4}
+.cmpp{text-align:center;font-weight:800;color:#12324e;font-size:12.5px;padding:9px 7px;border-bottom:1px solid #eef1f4}
+.cmpper{font-size:9px;font-weight:600;color:#8494a3;margin-top:1px}
+.cmpp.best{background:#eaf7f0;color:#1e7d4f}
+.cmpp.cmpna{color:#cbd2da;font-weight:600}
 </style>
 </head>
 <body>
@@ -780,21 +800,34 @@ function calc(){
   document.getElementById('r3min').textContent = R(conLo); document.getElementById('r3max').textContent = R(conHi);
   document.getElementById('rangeMain').textContent = Rr(matLo, conHi);
 
-  // What to buy at Builders — products per surface, best quality first
-  const prodCard=(pr,tins,opt)=>{
-    const sz = pr.size||20;
-    let h = `<div class="prod">${opt?`<div class="optlbl">OPTION ${opt}</div>`:''}<div class="ph"><span class="pn">${pr.n}</span><span class="pimg">${pr.img?`<img class="ptin" src="${pr.img}" alt="${pr.n} tin" loading="lazy"/>`:''}</span>${pr.s?`<span class="scorewrap"><span class="scorelbl">PaintCheck rating</span><span class="score">${pr.s}/10</span></span>`:''}</div>`;
-    if(pr.ds) h += `<a class="ds dstop" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet — drying &amp; overcoat times</a>`;
-    if(pr.note) h += `<div class="pnote">${pr.note}</div>`;
-    if(pr.stores){
-      const sorted=[...pr.stores].sort((a,b)=> a.p-b.p || a.n.localeCompare(b.n));  // cheapest first; ties alphabetical
-      h += `<div class="pp">Prices per store — you need ${tins} × ${sz}L:</div>`;
-      h += `<div class="choose">Choose between:</div>`;
-      h += `<div class="stores"><div class="strow shead"><span class="sname">Store</span><span class="scol">Per ${sz}L</span><span class="scq">Qty</span><span class="scol">Total</span></div>`;
-      sorted.forEach(st=> h += `<div class="strow"><span class="sname">${st.n}</span><span class="scol">${R(st.p)}</span><span class="scq">${tins}</span><span class="scol stot">${R(tins*st.p)}</span></div>`);
-      h += `</div>`;
-    }
-    return h + `</div>`;
+  // What to buy — compare options side by side (columns = products, rows = stores)
+  const cmpGrid = (list, tins) => {
+    const prods = list.slice().sort((a,b)=> (b.s||0)-(a.s||0));   // best rating first
+    const sz = (prods[0] && prods[0].size) ? prods[0].size : 20;
+    const stores = ACTIVE.stores.filter(sn => prods.some(p=>p.stores && p.stores.some(s=>s.n===sn)));
+    const cheapest = prods.map(p=> p.stores ? Math.min(...p.stores.map(s=>s.p)) : null);
+    let h = `<div class="cmpwrap"><table class="cmp"><tr class="cmphead"><th class="cmpcorner">Store<div class="cmpqty">you need ${tins} × ${sz}L</div></th>`;
+    prods.forEach((pr,i)=>{
+      h += `<th class="cmpc"><div class="optlbl">OPTION ${i+1}</div>`;
+      if(pr.img) h += `<img class="cmpimg" src="${pr.img}" alt="${pr.n}" loading="lazy"/>`;
+      h += `<div class="cmpn">${pr.n}</div>`;
+      if(pr.s) h += `<div class="cmprate">${pr.s}/10</div>`;
+      if(pr.ds) h += `<a class="cmpds" href="${pr.ds}" target="_blank" rel="noopener">📄 Spec sheet</a>`;
+      if(pr.note) h += `<div class="cmpnote">${pr.note}</div>`;
+      h += `</th>`;
+    });
+    h += `</tr>`;
+    stores.forEach(sn=>{
+      h += `<tr><td class="cmpstore">${sn}</td>`;
+      prods.forEach((pr,i)=>{
+        const st = pr.stores && pr.stores.find(s=>s.n===sn);
+        if(st){ const best = st.p===cheapest[i];
+          h += `<td class="cmpp${best?' best':''}">${R(tins*st.p)}<div class="cmpper">${R(st.p)}/${sz}L${best?' ✓':''}</div></td>`;
+        } else { h += `<td class="cmpp cmpna">—</td>`; }
+      });
+      h += `</tr>`;
+    });
+    return h + `</table></div>`;
   };
   let buy='', totalTins=0;
   jobs.forEach(job=>{
@@ -805,32 +838,29 @@ function calc(){
     totalTins += tins;
     buy += `<div class="surfhead">${job.name}</div>`;
     const cn = job.cat==='exterior'?'standard colours only' : job.cat==='interior'?'white &amp; pastel colours only' : job.cat==='ceiling'?'white only' : '';
-    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>${cn?` <span class="cnote">(${cn})</span>`:''}. Here are your options:</div>`;
-    let opt=0;
-    PRODUCTS[job.cat].slice().sort((a,b)=>b.s-a.s).forEach(pr=> buy += prodCard(pr,tins,++opt));
+    buy += `<div class="surfneed">You will need approximately <b>${tins} × 20L</b>${cn?` <span class="cnote">(${cn})</span>`:''}. Compare your options below — the cheapest store for each is marked ✓ in green:</div>`;
+    buy += cmpGrid(PRODUCTS[job.cat], tins);
   });
   // Primer for chalky / flaky / bare areas
   if(wallPrimerL>0){
     const pt = tinCount(wallPrimerL);
     totalTins += pt;
     buy += `<div class="surfhead">Primer — chalky, flaky or bare areas</div>`;
-    buy += `<div class="surfneed">You will need approximately <b>${pt} × 20L</b> — 1 full binding coat. Must be a <b>solvent-based</b> plaster primer. Here are your options:</div>`;
-    let po=0;
-    PRODUCTS.primer.forEach(pr=> buy += prodCard(pr,pt,++po));
+    buy += `<div class="surfneed">You will need approximately <b>${pt} × 20L</b> — 1 full binding coat. Must be a <b>solvent-based</b> plaster primer. Compare your options below — the cheapest store for each is marked ✓ in green:</div>`;
+    buy += cmpGrid(PRODUCTS.primer, pt);
     buy += `<div class="colnote"><b>Why:</b> chalky or flaking walls need one full coat of solvent-based plaster primer over those areas to bind the surface, so the topcoats grip properly. <b>Note:</b> plaster &amp; crack repairs are NOT included in these prices — but any new plaster must also get a coat of this same primer.</div>`;
   }
   // Rust primer — patch affected metal only
   if(state.surf.roof && state.roof==='corrugated' && state.rust){
     buy += `<div class="surfhead">Rust primer — affected metal only</div>`;
-    buy += `<div class="surfneed">Patch-prime the rusty spots only (not the whole roof) · about <b>1 × 5L</b>. Wire-brush rust back to sound metal first. Here are your options:</div>`;
-    let ro=0;
-    PRODUCTS.rust.forEach(pr=> buy += prodCard(pr,1,++ro));
+    buy += `<div class="surfneed">Patch-prime the rusty spots only (not the whole roof) · about <b>1 × 5L</b>. Wire-brush rust back to sound metal first. Compare your options below — the cheapest store for each is marked ✓ in green:</div>`;
+    buy += cmpGrid(PRODUCTS.rust, 1);
   }
   // Damp sealer — patch affected area only, with the critical warning
   if(state.damp){
     buy += `<div class="surfhead">Damp — affected area only</div>`;
     buy += `<div class="surfneed">Patch-seal the damp patch only · about 1 × 5L (sold in 5L, not 20L).</div>`;
-    PRODUCTS.damp.forEach(pr=> buy += prodCard(pr,1));
+    buy += cmpGrid(PRODUCTS.damp, 1);
     buy += `<div class="colnote"><b>⚠️ Read this first:</b> find and fix the <b>cause</b> of the damp before anything else. Sealing over a still-wet wall will NOT solve the problem — the source of the damp must be traced and rectified, then this waterproofer patched onto the affected area.</div>`;
   }
   document.getElementById('buylist').innerHTML = buy;
