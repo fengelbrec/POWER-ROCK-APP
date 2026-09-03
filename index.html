@@ -3906,7 +3906,7 @@ async function renderFinancials(){
 
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Site P+L</div>`;
 
-  const rows = (OWNER.sites||[]).map(s=>{
+  const rows = (OWNER.sites||[]).filter(s=> !/greenhill/i.test(s.name||'')).map(s=>{  // Greenhill left out — its data is incomplete/skewed
     const f = ownerFin(s);
     return { site:s, name:s.name || 'Unnamed site', turnover:f.quote, material:f.material,
              labour:f.labourActual, petrol:f.petrol, accommodation:f.accommodation,
@@ -3941,32 +3941,33 @@ async function renderFinancials(){
     </tr></thead>
     <tbody>
       ${rows.map(r=>{
-        const pct = r.turnover>0 ? Math.round(r.net/r.turnover*100) : null;
+        const t = r.turnover;
+        const pc = (a) => t>0 ? ` <span class="mini">${Math.round(a/t*100)}%</span>` : '';
         return `<tr>
           <td onclick="openSiteSummary('${r.site.id}')" title="${r.name}" style="cursor:pointer">${r.name}</td>
-          <td class="alt">${Rs(r.turnover)}</td>
-          <td>${Rs(r.material)}</td>
-          <td class="alt">${Rs(r.labour)}</td>
-          <td>${Rs(r.petrol)}</td>
-          <td class="alt">${Rs(r.accommodation)}</td>
-          <td>${Rs(r.other)}</td>
-          <td class="alt">${Rs(r.henk)}</td>
-          <td style="font-weight:800;color:${col(r.net>=0)}">${Rs(r.net)}${pct!=null?` <span class="mini">${pct}%</span>`:''}</td>
+          <td class="alt">${Rs(r.turnover)}${pc(r.turnover)}</td>
+          <td>${Rs(r.material)}${pc(r.material)}</td>
+          <td class="alt">${Rs(r.labour)}${pc(r.labour)}</td>
+          <td>${Rs(r.petrol)}${pc(r.petrol)}</td>
+          <td class="alt">${Rs(r.accommodation)}${pc(r.accommodation)}</td>
+          <td>${Rs(r.other)}${pc(r.other)}</td>
+          <td class="alt">${Rs(r.henk)}${pc(r.henk)}</td>
+          <td style="font-weight:800;color:${col(r.net>=0)}">${Rs(r.net)}${pc(r.net)}</td>
         </tr>`;
       }).join('')}
     </tbody>
     <tfoot>
-      <tr>
+      ${(function(){ const pcT = (a) => gTurn>0 ? ` <span class="mini">${Math.round(a/gTurn*100)}%</span>` : ''; return `<tr>
         <td>TOTAL</td>
-        <td class="alt">${Rs(gTurn)}</td>
-        <td>${Rs(gMat)}</td>
-        <td class="alt">${Rs(gLab)}</td>
-        <td>${Rs(gPet)}</td>
-        <td class="alt">${Rs(gAcc)}</td>
-        <td>${Rs(gOth)}</td>
-        <td class="alt">${Rs(gHenk)}</td>
-        <td style="color:${col(gNet>=0)}">${Rs(gNet)}${gPct!=null?` <span class="mini">${gPct}%</span>`:''}</td>
-      </tr>
+        <td class="alt">${Rs(gTurn)}${pcT(gTurn)}</td>
+        <td>${Rs(gMat)}${pcT(gMat)}</td>
+        <td class="alt">${Rs(gLab)}${pcT(gLab)}</td>
+        <td>${Rs(gPet)}${pcT(gPet)}</td>
+        <td class="alt">${Rs(gAcc)}${pcT(gAcc)}</td>
+        <td>${Rs(gOth)}${pcT(gOth)}</td>
+        <td class="alt">${Rs(gHenk)}${pcT(gHenk)}</td>
+        <td style="color:${col(gNet>=0)}">${Rs(gNet)}${pcT(gNet)}</td>
+      </tr>`; })()}
     </tfoot>
     </table></div>
   </div>`;
