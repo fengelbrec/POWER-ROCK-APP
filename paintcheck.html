@@ -174,6 +174,7 @@ gmp-place-autocomplete{width:100%}
 .mbox.g .mk{color:#bfe6cf}
 .mbox .mv{font-size:20px;font-weight:800;margin-top:3px}
 .mdone{background:#eaf7f0;border:1px solid #b7e0c9;color:#1e7d4f;font-weight:700;font-size:12.5px;padding:10px;border-radius:10px;margin-top:10px;text-align:center}
+.mlive{background:#12324e;color:#fff;font-weight:800;font-size:15px;padding:11px 12px;border-radius:10px;margin-top:8px;text-align:center}
 </style>
 </head>
 <body>
@@ -201,6 +202,7 @@ gmp-place-autocomplete{width:100%}
         <div id="pcAcbox" class="acbox"></div>
         <button class="locbtn2" onclick="pcUseLocation()">📍 Or use my current location (stand at your house)</button>
         <div id="pcMap"></div>
+        <div class="mlive" id="pcLiveArea">📐 Tap the corners of your roof to measure…</div>
         <div class="hint" id="pcTip">👆 <b>Tap each corner of your roof</b>, going around the outside.</div>
         <div class="mbtns" id="pcDrawBtns">
           <button class="locbtn2" onclick="pcUndo()" style="background:#5a6b7b">↩ Undo last corner</button>
@@ -545,11 +547,13 @@ async function pcInitMap(){
   } catch(err){}
   pcStartOver();
 }
-function pcDotIcon(){ return {path:google.maps.SymbolPath.CIRCLE, scale:6, fillColor:'#fff', fillOpacity:1, strokeColor:'#37c07a', strokeWeight:2}; }
+function pcDotIcon(first){ return {path:google.maps.SymbolPath.CIRCLE, scale:first?8:6, fillColor:first?'#37c07a':'#fff', fillOpacity:1, strokeColor:first?'#fff':'#37c07a', strokeWeight:2}; }
 function pcAddPoint(latLng){
+  const isFirst = pcDots.length===0;
   pcVertices.push(latLng);
-  const mk = new google.maps.Marker({position:latLng, map:pcMap, icon:pcDotIcon(), draggable:true, zIndex:5});
+  const mk = new google.maps.Marker({position:latLng, map:pcMap, icon:pcDotIcon(isFirst), draggable:true, zIndex:isFirst?6:5, title:isFirst?'Tap here to close the shape':''});
   mk.addListener('drag', ()=>{ const i=pcDots.indexOf(mk); if(i>=0){ pcVertices[i]=mk.getPosition(); pcRedrawLine(); pcRecompute(); } });
+  mk.addListener('click', ()=>{ if(pcMode==='draw' && pcDots.indexOf(mk)===0 && pcVertices.length>=3) pcDone(); });
   pcDots.push(mk);
   pcRedrawLine(); pcRecompute();
 }
@@ -587,7 +591,7 @@ function pcSetMode(m){
   document.getElementById('pcStartOverBtn').style.display = m==='edit' ? 'block' : 'none';
   const tip=document.getElementById('pcTip');
   if(tip) tip.innerHTML = m==='draw'
-    ? '👆 <b>Tap each corner of your roof</b>, going around the outside. Then tap <b>✓ Done tracing</b>. (If your house isn’t centred, drag the map first.)'
+    ? '👆 <b>Tap each corner of your roof</b>, going around the outside. To close, tap the <b>green start-dot</b> again (or <b>✓ Done tracing</b>). Drag the map first if your house isn’t centred.'
     : '✓ Traced. <b>Drag the white dots</b> to fine-tune (tap a dot on an edge to add one, long-press to remove), or tap <b>↺ Start over</b>.';
 }
 function pcRingLatLngs(){ return (pcMode==='edit' && pcPoly) ? pcPoly.getPath().getArray() : pcVertices; }
@@ -604,6 +608,10 @@ function pcRecompute(){
   document.getElementById('pcRoofA').textContent = has ? state.measuredRoof+' m²' : '—';
   document.getElementById('pcWallA').textContent = has ? state.measuredWall+' m²' : '—';
   const ce=document.getElementById('pcCeilA'); if(ce) ce.textContent = has ? state.measuredCeiling+' m²' : '—';
+  const lv=document.getElementById('pcLiveArea');
+  if(lv) lv.innerHTML = has
+    ? ('📐 Area measured: <b>'+state.measuredFootprint+' m²</b>' + (pcMode==='draw' ? ' &nbsp;·&nbsp; tap the green start-dot or ✓ Done to close' : ''))
+    : '📐 Tap the corners of your roof to measure…';
 }
 function pcSetRoof(t){
   state.roof = t;
