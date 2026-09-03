@@ -5930,18 +5930,27 @@ async function doMoveSiteInvoice(invId, targetSiteId){
 function summaryInvoiceBreakdown(invId){
   const iv = (SUMMARY.invoices||[]).find(function(x){ return x.id === invId; });
   if(!iv) return;
+  const lblCss = 'font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:2px">${iv.supplier||'Invoice'}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:4px">${iv.invoice_date?fd(iv.invoice_date):''}${iv.invoice_number?' · '+iv.invoice_number:''}</div>
-    <div class="disp" style="font-size:20px;font-weight:800;margin-bottom:16px">${R(parseFloat(iv.total)||0)} <span style="font-size:11px;font-weight:600;color:#A39E8C">total — locked</span></div>
-    <div style="font-size:11.5px;color:#5C5748;line-height:1.6;margin-bottom:12px">Rename any product to add the exact colour. The invoice amount can't be changed — only the wording.</div>`;
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:2px">Edit invoice</div>
+    <div style="font-size:11.5px;color:#5C5748;line-height:1.6;margin-bottom:14px">Fix anything the reader got wrong — the supplier, the date, or a product name. The amount stays locked.</div>
+    <div style="margin-bottom:10px"><label style="${lblCss}">Supplier</label>
+      <input class="f-input" id="iv_supplier" value="${esc(iv.supplier||'')}" style="margin:0"/></div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div style="flex:1;min-width:0"><label style="${lblCss}">Invoice date</label>
+        <input class="f-input" id="iv_date" type="date" value="${iv.invoice_date||''}" style="margin:0"/></div>
+      <div style="flex:1;min-width:0"><label style="${lblCss}">Invoice no.</label>
+        <input class="f-input" id="iv_number" value="${esc(iv.invoice_number||'')}" style="margin:0"/></div>
+    </div>
+    <div class="disp" style="font-size:18px;font-weight:800;margin-bottom:14px">${R(parseFloat(iv.total)||0)} <span style="font-size:11px;font-weight:600;color:#A39E8C">total — locked</span></div>
+    <div style="${lblCss};margin-bottom:8px">Products on this invoice</div>`;
   (iv.line_items||[]).forEach(function(li, i){
     h += `<div style="border:1px solid #E6E2D8;border-radius:10px;padding:11px 12px;margin-bottom:9px">
       <div style="font-size:10px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-bottom:6px">${li.qty||0} ${li.unit?'× '+li.unit:''}</div>
       <input class="f-input" id="li_${i}" value="${String(li.product||'').replace(/"/g,'&quot;')}" style="margin:0;font-size:13px"/>
     </div>`;
   });
-  h += `<button class="cta-btn" style="margin-top:4px" onclick="saveInvoiceNames('${iv.id}')">Save names</button>
+  h += `<button class="cta-btn" style="margin-top:4px" onclick="saveInvoiceNames('${iv.id}')">Save changes</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="summaryInvoices('${SUMMARY_SITE}')">← Back to invoices</button>`;
   $('siteDetailContent').innerHTML = h;
 }
@@ -5953,10 +5962,19 @@ async function saveInvoiceNames(invId){
     const el = $('li_'+i);
     return Object.assign({}, li, { product: el ? el.value.trim() : li.product });
   });
-  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(invId), { line_items: items });
+  const v = function(id){ return ($(id)||{}).value; };
+  const patch = { line_items: items };
+  if($('iv_supplier')) patch.supplier = (v('iv_supplier')||'').trim() || iv.supplier;
+  if($('iv_date'))     patch.invoice_date = v('iv_date') || iv.invoice_date;
+  if($('iv_number'))   patch.invoice_number = (v('iv_number')||'').trim();
+  const ok = await sbPatch('invoice_inbox', 'id=eq.'+encodeURIComponent(invId), patch);
   if(ok){
     iv.line_items = items;   // keep the open bundle in step
-    showSaveToast('Names saved');
+    if(patch.supplier!==undefined) iv.supplier = patch.supplier;
+    if(patch.invoice_date!==undefined) iv.invoice_date = patch.invoice_date;
+    if(patch.invoice_number!==undefined) iv.invoice_number = patch.invoice_number;
+    if(typeof OWNER !== 'undefined') OWNER.loaded = false;   // month totals recompute
+    showSaveToast('Invoice updated');
     closeModal('modalSiteDetail');
     if(SUMMARY_SITE) renderSiteSummary(SUMMARY_SITE);
   } else {
