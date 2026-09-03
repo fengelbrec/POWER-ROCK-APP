@@ -5619,7 +5619,7 @@ function paintSiteSummaryBody(){
         sub: `budget ${Math.round(LABOUR_PCT*100)}% · ${R(labourBudget)} · ` + (labourAgreed>0 ? `paid ${R(labourPaid)} · ${R(labourAgreed-labourPaid)} still to pay · tap to manage` : 'tap to set the agreed labour total'),
         onclick:`openLabourEditor('${s.id}')` })}
       ${profitRow({ label:'Material actual', val:materialActual, sign:'–', over:overMat,
-        sub:`budget ${Math.round(MATERIAL_PCT*100)}% · ${R(materialBudget)} · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
+        sub:`budget ${Math.round(MATERIAL_PCT*100)}% · ${R(materialBudget)} · actual ${quote>0?Math.round(materialActual/quote*100):0}% · tap for the ${data.invoices.length} invoice${data.invoices.length!==1?'s':''}`,
         onclick:`summaryInvoices('${s.id}')` })}
       ${profitRow({ label:'Additional site costs (cherry / scaffold)', val:additionalCosts, sign:'–',
         sub:'tap to add cherry picker, scaffold, etc.', onclick:`openCostEditor('${s.id}','additional')` })}
