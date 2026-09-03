@@ -195,6 +195,7 @@ table.cmp{border-collapse:collapse;width:100%}
 .cmpper{font-size:9px;font-weight:600;color:#8494a3;margin-top:1px}
 .cmpp.best{background:#eaf7f0;color:#1e7d4f}
 .cmpp.cmpna{color:#cbd2da;font-weight:600}
+.cmphint{font-size:11.5px;font-weight:800;color:#37c07a;text-align:center;margin:3px 0 8px}
 </style>
 </head>
 <body>
@@ -511,6 +512,7 @@ const SCOPE_PDF = 'PaintCheck-Scope-of-Works-Exterior-Walls.pdf';
 const INTERIOR_SCOPE_PDF = 'PaintCheck-Scope-of-Works-Interior-Walls-Ceilings.pdf';
 const ROOF_SCOPE_PDF = 'PaintCheck-Scope-of-Works-Roofs.pdf';
 const WEB3FORMS_KEY = '';          // paste the Web3Forms access key here to switch on emailing
+const PRICES_CHECKED = 'August 2026';   // update when the store prices are refreshed
 // Payfast — sandbox test credentials (swap for the live merchant_id/merchant_key to go live)
 const PF = { url:'https://sandbox.payfast.co.za/eng/process', merchant_id:'10000100', merchant_key:'46f0cd694581a' };
 
@@ -827,9 +829,11 @@ function calc(){
       });
       h += `</tr>`;
     });
-    return h + `</table></div>`;
+    h += `</table></div>`;
+    if(prods.length>=3) h += `<div class="cmphint">↔ swipe sideways to see all ${prods.length} options</div>`;
+    return h;
   };
-  let buy='', totalTins=0;
+  let buy=`<div class="colnote">💡 Prices are a guide, last checked <b>${PRICES_CHECKED}</b> — they vary by store &amp; special, so always confirm in-store before buying.</div>`, totalTins=0;
   jobs.forEach(job=>{
     const cov = job.roof ? ROOFT[state.roof].cover : COVER[job.cat];
     const coats = job.roof ? ROOFT[state.roof].coats : 2;
