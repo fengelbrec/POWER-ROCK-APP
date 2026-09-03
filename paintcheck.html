@@ -158,6 +158,8 @@ a.cta{display:block;text-align:center;text-decoration:none;box-sizing:border-box
 .acbox{width:100%}
 gmp-place-autocomplete{width:100%}
 .locbtn2{width:100%;margin:8px 0 0;background:#12324e;color:#fff;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}
+.mbtns{display:flex;gap:8px;margin-top:8px}
+.mbtns .locbtn2{flex:1;width:auto;margin:0}
 #pcMap{height:46vh;width:100%;margin-top:8px;border-radius:12px;background:#dde3ea}
 .mrow{display:flex;gap:8px;margin:12px 0 4px}
 .mseg{flex:1}
@@ -199,8 +201,12 @@ gmp-place-autocomplete{width:100%}
         <div id="pcAcbox" class="acbox"></div>
         <button class="locbtn2" onclick="pcUseLocation()">📍 Or use my current location (stand at your house)</button>
         <div id="pcMap"></div>
-        <button class="locbtn2" onclick="pcResetBox()" style="background:#5a6b7b">↺ Reset outline — drop a fresh box on the house in the middle of the map</button>
-        <div class="hint"><b>Not on your exact house?</b> The address can land a house or two off. Just drag the map so <b>your</b> house is in the middle, then tap <b>↺ Reset outline</b>. Then drag the <b>white dots</b> to your roof corners (tap an edge to add a corner, long-press a dot to remove one).</div>
+        <div class="hint" id="pcTip">👆 <b>Tap each corner of your roof</b>, going around the outside.</div>
+        <div class="mbtns" id="pcDrawBtns">
+          <button class="locbtn2" onclick="pcUndo()" style="background:#5a6b7b">↩ Undo last corner</button>
+          <button class="locbtn2" onclick="pcDone()" style="background:#37c07a">✓ Done tracing</button>
+        </div>
+        <button class="locbtn2" id="pcStartOverBtn" onclick="pcStartOver()" style="background:#5a6b7b;display:none">↺ Start over</button>
         <div class="mrow">
           <div class="mseg"><div class="mlbl">Roof type</div><div class="mopts">
             <div class="mopt sel" id="pcRoofTiled" onclick="pcSetRoof('tiled')">Tiled</div>
@@ -502,9 +508,10 @@ function syncCards(){
   sc.style.display = state.surf.exterior ? 'flex' : 'none';
 }
 
-// ── Measure my house (Google Maps) ─────────────────────────────
+// ── Measure my house (Google Maps — tap each corner) ───────────
 const PC_GOOGLE_KEY = 'AIzaSyDtTS0nnGQEYf0_Kmr2Sqop3Iaoa6E3wTc';
-let pcMap=null, pcPoly=null, pcGoogleLoading=false, pcGoogleReady=false;
+let pcMap=null, pcPoly=null, pcLine=null, pcVertices=[], pcDots=[], pcMode='draw';
+let pcGoogleLoading=false, pcGoogleReady=false;
 const PC_DEFAULT = {lat:-25.8730, lng:28.2870};
 function openMeasure(){
   document.getElementById('measureWrap').style.display='block';
@@ -525,46 +532,78 @@ async function pcInitMap(){
     center:PC_DEFAULT, zoom:19, mapTypeId:'satellite', tilt:0,
     gestureHandling:'greedy', disableDefaultUI:true, zoomControl:true
   });
+  pcMap.addListener('click', e=>{ if(pcMode==='draw') pcAddPoint(e.latLng); });
   try {
     const ac = new google.maps.places.PlaceAutocompleteElement({ includedRegionCodes:['za'] });
     ac.style.width='100%';
     document.getElementById('pcAcbox').appendChild(ac);
     ac.addEventListener('gmp-select', async (e)=>{
       try { const p=e.placePrediction.toPlace(); await p.fetchFields({fields:['location']});
-        const loc=p.location; if(!loc) return; pcMap.setCenter(loc); pcMap.setZoom(20); pcPlaceRoof(loc);
+        const loc=p.location; if(!loc) return; pcMap.setCenter(loc); pcMap.setZoom(20); pcStartOver();
       } catch(err){}
     });
   } catch(err){}
-  pcPlaceRoof(new google.maps.LatLng(PC_DEFAULT.lat, PC_DEFAULT.lng));
+  pcStartOver();
 }
-function pcSquare(c,half){ const s=google.maps.geometry.spherical, n=s.computeOffset(c,half,0), so=s.computeOffset(c,half,180);
-  return [s.computeOffset(n,half,270), s.computeOffset(n,half,90), s.computeOffset(so,half,90), s.computeOffset(so,half,270)]; }
-function pcPlaceRoof(center){
-  if(pcPoly) pcPoly.setMap(null);
-  pcPoly = new google.maps.Polygon({ paths:pcSquare(center,8), editable:true, draggable:true,
-    strokeColor:'#37c07a', strokeWeight:3, fillColor:'#37c07a', fillOpacity:0.12, map:pcMap });
+function pcDotIcon(){ return {path:google.maps.SymbolPath.CIRCLE, scale:6, fillColor:'#fff', fillOpacity:1, strokeColor:'#37c07a', strokeWeight:2}; }
+function pcAddPoint(latLng){
+  pcVertices.push(latLng);
+  const mk = new google.maps.Marker({position:latLng, map:pcMap, icon:pcDotIcon(), draggable:true, zIndex:5});
+  mk.addListener('drag', ()=>{ const i=pcDots.indexOf(mk); if(i>=0){ pcVertices[i]=mk.getPosition(); pcRedrawLine(); pcRecompute(); } });
+  pcDots.push(mk);
+  pcRedrawLine(); pcRecompute();
+}
+function pcRedrawLine(){
+  if(pcLine){ pcLine.setMap(null); pcLine=null; }
+  if(pcVertices.length<2) return;
+  pcLine = new google.maps.Polyline({path:pcVertices, map:pcMap, strokeColor:'#37c07a', strokeWeight:3});
+}
+function pcUndo(){
+  if(!pcVertices.length) return;
+  pcVertices.pop();
+  const mk=pcDots.pop(); if(mk) mk.setMap(null);
+  pcRedrawLine(); pcRecompute();
+}
+function pcClearAll(){
+  pcVertices=[]; pcDots.forEach(m=>m.setMap(null)); pcDots=[];
+  if(pcLine){ pcLine.setMap(null); pcLine=null; }
+  if(pcPoly){ pcPoly.setMap(null); pcPoly=null; }
+}
+function pcStartOver(){ pcClearAll(); pcSetMode('draw'); pcRecompute(); }
+function pcDone(){
+  if(pcVertices.length<3){ alert('Tap at least 3 corners of your roof first.'); return; }
+  pcDots.forEach(m=>m.setMap(null)); pcDots=[];
+  if(pcLine){ pcLine.setMap(null); pcLine=null; }
+  pcPoly = new google.maps.Polygon({paths:pcVertices, editable:true, draggable:false,
+    strokeColor:'#37c07a', strokeWeight:3, fillColor:'#37c07a', fillOpacity:0.12, map:pcMap});
   const path=pcPoly.getPath();
-  ['set_at','insert_at','remove_at'].forEach(ev=> path.addListener(ev, pcRecompute));
+  ['set_at','insert_at','remove_at'].forEach(ev=> path.addListener(ev, ()=>{ pcVertices=path.getArray(); pcRecompute(); }));
   pcPoly.addListener('rightclick', e=>{ if(e.vertex!=null && path.getLength()>3) path.removeAt(e.vertex); });
-  pcRecompute();
+  pcSetMode('edit'); pcRecompute();
 }
+function pcSetMode(m){
+  pcMode=m;
+  document.getElementById('pcDrawBtns').style.display = m==='draw' ? 'flex' : 'none';
+  document.getElementById('pcStartOverBtn').style.display = m==='edit' ? 'block' : 'none';
+  const tip=document.getElementById('pcTip');
+  if(tip) tip.innerHTML = m==='draw'
+    ? '👆 <b>Tap each corner of your roof</b>, going around the outside. Then tap <b>✓ Done tracing</b>. (If your house isn’t centred, drag the map first.)'
+    : '✓ Traced. <b>Drag the white dots</b> to fine-tune (tap a dot on an edge to add one, long-press to remove), or tap <b>↺ Start over</b>.';
+}
+function pcRingLatLngs(){ return (pcMode==='edit' && pcPoly) ? pcPoly.getPath().getArray() : pcVertices; }
 function pcRecompute(){
-  if(!pcPoly) return;
-  const s=google.maps.geometry.spherical, path=pcPoly.getPath(), pts=path.getArray();
-  if(pts.length<3) return;
-  const footprint = s.computeArea(path);
-  let perim=0; for(let i=0;i<pts.length;i++) perim += s.computeDistanceBetween(pts[i], pts[(i+1)%pts.length]);
+  if(!pcGoogleReady) return;
+  const s=google.maps.geometry.spherical, pts=pcRingLatLngs(), has=pts.length>=3;
+  const footprint = has ? s.computeArea(pts) : 0;
+  let perim=0; if(has) for(let i=0;i<pts.length;i++) perim += s.computeDistanceBetween(pts[i], pts[(i+1)%pts.length]);
   const height = state.storey ? 6.5 : 3.5;
-  const roofA = Math.round(footprint*1.56);            // footprint +21% profile +35% slope
-  const wallA = Math.round(perim*height*0.85);         // perimeter × height, less 15% windows
-  const ceilA = Math.round(footprint*(state.storey?1.75:1.0));
-  state.measuredFootprint = Math.round(footprint);
-  state.measuredRoof = roofA;
-  state.measuredWall = wallA;
-  state.measuredCeiling = ceilA;
-  document.getElementById('pcRoofA').textContent = roofA+' m²';
-  document.getElementById('pcWallA').textContent = wallA+' m²';
-  const ce=document.getElementById('pcCeilA'); if(ce) ce.textContent = ceilA+' m²';
+  state.measuredFootprint = has ? Math.round(footprint) : null;
+  state.measuredRoof = has ? Math.round(footprint*1.56) : null;          // footprint +21% profile +35% slope
+  state.measuredWall = has ? Math.round(perim*height*0.85) : null;       // perimeter × height, less 15% windows
+  state.measuredCeiling = has ? Math.round(footprint*(state.storey?1.75:1.0)) : null;
+  document.getElementById('pcRoofA').textContent = has ? state.measuredRoof+' m²' : '—';
+  document.getElementById('pcWallA').textContent = has ? state.measuredWall+' m²' : '—';
+  const ce=document.getElementById('pcCeilA'); if(ce) ce.textContent = has ? state.measuredCeiling+' m²' : '—';
 }
 function pcSetRoof(t){
   state.roof = t;
@@ -581,11 +620,10 @@ function pcSetStorey(v){
   const sc=document.getElementById('storeyChk'); if(sc) sc.classList.toggle('sel', v);
   pcRecompute();
 }
-function pcResetBox(){ if(pcMap) pcPlaceRoof(pcMap.getCenter()); }   // fresh box on whatever house is centred
 function pcUseLocation(){
   if(!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition(
-    pos=>{ if(!pcMap) return; const c=new google.maps.LatLng(pos.coords.latitude,pos.coords.longitude); pcMap.setCenter(c); pcMap.setZoom(20); pcPlaceRoof(c); },
+    pos=>{ if(!pcMap) return; const c=new google.maps.LatLng(pos.coords.latitude,pos.coords.longitude); pcMap.setCenter(c); pcMap.setZoom(20); pcStartOver(); },
     ()=>{}, {enableHighAccuracy:true, timeout:10000});
 }
 
