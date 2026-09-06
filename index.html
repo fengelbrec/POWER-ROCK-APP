@@ -6154,6 +6154,7 @@ function sitePOsHtml(){
         </div>
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(iv.client_name||'')}${iv.pct?' · '+Math.round(iv.pct)+'%':''}${iv.date?' · '+fd(iv.date):''}</div>
         <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
+          <button onclick="renderInvoiceEditor('${s.id}',${iv.po_id?`'${iv.po_id}'`:'null'},'${iv.id}')" style="background:none;border:none;color:#1A1A1A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button>
           <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:${iv.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
           <button onclick="shareInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#1A7A4A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📤 Share</button>
           <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
@@ -6286,22 +6287,27 @@ function nextInvoiceNumber(){
 let INV_PO=null;
 // poId optional. With a PO → fields pre-filled from it & its invoiced% is tracked.
 // Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
-function renderInvoiceEditor(siteId, poId){
+function renderInvoiceEditor(siteId, poId, invId){
   const s=(SUMMARY && SUMMARY.site)||{};
   const d=s.details||{};
+  const existing = invId ? siteInvoices(s).find(function(x){ return x.id===invId; }) : null;
+  if(existing && !poId && existing.po_id) poId = existing.po_id;   // keep the PO link when editing
   const po=poId ? sitePOs(s).find(function(x){ return x.id===poId; }) : null;
   INV_PO=po;
-  // With a PO → fill from the PO. Without a PO → fill from the site's QUOTATION
-  // (client, address, VAT, project name and quote total captured on the site).
-  const src = po ? po : { client_name:s.client, client_address:d.address, client_vat:d.client_vat, order_nr:'', project_ref:s.name };
-  const basis = po ? (parseFloat(po.po_total)||0) : (siteQuoteValue(s)||parseFloat(s.quote_value)||0);
+  // Edit → fill from the saved invoice. New with PO → from the PO. New without PO → from the site quote.
+  const src = existing ? existing
+            : (po ? po : { client_name:s.client, client_address:d.address, client_vat:d.client_vat, order_nr:'', project_ref:s.name });
+  const basis = existing
+      ? (parseFloat(existing.pct)>0 ? Math.round(existing.amount_ex/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
+      : (po ? (parseFloat(po.po_total)||0) : (siteQuoteValue(s)||parseFloat(s.quote_value)||0));
   const done=po?Math.round(parseFloat(po.invoiced_pct)||0):0;
   const remaining=Math.max(0,100-done);
-  const numStr='PR'+String(nextInvoiceNumber()).padStart(6,'0');
-  const defDesc = po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
-                     : 'Preparation & Paint as per quotation';
-  const startPct = po ? (remaining>0?remaining:100) : 100;
-  const startAmt = Math.round(basis*startPct)/100;
+  const numStr = existing ? existing.number_str : ('PR'+String(nextInvoiceNumber()).padStart(6,'0'));
+  const defDesc = existing ? (existing.description||'')
+                : (po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
+                      : 'Preparation & Paint as per quotation');
+  const startPct = existing ? (parseFloat(existing.pct)||0) : (po ? (remaining>0?remaining:100) : 100);
+  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : Math.round(basis*startPct)/100;
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
@@ -6310,8 +6316,8 @@ function renderInvoiceEditor(siteId, poId){
       ? `<div style="background:#EEF4EE;border:1px solid #CFE3CF;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2b5a2b">📄 Quotation on file${d.quote_name?' · '+esc(d.quote_name):''} — <a href="${d.quote_url}" target="_blank" style="color:#1A7A4A;font-weight:800">Open</a>. Details below were filled in from the site quote — edit if needed.</div>`
       : `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">No quotation on file for this site yet. <label style="color:#8B1A1A;font-weight:800;cursor:pointer;text-decoration:underline">Upload the quotation<input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadQuoteThenInvoice('${siteId}',this)"/></label> (optional — you can still invoice below).</div>`);
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">New invoice · ${numStr}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoiced from the quotation'}</div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit invoice':'New invoice'} · ${numStr}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoiced from the quotation')}</div>
     ${quoteStrip}
     ${fld('Invoice number (you can change it to match your records)','inv_num',numStr)}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
@@ -6328,13 +6334,13 @@ function renderInvoiceEditor(siteId, poId){
       <div style="flex:1;min-width:0"><label style="${lbl}">% of total</label><input class="f-input" id="inv_pct" type="number" step="0.01" value="${startPct}" oninput="invPctToAmt()" style="margin:0"/></div>
       <div style="flex:1;min-width:0"><label style="${lbl}">Amount (ex-VAT, R)</label><input class="f-input" id="inv_amt" type="number" step="0.01" value="${startAmt||''}" oninput="invAmtToPct()" style="margin:0"/></div>
     </div>
-    <div style="margin-bottom:12px"><label style="${lbl}">Invoice date</label><input class="f-input" id="inv_date" type="date" value="${invToday()}" style="margin:0"/></div>
+    <div style="margin-bottom:12px"><label style="${lbl}">Invoice date</label><input class="f-input" id="inv_date" type="date" value="${existing&&existing.date?existing.date:invToday()}" style="margin:0"/></div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp" id="inv_pv_sub">${R(startAmt)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="inv_pv_vat">${R(startAmt*0.15)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="inv_pv_tot">${R(startAmt*1.15)}</span></div>
     </div>
-    <button class="cta-btn" onclick="saveInvoice('${s.id}',${po?`'${po.id}'`:'null'})">Save invoice &amp; download PDF</button>
+    <button class="cta-btn" onclick="saveInvoice('${s.id}',${po?`'${po.id}'`:'null'},${existing?`'${existing.id}'`:'null'})">${existing?'Save changes &amp; download PDF':'Save invoice &amp; download PDF'}</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="refreshSitePOs()">← Back</button>`;
   $('siteDetailContent').innerHTML=h;
 }
@@ -6343,7 +6349,7 @@ function invPctToAmt(){ const t=invBase(); const pct=parseFloat(($('inv_pct')||{
 function invAmtToPct(){ const t=invBase(); const amt=parseFloat(($('inv_amt')||{}).value)||0; if($('inv_pct')&&t>0) $('inv_pct').value=(amt/t*100).toFixed(2); invPreview(); }
 function invPreview(){ const amt=parseFloat(($('inv_amt')||{}).value)||0; if($('inv_pv_sub'))$('inv_pv_sub').textContent=R(amt); if($('inv_pv_vat'))$('inv_pv_vat').textContent=R(amt*0.15); if($('inv_pv_tot'))$('inv_pv_tot').textContent=R(amt*1.15); }
 
-async function saveInvoice(siteId, poId){
+async function saveInvoice(siteId, poId, editId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
   const amt=parseFloat(($('inv_amt')||{}).value)||0;
   const pct=parseFloat(($('inv_pct')||{}).value)||0;
@@ -6358,23 +6364,32 @@ async function saveInvoice(siteId, poId){
   const typedNum=parseInt((($('inv_num')||{}).value||'').replace(/\D/g,''))||0;
   const numN = typedNum>0 ? typedNum : nextInvoiceNumber();
   const numStr='PR'+String(numN).padStart(6,'0');
-  if(allAppInvoices().some(function(x){ return (parseInt(x.number)||0)===numN; })){
-    if(!confirm('Invoice '+numStr+' already exists in the app. Save another with the same number?')){ refreshSitePOs(); return; }
+  // duplicate-number check (ignore the invoice being edited)
+  if(allAppInvoices().some(function(x){ return (parseInt(x.number)||0)===numN && x.id!==editId; })){
+    if(!confirm('Invoice '+numStr+' already exists in the app. Save with the same number?')){ refreshSitePOs(); return; }
   }
-  const inv={ id:uid(), number:numN, number_str:numStr, po_id:poId||null,
+  const fields={ number:numN, number_str:numStr, po_id:poId||null,
     client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'),
     order_nr: g('inv_order'), project_ref: g('inv_ref'),
-    description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100,
-    date:date, paid:false, paid_date:'', created:invToday() };
-  d.invoices.push(inv);
-  if(po) po.invoiced_pct=(parseFloat(po.invoiced_pct)||0)+pct;
+    description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:date };
+  let inv;
+  if(editId){
+    inv=(d.invoices||[]).find(function(x){ return x.id===editId; });
+    if(!inv){ showSaveToast('Invoice not found'); refreshSitePOs(); return; }
+    Object.assign(inv, fields);   // keep id, paid, paid_date, created
+  } else {
+    inv=Object.assign({ id:uid(), paid:false, paid_date:'', created:invToday() }, fields);
+    d.invoices.push(inv);
+  }
+  // Recompute the PO's invoiced % from all its invoices (robust for new & edited).
+  if(po) po.invoiced_pct=(d.invoices||[]).filter(function(x){ return x.po_id===po.id; }).reduce(function(a,x){ return a+(parseFloat(x.pct)||0); },0);
   $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
   const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
   if(ok){
     s.details=d;
     if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=d; }
     generateInvoicePDF(inv);
-    showSaveToast('Invoice '+numStr+' created');
+    showSaveToast('Invoice '+numStr+(editId?' updated':' created'));
     refreshSitePOs();
   } else { showSaveToast('Could not save — check your signal'); refreshSitePOs(); }
 }
@@ -6665,13 +6680,21 @@ function openInvoiceDetail(siteId, invId){
       <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadWord('${siteId}','${invId}')">📄 Word</button>
       <button class="cta-btn ghost" style="flex:1;margin:0" onclick="closeModal('modalSiteDetail');incomeTogglePaid('${siteId}','${invId}')">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
     </div>
-    <button class="cta-btn ghost" style="margin-top:4px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+    <button class="cta-btn" style="margin-top:4px" onclick="incomeEditInvoice('${siteId}','${invId}')">✎ Edit this invoice</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
   $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
 }
 function incomeInvGet(siteId,invId){ const s=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(!s) return null; const iv=((s.details&&s.details.invoices)||[]).find(function(x){return x.id===invId;}); return iv?{site:s,inv:iv}:null; }
 function incomeDownloadPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoicePDF(g.inv); }
 function incomeDownloadWord(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoiceDoc(g.inv); }
 function incomeShare(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) shareInvoicePDF(g.inv); }
+async function incomeEditInvoice(siteId,invId){
+  closeModal('modalSiteDetail');
+  $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Opening…</div>`;
+  openModal('modalSiteDetail');
+  await loadSiteSummary(siteId);
+  renderInvoiceEditor(siteId, null, invId);
+}
 async function incomeTogglePaid(siteId,invId){
   const g=incomeInvGet(siteId,invId); if(!g) return;
   const d=Object.assign({}, g.site.details||{});
