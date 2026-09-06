@@ -828,7 +828,7 @@ const NAV = [
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
   {id:'cashflow', label:'Cashflow', icon:'∿'},
   {id:'suppliers', label:'Suppliers', icon:'▣'},
-  {id:'invoiceinbox', label:'Invoice Inbox', icon:'📥'},
+  {id:'invoiceinbox', label:'Supplier Invoices', icon:'📥'},
   {id:'foundation', label:'Foundation', icon:'✦'},
   {id:'marketing', label:'Marketing', icon:'◎'},
   {id:'settings', label:'Settings', icon:'⚙'},
@@ -838,7 +838,7 @@ const NAV = [
 const NAV_HENK = [
   {id:'overview', label:'Overview', icon:'◆'},
   {id:'sites', label:'Sites', icon:'▦'},
-  {id:'invoiceinbox', label:'Invoice Inbox', icon:'📥'},
+  {id:'invoiceinbox', label:'Supplier Invoices', icon:'📥'},
 ];
 
 function navFor(){ return CURRENT_ROLE === 'henk' ? NAV_HENK : NAV; }
@@ -4274,8 +4274,8 @@ function inboxSetCustom(){
 async function renderInvoiceInbox(){
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
-    <div class="page-title">Invoice Inbox</div>
-    <div style="font-size:12px;color:#8A8470;margin-bottom:16px;line-height:1.7">Invoices emailed to <strong>powerrock.invoices@gmail.com</strong> land here. Check what was read, pick the site if the guess is wrong, and tap Confirm — the material cost and paint stock update automatically. Nothing changes without your tap.</div>
+    <div class="page-title">Supplier Invoices</div>
+    <div style="font-size:12px;color:#8A8470;margin-bottom:16px;line-height:1.7">Supplier invoices (what you pay — paint & materials) emailed to <strong>powerrock.invoices@gmail.com</strong> land here. Check what was read, pick the site if the guess is wrong, and tap Confirm — the material cost and paint stock update automatically. Nothing changes without your tap.</div>
     <div id="inboxBody"><div style="text-align:center;padding:40px;color:#8A8470">Loading…</div></div>`;
 
   const res = await Promise.all([
@@ -6062,6 +6062,7 @@ function sitePOsHtml(){
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(iv.client_name||'')}${iv.pct?' · '+Math.round(iv.pct)+'%':''}${iv.date?' · '+fd(iv.date):''}</div>
         <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
           <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:${iv.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
+          <button onclick="shareInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#1A7A4A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📤 Share</button>
           <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
           <button onclick="redownloadInvoiceWord('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
           <button onclick="deleteInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
@@ -6084,6 +6085,11 @@ function redownloadInvoiceWord(siteId, invId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
   const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
   if(iv) generateInvoiceDoc(iv);
+}
+function shareInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
+  if(iv) shareInvoicePDF(iv);
 }
 async function deleteInvoice(siteId, invId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
@@ -6351,8 +6357,8 @@ function loadPdfLibs(){
     });
   });
 }
-// PDF version — what the client portals (Excellerate/JHI, Broll, Burstone) need.
-async function generateInvoicePDF(inv){
+// Builds the invoice as a real A4 PDF blob (client portals need PDF, not .doc).
+async function buildInvoicePdfBlob(inv){
   const holder=document.createElement('div');
   holder.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:40px;box-sizing:border-box';
   holder.innerHTML=invoiceInnerHtml(inv);
@@ -6370,16 +6376,40 @@ async function generateInvoicePDF(inv){
     pdf.addImage(imgData,'JPEG',0,0,iw,ih);
     let left=ih-ph, pos=-ph;
     while(left>0.5){ pdf.addPage(); pdf.addImage(imgData,'JPEG',0,pos,iw,ih); left-=ph; pos-=ph; }
-    pdf.save(invoiceFileBase(inv)+'.pdf');
-  }catch(e){
-    // No signal / CDN blocked → open a print view so he can "Save as PDF".
-    const w=window.open('','_blank');
-    if(!w){ alert('To get the PDF, please allow pop-ups — or use the Word version.'); return; }
-    w.document.write(`<html><head><meta charset="utf-8"><title>${invoiceFileBase(inv)}</title></head><body style="margin:0">${invoiceInnerHtml(inv)}<scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt></body></html>`);
-    w.document.close();
-  }finally{
-    holder.remove();
-  }
+    return { blob: pdf.output('blob'), name: invoiceFileBase(inv)+'.pdf' };
+  } finally { holder.remove(); }
+}
+function printInvoiceFallback(inv){
+  const w=window.open('','_blank');
+  if(!w){ alert('To get the PDF, please allow pop-ups — or use the Word version.'); return; }
+  w.document.write(`<html><head><meta charset="utf-8"><title>${invoiceFileBase(inv)}</title></head><body style="margin:0">${invoiceInnerHtml(inv)}<scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt></body></html>`);
+  w.document.close();
+}
+function saveBlobFile(blob, name){
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); },2000);
+}
+// Download the PDF (save to phone/PC — for portal uploads & your hard-drive filing).
+async function generateInvoicePDF(inv){
+  try{ const r=await buildInvoicePdfBlob(inv); saveBlobFile(r.blob, r.name); }
+  catch(e){ printInvoiceFallback(inv); }
+}
+// Share the PDF — opens the phone's Share sheet (WhatsApp / Email / etc.).
+// On a desktop that can't share files, it saves the PDF instead.
+async function shareInvoicePDF(inv){
+  let r;
+  try{ r=await buildInvoicePdfBlob(inv); }
+  catch(e){ printInvoiceFallback(inv); return; }
+  try{
+    const file=new File([r.blob], r.name, {type:'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({ files:[file], title:r.name, text:'Invoice '+(inv.number_str||'')+(inv.client_name?(' — '+inv.client_name):'') });
+      return;
+    }
+    saveBlobFile(r.blob, r.name);
+    showSaveToast('Sharing isn’t available on this device — saved the PDF instead');
+  }catch(e){ if(e && e.name==='AbortError') return; saveBlobFile(r.blob, r.name); }
 }
 
 // ═══════════════════════════════════════════
@@ -6438,6 +6468,7 @@ async function renderIncome(){
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(r.client_name||'')} · ${esc(r._siteName)}${r.date?' · '+fd(r.date):''}</div>
         <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
           <button onclick="incomeTogglePaid('${r._siteId}','${r.id}')" style="background:none;border:none;color:${r.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${r.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
+          <button onclick="incomeShare('${r._siteId}','${r.id}')" style="background:none;border:none;color:#1A7A4A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📤 Share</button>
           <button onclick="incomeDownloadPDF('${r._siteId}','${r.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
           <button onclick="incomeDownloadWord('${r._siteId}','${r.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
         </div>
@@ -6450,6 +6481,7 @@ function setIncomeYear(y){ INCOME_YEAR=parseInt(y,10)||new Date().getFullYear();
 function incomeInvGet(siteId,invId){ const s=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(!s) return null; const iv=((s.details&&s.details.invoices)||[]).find(function(x){return x.id===invId;}); return iv?{site:s,inv:iv}:null; }
 function incomeDownloadPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoicePDF(g.inv); }
 function incomeDownloadWord(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoiceDoc(g.inv); }
+function incomeShare(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) shareInvoicePDF(g.inv); }
 async function incomeTogglePaid(siteId,invId){
   const g=incomeInvGet(siteId,invId); if(!g) return;
   const d=Object.assign({}, g.site.details||{});
