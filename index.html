@@ -6416,6 +6416,8 @@ async function shareInvoicePDF(inv){
 // INCOME TAB — every client invoice, by month (the Excel replacement)
 // ═══════════════════════════════════════════
 let INCOME_YEAR = new Date().getFullYear();
+let INCOME_VIEW = 'months';   // 'months' (invoice book) | 'outstanding' (who owes me)
+let INCOME_MONTH = null;      // selected 'YYYY-MM' in the invoice book
 async function renderIncome(){
   if(!OWNER.loaded){
     $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Income — Invoices</div><div style="text-align:center;padding:44px;color:#8A8470">Loading invoices…</div>`;
@@ -6438,46 +6440,122 @@ async function renderIncome(){
   const grandPaid=yrRows.filter(function(r){return r.paid;}).reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
   const grandUnpaid=grand-grandPaid;
 
+  const ageOf=function(r){ if(!r.date) return null; return Math.max(0,Math.floor((Date.now()-new Date(r.date+'T12:00:00'))/86400000)); };
+  const ageCol=function(a){ return a>90?'#B2342A':a>60?'#D46A00':a>30?'#C08A00':'#1A7A4A'; };
+  const stColour=function(paid){ return paid?'#3F5A4C':'#C08A00'; };
+  const unpaidAll=rows.filter(function(r){ return !r.paid; });
+  const MONTHS_S=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
   let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Income — Invoices</div>`;
-  h+=`<div style="font-size:12.5px;color:#8A8470;margin:-6px 0 14px">Every client invoice you've created, listed by month — your live invoice book.</div>`;
+  h+=`<div class="snap-meta" style="margin-bottom:14px">What you actually invoiced each month — your real cashflow coming in to cover month-end overheads. Tap a month, then tap any invoice to open it.</div>`;
   h+=`<button class="cta-btn" style="margin-bottom:14px" onclick="openIncomeNewInvoice()">💵 Create / send a new invoice</button>`;
+  h+=`<div style="display:flex;gap:8px;margin-bottom:16px">
+    <button onclick="setIncomeView('months')" style="flex:1;background:${INCOME_VIEW!=='outstanding'?'#1A1A1A':'#EFECE3'};color:${INCOME_VIEW!=='outstanding'?'#fff':'#1A1A1A'};border:none;border-radius:10px;padding:10px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📚 Invoice book</button>
+    <button onclick="setIncomeView('outstanding')" style="flex:1;background:${INCOME_VIEW==='outstanding'?'#B2342A':'#EFECE3'};color:${INCOME_VIEW==='outstanding'?'#fff':'#1A1A1A'};border:none;border-radius:10px;padding:10px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">⏰ Who owes me${unpaidAll.length?' ('+unpaidAll.length+')':''}</button>
+  </div>`;
+
+  // ══ WHO OWES ME (outstanding, oldest first) ══
+  if(INCOME_VIEW==='outstanding'){
+    const outTotal=unpaidAll.reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
+    const bk={cur:0,d30:0,d60:0,d90:0};
+    unpaidAll.forEach(function(r){ const a=ageOf(r)||0; const v=parseFloat(r.total_incl)||0; if(a>90)bk.d90+=v; else if(a>60)bk.d60+=v; else if(a>30)bk.d30+=v; else bk.cur+=v; });
+    h+=`<div class="snap-meta" style="margin-bottom:12px">${unpaidAll.length} unpaid invoice${unpaidAll.length===1?'':'s'} · Outstanding <strong style="color:#B2342A">${R(outTotal)}</strong> (incl VAT) · oldest first · tap a row for detail</div>`;
+    if(unpaidAll.length){
+      const tile=function(lbl,val,c){ return `<div style="flex:1;min-width:0;background:#fff;border:1px solid #EFECE3;border-top:3px solid ${c};border-radius:9px;padding:9px 8px;text-align:center"><div style="font-size:9px;font-weight:800;color:#8A8470;text-transform:uppercase;letter-spacing:.3px">${lbl}</div><div class="disp" style="font-size:12.5px;font-weight:800;color:${c};margin-top:3px">${R(val)}</div></div>`; };
+      h+=`<div style="display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap">${tile('0–30 days',bk.cur,'#1A7A4A')}${tile('31–60',bk.d30,'#C08A00')}${tile('61–90',bk.d60,'#D46A00')}${tile('90+ days',bk.d90,'#B2342A')}</div>`;
+      const list=unpaidAll.slice().sort(function(a,b){ return (ageOf(b)||0)-(ageOf(a)||0); });
+      h+=`<div class="ledger-card" style="padding:2px 14px 10px"><div class="snap-scroll"><table class="snap-table" style="min-width:640px">
+        <thead><tr><th>Invoice</th><th class="alt">Date</th><th>Client</th><th class="alt">Age</th><th>Amount<br/><span class="mini">incl VAT</span></th></tr></thead>
+        <tbody>${list.map(function(r){ const a=ageOf(r); return `<tr style="cursor:pointer" onclick="openInvoiceDetail('${r._siteId}','${r.id}')">
+          <td style="font-weight:800">${esc(r.number_str||'')}</td>
+          <td class="alt">${r.date?fd(r.date):'—'}</td>
+          <td>${esc(r.client_name||r._siteName||'')}</td>
+          <td class="alt" style="font-weight:700;color:${ageCol(a||0)}">${a!=null?a+'d':'—'}</td>
+          <td style="font-weight:800">${R(r.total_incl||0)}</td>
+        </tr>`; }).join('')}</tbody>
+        <tfoot><tr><td>TOTAL</td><td class="alt"></td><td></td><td class="alt"></td><td style="color:#B2342A">${R(outTotal)}</td></tr></tfoot>
+      </table></div></div>`;
+    } else {
+      h+=`<div style="text-align:center;padding:36px;color:#1A7A4A;font-weight:700">🎉 Nothing outstanding — every invoice is paid.</div>`;
+    }
+    $('pageBody').innerHTML=h;
+    return;
+  }
+
+  // ══ INVOICE BOOK — month by month, invoice-number order ══
   if(yearList.length>1){
-    h+=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">`+yearList.map(function(y){
+    h+=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">`+yearList.map(function(y){
       return `<button onclick="setIncomeYear('${y}')" style="background:${y===yr?'#1A1A1A':'#EFECE3'};color:${y===yr?'#fff':'#1A1A1A'};border:none;border-radius:20px;padding:7px 15px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">${y}</button>`;
     }).join('')+`</div>`;
   }
-  h+=`<div class="headline-num" style="padding:18px;margin-bottom:16px">
-    <div class="headline-label">${yr} · INVOICED TOTAL (incl VAT)</div>
-    <div class="headline-figure" style="font-size:34px">${R(grand)}</div>
-    <div class="headline-sub">${R(grandPaid)} paid · <span style="color:#E8B84B">${R(grandUnpaid)} outstanding</span></div>
-  </div>`;
+  h+=`<div class="snap-meta" style="margin-bottom:12px">${yr} · Invoiced <strong>${R(grand)}</strong> (incl VAT) · Paid ${R(grandPaid)} · <span style="color:#B2342A">Outstanding ${R(grandUnpaid)}</span></div>`;
   if(!months.length){
     h+=`<div style="text-align:center;padding:36px;color:#A39E8C">No invoices for ${yr} yet.<br/>Tap “Create / send a new invoice” to make your first one.</div>`;
+    $('pageBody').innerHTML=h;
+    return;
   }
-  months.forEach(function(mk){
-    const list=byMonth[mk].slice().sort(function(a,b){return String(b.date||'').localeCompare(String(a.date));});
-    const mtot=list.reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
-    const mi=parseInt(mk.slice(5,7),10)-1;
-    h+=`<div class="section-lbl" style="display:flex;justify-content:space-between;align-items:baseline"><span>${MONTHS_L[mi]} ${yr}</span><span class="disp" style="font-weight:800;color:#1A1A1A">${R(mtot)}</span></div>`;
-    list.forEach(function(r){
-      h+=`<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-          <div style="font-weight:800;font-size:13px">${esc(r.number_str||'')} <span style="font-size:10px;font-weight:700;color:${r.paid?'#1A7A4A':'#C08A00'}">${r.paid?'PAID':'unpaid'}</span></div>
-          <div class="disp" style="font-weight:800;font-size:13.5px;white-space:nowrap">${R(r.total_incl||0)}</div>
-        </div>
-        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(r.client_name||'')} · ${esc(r._siteName)}${r.date?' · '+fd(r.date):''}</div>
-        <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
-          <button onclick="incomeTogglePaid('${r._siteId}','${r.id}')" style="background:none;border:none;color:${r.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${r.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
-          <button onclick="incomeShare('${r._siteId}','${r.id}')" style="background:none;border:none;color:#1A7A4A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📤 Share</button>
-          <button onclick="incomeDownloadPDF('${r._siteId}','${r.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
-          <button onclick="incomeDownloadWord('${r._siteId}','${r.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
-        </div>
-      </div>`;
-    });
-  });
+  if(!INCOME_MONTH || months.indexOf(INCOME_MONTH)<0) INCOME_MONTH=months[0];
+  h+=`<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;-webkit-overflow-scrolling:touch">`+months.map(function(mk){
+    const on=mk===INCOME_MONTH; const mmi=parseInt(mk.slice(5,7),10)-1; const cnt=(byMonth[mk]||[]).length;
+    return `<button onclick="setIncomeMonth('${mk}')" style="flex:0 0 auto;background:${on?'#1A1A1A':'#EFECE3'};color:${on?'#fff':'#1A1A1A'};border:none;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">${MONTHS_S[mmi]} <span style="opacity:.6">${cnt}</span></button>`;
+  }).join('')+`</div>`;
+  const list=(byMonth[INCOME_MONTH]||[]).slice().sort(function(a,b){ return (parseInt(a.number)||0)-(parseInt(b.number)||0); });
+  const mtot=list.reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
+  const mpaid=list.filter(function(r){return r.paid;}).reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
+  const mi=parseInt(INCOME_MONTH.slice(5,7),10)-1;
+  h+=`<div class="section-lbl" style="margin-top:0">${MONTHS_L[mi]} ${yr}</div>`;
+  h+=`<div class="ledger-card" style="padding:2px 14px 10px"><div class="snap-scroll"><table class="snap-table" style="min-width:640px">
+    <thead><tr><th>Invoice</th><th class="alt">Date</th><th>Client</th><th class="alt">Status</th><th>Amount<br/><span class="mini">incl VAT</span></th></tr></thead>
+    <tbody>${list.map(function(r){ return `<tr style="cursor:pointer" onclick="openInvoiceDetail('${r._siteId}','${r.id}')">
+      <td style="font-weight:800">${esc(r.number_str||'')}</td>
+      <td class="alt">${r.date?fd(r.date):'—'}</td>
+      <td>${esc(r.client_name||r._siteName||'')}</td>
+      <td class="alt" style="font-weight:700;color:${stColour(r.paid)}">${r.paid?'PAID':'unpaid'}</td>
+      <td style="font-weight:800">${R(r.total_incl||0)}</td>
+    </tr>`; }).join('')}</tbody>
+    <tfoot><tr><td>TOTAL</td><td class="alt"></td><td></td><td class="alt"><span class="mini">${R(mpaid)} paid</span></td><td>${R(mtot)}</td></tr></tfoot>
+  </table></div></div>`;
   $('pageBody').innerHTML=h;
 }
 function setIncomeYear(y){ INCOME_YEAR=parseInt(y,10)||new Date().getFullYear(); renderIncome(); }
+function setIncomeView(v){ INCOME_VIEW=v; renderIncome(); }
+function setIncomeMonth(m){ INCOME_MONTH=m; renderIncome(); }
+// Full invoice detail — opened by tapping any invoice row in the Income tab.
+function openInvoiceDetail(siteId, invId){
+  const g=incomeInvGet(siteId,invId); if(!g) return;
+  const iv=g.inv;
+  const none='<span style="color:#C9C5BA">—</span>';
+  const row=function(lbl,val){ return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3"><div style="flex:0 0 42%;font-size:11.5px;color:#8A8470;font-weight:700">${lbl}</div><div style="flex:1;font-size:12.5px;color:#1A1A1A;min-width:0;word-break:break-word;white-space:pre-line">${val||none}</div></div>`; };
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:12px">
+      <div class="disp" style="font-size:18px;font-weight:800">${esc(iv.number_str||'')}</div>
+      <div style="font-size:11px;font-weight:800;color:${iv.paid?'#1A7A4A':'#C08A00'}">${iv.paid?'PAID':'UNPAID'}</div>
+    </div>
+    <div class="ledger-card" style="padding:4px 15px;margin-bottom:14px">
+      ${row('Client', esc(iv.client_name))}
+      ${row('Address', esc(iv.client_address))}
+      ${row('Client VAT', esc(iv.client_vat))}
+      ${row('Order nr', esc(iv.order_nr))}
+      ${row('Project (RE)', esc(iv.project_ref))}
+      ${row('Invoice date', iv.date?fd(iv.date):'')}
+      ${row('Description', esc(iv.description))}
+    </div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp">${R(iv.amount_ex||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp">${R(iv.vat||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp">${R(iv.total_incl||0)}</span></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="cta-btn" style="flex:1;margin:0" onclick="incomeShare('${siteId}','${invId}')">📤 Share</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadPDF('${siteId}','${invId}')">⬇ PDF</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadWord('${siteId}','${invId}')">📄 Word</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="closeModal('modalSiteDetail');incomeTogglePaid('${siteId}','${invId}')">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
+    </div>
+    <button class="cta-btn ghost" style="margin-top:4px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
 function incomeInvGet(siteId,invId){ const s=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(!s) return null; const iv=((s.details&&s.details.invoices)||[]).find(function(x){return x.id===invId;}); return iv?{site:s,inv:iv}:null; }
 function incomeDownloadPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoicePDF(g.inv); }
 function incomeDownloadWord(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoiceDoc(g.inv); }
