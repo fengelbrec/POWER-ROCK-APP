@@ -2564,6 +2564,7 @@ function duSiteInfoTab(s){
     <div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
       ${bullet('Client', s.client)}
       ${bullet('Client VAT', d.client_vat)}
+      ${bullet('Client reg', d.client_reg)}
       ${bullet('Contact', d.contact)}
       ${bullet('Site address', addressTxt)}
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
@@ -5473,6 +5474,7 @@ function openSiteInfo(siteId, canEdit, editing){
     h += `<div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
       ${bullet('Client', s.client)}
       ${bullet('Client VAT', d.client_vat)}
+      ${bullet('Client reg', d.client_reg)}
       ${bullet('Contact', d.contact)}
       ${bullet('Site address', addressTxt)}
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
@@ -5501,6 +5503,7 @@ function openSiteInfo(siteId, canEdit, editing){
       ${fld('Site name', 'si_name', s.name)}
       ${fld('Client', 'si_client', s.client)}
       ${fld('Client VAT number', 'si_client_vat', d.client_vat, 'Shown on invoices')}
+      ${fld('Client registration number', 'si_client_reg', d.client_reg, 'Shown on invoices')}
       ${fld('Contact', 'si_contact', d.contact, 'Name — number')}
       ${fld('Site address', 'si_address', d.address, 'For the map link')}
       ${fld('Quote (ex-VAT, R)', 'si_quote', s.quote_value||'')}
@@ -5535,6 +5538,7 @@ async function saveSiteInfo(siteId){
   const started = v('si_started') || s.started || '';
   const name = v('si_name').trim() || s.name;
   d.client_vat = v('si_client_vat').trim();
+  d.client_reg = v('si_client_reg').trim();
   d.contact = v('si_contact').trim();
   d.address = v('si_address').trim();
   d.maps_link = d.address ? mapsLinkFor(d.address) : '';
@@ -6219,6 +6223,7 @@ function renderPOEditor(siteId, poId){
     <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Client address</label>
       <textarea class="f-input" id="po_address" rows="2" style="margin:0" placeholder="C/O … , street, town, code">${esc(v.client_address||'')}</textarea></div>
     ${fld('Client VAT number','po_vat',v.client_vat,'e.g. 4440177295')}
+    ${fld('Client registration number','po_reg',v.client_reg,'e.g. 2013/012345/07')}
     ${fld('Project / reference (RE)','po_ref',v.project_ref,'e.g. ABSA Tzaneen - SETA interior offices')}
     ${fld('PO total (ex-VAT, R)','po_total',v.po_total,'e.g. 9940','number')}
     ${fld('PO date','po_date',v.po_date||'', '', 'date')}
@@ -6236,7 +6241,10 @@ async function extractPOFieldsFromPdf(file){
   const out={};
   let m=/Order\s*No\.?\s*\n?\s*(\d{4,})/i.exec(t) || /order\s*(?:no|number|nr)\.?\s*[:#]?\s*(\d{4,})/i.exec(t);
   out.order_nr = m ? m[1] : ((file.name.match(/(\d{5,6})/)||[])[1]||'');
-  m=/total\s*excl[a-z ]*(?:tax|vat)?\s*\n?\s*([0-9][0-9 .,]{2,})/i.exec(t);
+  // Total (ex-VAT): several MRI layouts — "Total Excluding Tax", "Excludes Tax / Total", or "Total 299,969.00".
+  m=/total\s*excl[a-z ]*(?:tax|vat)?\s*\n?\s*([0-9][0-9 .,]{2,})/i.exec(t)
+    || /exclud\w*\s*(?:tax|vat)\s*\n?\s*total\s*[:]?\s*([0-9][0-9 .,]{2,})/i.exec(t)
+    || /\btotal\s*[:]?\s*(?:R\s*)?([0-9]{1,3}(?:[ ,]\d{3})+(?:[.,]\d{2})?)/i.exec(t);
   out.po_total = m ? parseZAR(m[1]) : null;
   const vats=t.match(/\b4\d{9}\b/g)||[];
   out.client_vat = (vats.filter(function(x){return x!=='4630267633';})[0]||'');
@@ -6246,11 +6254,23 @@ async function extractPOFieldsFromPdf(file){
   if(out.client_name && /moolman/i.test(t) && !/moolman/i.test(out.client_name)){
     out.client_name += ' (Moolman Group)';
   }
-  const addrM=/this order refers to\s*\n?\s*(.+)/i.exec(t);
-  out.client_address = addrM ? addrM[1].trim().slice(0,120) : '';
+  // Client billing address — the "Address" block on the PO (drop a leading line that repeats the client name).
+  out.client_address='';
+  const ab=/\bAddress\s*\n([\s\S]{0,240}?)\n\s*(?:Telephone|Tel\b|Fax|VAT|Contact|Cont\b)/i.exec(t);
+  if(ab){
+    let lines=ab[1].split('\n').map(function(x){return x.trim();}).filter(Boolean);
+    const nm=(out.client_name||'').replace(/\(moolman group\)/i,'').trim().toLowerCase();
+    if(lines.length && nm && lines[0].toLowerCase().replace(/\s+/g,' ').indexOf(nm.slice(0,12))>-1) lines.shift();
+    out.client_address=lines.join('\n').slice(0,180);
+  }
+  if(!out.client_address){ const a=/this order refers to\s*\n?\s*(.+)/i.exec(t); if(a && !/^tenant/i.test(a[1].trim()) && a[1].trim()!=='') out.client_address=a[1].trim().slice(0,140); }
+  // Project reference (RE)
   const refM=/further\s*\n?\s*description\s*\n?\s*(.+)/i.exec(t);
-  out.project_ref = refM ? refM[1].trim().slice(0,90)
-                  : (out.client_address ? out.client_address.split(' - ')[0].split(',')[0].trim() : '');
+  out.project_ref = refM ? refM[1].trim().slice(0,90) : '';
+  if(!out.project_ref){ const pr=/\bProperty\s*\n\s*(.+)/i.exec(t); if(pr && !/^\s*-/.test(pr[1])) out.project_ref=pr[1].trim().slice(0,90); }
+  // Client registration number (YYYY/NNNNNN/NN), not Power Rock's own.
+  const rg=/\b(\d{4}\/\d{4,7}\/\d{2})\b/.exec(t);
+  out.client_reg = (rg && rg[1]!=='2010/166845/23') ? rg[1] : '';
   return out;
 }
 async function handlePOFile(input){
@@ -6261,9 +6281,9 @@ async function handlePOFile(input){
   try{
     const r=await extractPOFieldsFromPdf(f);
     const set=function(id,val){ const e=$(id); if(e && val!=null && String(val)!=='' && !e.value) e.value=val; };
-    set('po_order', r.order_nr); set('po_client', r.client_name); set('po_vat', r.client_vat);
+    set('po_order', r.order_nr); set('po_client', r.client_name); set('po_vat', r.client_vat); set('po_reg', r.client_reg);
     set('po_address', r.client_address); set('po_ref', r.project_ref); if(r.po_total>0) set('po_total', r.po_total);
-    const got=[]; if(r.order_nr)got.push('order'); if(r.client_name)got.push('client'); if(r.client_vat)got.push('VAT'); if(r.client_address)got.push('address'); if(r.po_total>0)got.push('total'); if(r.project_ref)got.push('ref');
+    const got=[]; if(r.order_nr)got.push('order'); if(r.client_name)got.push('client'); if(r.client_vat)got.push('VAT'); if(r.client_reg)got.push('reg'); if(r.client_address)got.push('address'); if(r.po_total>0)got.push('total'); if(r.project_ref)got.push('ref');
     if(note) note.innerHTML='✓ '+esc(f.name)+' — read '+(got.length?got.join(', '):'nothing automatically')+'. Please check the details below.';
   }catch(e){ if(note) note.innerHTML='✓ '+esc(f.name)+' — couldn’t auto-read; type the details below.'; }
 }
@@ -6274,7 +6294,7 @@ async function savePO(siteId, poId){
   const order_nr = (v('po_order')||'').trim();
   const client_name = (v('po_client')||'').trim();
   if(!order_nr && !client_name){ alert('Please enter at least the order number or the client name.'); return; }
-  const po_address=(v('po_address')||'').trim(), po_vat=(v('po_vat')||'').trim(),
+  const po_address=(v('po_address')||'').trim(), po_vat=(v('po_vat')||'').trim(), po_reg=(v('po_reg')||'').trim(),
         po_ref=(v('po_ref')||'').trim(), po_total=parseFloat(v('po_total'))||0, po_date=v('po_date')||'';
   const fileEl = $('po_file'); const file = fileEl && fileEl.files[0];
   $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
@@ -6285,7 +6305,7 @@ async function savePO(siteId, poId){
   if(file){ const url = await sbUploadFile('po/'+siteId+'/'+Date.now()+'-'+file.name, file); if(url){ file_url=url; file_name=file.name; } }
   const rec = {
     id: (existing&&existing.id) || poId || uid(),
-    order_nr: order_nr, client_name: client_name, client_address: po_address, client_vat: po_vat,
+    order_nr: order_nr, client_name: client_name, client_address: po_address, client_vat: po_vat, client_reg: po_reg,
     project_ref: po_ref, po_total: po_total, po_date: po_date,
     file_url: file_url || (existing&&existing.file_url) || '',
     file_name: file_name || (existing&&existing.file_name) || '',
@@ -6341,7 +6361,7 @@ function renderInvoiceEditor(siteId, poId, invId){
   INV_PO=po;
   // Edit → fill from the saved invoice. New with PO → from the PO. New without PO → from the site quote.
   const src = existing ? existing
-            : (po ? po : { client_name:s.client, client_address:d.address, client_vat:d.client_vat, order_nr:'', project_ref:s.name });
+            : (po ? po : { client_name:s.client, client_address:d.address, client_vat:d.client_vat, client_reg:d.client_reg, order_nr:'', project_ref:s.name });
   const basis = existing
       ? (parseFloat(existing.pct)>0 ? Math.round(existing.amount_ex/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
       : (po ? (parseFloat(po.po_total)||0) : (siteQuoteValue(s)||parseFloat(s.quote_value)||0));
@@ -6369,6 +6389,7 @@ function renderInvoiceEditor(siteId, poId, invId){
     <div style="margin-bottom:10px"><label style="${lbl}">Client address</label>
       <textarea class="f-input" id="inv_addr" rows="2" style="margin:0" placeholder="street, town, code">${esc(src.client_address||'')}</textarea></div>
     ${fld('Client VAT number','inv_vat',src.client_vat,'optional')}
+    ${fld('Client registration number','inv_reg',src.client_reg,'optional')}
     ${fld('Order number (leave blank if none)','inv_order',src.order_nr,'e.g. 140557')}
     ${fld('Project / reference (RE)','inv_ref',src.project_ref,'e.g. Antigua Complex - exterior')}
     <div style="margin-bottom:10px"><label style="${lbl}">${po?'PO':'Quote / contract'} total (ex-VAT, R) — used to work out the %</label>
@@ -6414,7 +6435,7 @@ async function saveInvoice(siteId, poId, editId){
     if(!confirm('Invoice '+numStr+' already exists in the app. Save with the same number?')){ refreshSitePOs(); return; }
   }
   const fields={ number:numN, number_str:numStr, po_id:poId||null,
-    client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'),
+    client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'), client_reg: g('inv_reg'),
     order_nr: g('inv_order'), project_ref: g('inv_ref'),
     description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:date };
   let inv;
@@ -6487,6 +6508,7 @@ function invoiceInnerHtml(inv){
       <tr><td style="width:120px;vertical-align:top"><u><b>ATTENTION:</b></u></td><td>${e(inv.client_name)}<br/>${addr}</td></tr>
       <tr><td style="vertical-align:top"><u><b>RE:</b></u></td><td>${e(inv.project_ref)}</td></tr>
       <tr><td><u><b>VAT NR:</b></u></td><td>${e(inv.client_vat)}</td></tr>
+      <tr><td><u><b>REG NR:</b></u></td><td>${e(inv.client_reg)}</td></tr>
       <tr><td><u><b>ORDER NR:</b></u></td><td>${e(inv.order_nr)}</td></tr>
       <tr><td><u><b>DATE:</b></u></td><td>${dateTxt}</td></tr>
       <tr><td><u><b>INVOICE NR:</b></u></td><td>${e(inv.number_str)}</td></tr>
