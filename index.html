@@ -6056,7 +6056,8 @@ function sitePOsHtml(){
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(iv.client_name||'')}${iv.pct?' · '+Math.round(iv.pct)+'%':''}${iv.date?' · '+fd(iv.date):''}</div>
         <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
           <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:${iv.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
-          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ Download again</button>
+          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
+          <button onclick="redownloadInvoiceWord('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
           <button onclick="deleteInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
         </div>
       </div>`;
@@ -6069,6 +6070,11 @@ function sitePOsHtml(){
   return h;
 }
 function redownloadInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
+  if(iv) generateInvoicePDF(iv);
+}
+function redownloadInvoiceWord(siteId, invId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
   const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
   if(iv) generateInvoiceDoc(iv);
@@ -6214,7 +6220,7 @@ function renderInvoiceEditor(siteId, poId){
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="inv_pv_vat">${R(startAmt*0.15)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="inv_pv_tot">${R(startAmt*1.15)}</span></div>
     </div>
-    <button class="cta-btn" onclick="saveInvoice('${s.id}',${po?`'${po.id}'`:'null'})">Save invoice &amp; download</button>
+    <button class="cta-btn" onclick="saveInvoice('${s.id}',${po?`'${po.id}'`:'null'})">Save invoice &amp; download PDF</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="refreshSitePOs()">← Back</button>`;
   $('siteDetailContent').innerHTML=h;
 }
@@ -6248,7 +6254,7 @@ async function saveInvoice(siteId, poId){
   if(ok){
     s.details=d;
     if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=d; }
-    generateInvoiceDoc(inv);
+    generateInvoicePDF(inv);
     showSaveToast('Invoice '+numStr+' created');
     refreshSitePOs();
   } else { showSaveToast('Could not save — check your signal'); refreshSitePOs(); }
@@ -6263,12 +6269,13 @@ async function togglePaidInvoice(siteId, invId){
   if(ok){ s.details=d; showSaveToast(iv.paid?'Marked paid':'Marked unpaid'); refreshSitePOs(); }
 }
 
-function generateInvoiceDoc(inv){
+function invoiceFileBase(inv){ return (inv.number_str||'invoice')+' '+String(inv.client_name||'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+function invoiceInnerHtml(inv){
   const e=function(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
   const m=function(n){ return 'R ' + (Math.round((n||0)*100)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); };
   const addr=(inv.client_address||'').split('\n').map(e).join('<br/>');
   const dateTxt=inv.date?new Date(inv.date+'T12:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'long',year:'numeric'}):'';
-  const inner=`<div style="font-family:Calibri,Arial,sans-serif;color:#1A1A1A;font-size:11pt">
+  return `<div style="font-family:Calibri,Arial,sans-serif;color:#1A1A1A;font-size:11pt">
     ${LETTERHEAD?`<div style="text-align:center;margin:0 0 16px"><img src="${LETTERHEAD}" style="max-width:560px"/></div>`:`<h2 style="color:#8B1A1A">POWER ROCK PAINTING</h2>`}
     <table style="width:100%;border-collapse:collapse">
       <tr><td style="width:120px;vertical-align:top"><u><b>ATTENTION:</b></u></td><td>${e(inv.client_name)}<br/>${addr}</td></tr>
@@ -6291,11 +6298,60 @@ function generateInvoiceDoc(inv){
     <div style="margin-top:24px"><u><b>BANKING DETAILS:</b></u><br/>
       <b>POWER ROCK.paint</b><br/>FNB WATERFALL MALL<br/>CHEQUE ACCOUNT: 62486424072<br/>BRANCH: 258055</div>
   </div>`;
-  const doc=`<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>${inner}</body></html>`;
+}
+// Word (.doc) version — good for emailing / editing.
+function generateInvoiceDoc(inv){
+  const doc=`<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>${invoiceInnerHtml(inv)}</body></html>`;
   const blob=new Blob(['﻿',doc],{type:'application/msword'});
   const url=URL.createObjectURL(blob); const a=document.createElement('a');
-  a.href=url; a.download=inv.number_str+' '+String(inv.client_name||'invoice').replace(/[^A-Za-z0-9]+/g,'-')+'.doc';
+  a.href=url; a.download=invoiceFileBase(inv)+'.doc';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); },2000);
+}
+// Loads jsPDF + html2canvas from the approved CDN, only when first making a PDF.
+function loadPdfLibs(){
+  return new Promise(function(res,rej){
+    const need=[];
+    if(!window.html2canvas) need.push('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if(!(window.jspdf&&window.jspdf.jsPDF)) need.push('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    if(!need.length) return res();
+    let done=0, failed=false;
+    need.forEach(function(src){
+      const sc=document.createElement('script'); sc.src=src;
+      sc.onload=function(){ done++; if(done===need.length&&!failed) res(); };
+      sc.onerror=function(){ if(!failed){ failed=true; rej(new Error('cdn')); } };
+      document.head.appendChild(sc);
+    });
+  });
+}
+// PDF version — what the client portals (Excellerate/JHI, Broll, Burstone) need.
+async function generateInvoicePDF(inv){
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:40px;box-sizing:border-box';
+  holder.innerHTML=invoiceInnerHtml(inv);
+  document.body.appendChild(holder);
+  try{
+    await loadPdfLibs();
+    const img=holder.querySelector('img');
+    if(img && !img.complete){ await new Promise(function(r){ img.onload=r; img.onerror=r; }); }
+    const canvas=await html2canvas(holder,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const jsPDF=window.jspdf.jsPDF;
+    const pdf=new jsPDF('p','mm','a4');
+    const pw=210, ph=297;
+    const iw=pw, ih=canvas.height*pw/canvas.width;
+    const imgData=canvas.toDataURL('image/jpeg',0.94);
+    pdf.addImage(imgData,'JPEG',0,0,iw,ih);
+    let left=ih-ph, pos=-ph;
+    while(left>0.5){ pdf.addPage(); pdf.addImage(imgData,'JPEG',0,pos,iw,ih); left-=ph; pos-=ph; }
+    pdf.save(invoiceFileBase(inv)+'.pdf');
+  }catch(e){
+    // No signal / CDN blocked → open a print view so he can "Save as PDF".
+    const w=window.open('','_blank');
+    if(!w){ alert('To get the PDF, please allow pop-ups — or use the Word version.'); return; }
+    w.document.write(`<html><head><meta charset="utf-8"><title>${invoiceFileBase(inv)}</title></head><body style="margin:0">${invoiceInnerHtml(inv)}<scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt></body></html>`);
+    w.document.close();
+  }finally{
+    holder.remove();
+  }
 }
 
 function renderEmpty(){
