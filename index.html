@@ -6188,8 +6188,10 @@ function sitePOsHtml(){
         </div>
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(recClient(po)||'')}${po.project_ref?' · '+esc(po.project_ref):''}</div>
         <div style="font-size:11px;color:#8A8470;margin-top:2px">${po.po_date?fd(po.po_date):'no date'} · invoiced ${pct}%${po.file_url?` · <a href="${po.file_url}" target="_blank" style="color:#2c5f8a">📄 view PO</a>`:''}</div>
-        <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
-          <button onclick="renderInvoiceEditor('${s.id}','${po.id}')" style="background:#1A7A4A;border:none;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;padding:6px 12px;border-radius:7px">💵 Create invoice</button>
+        <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap;align-items:center">
+          ${pct>=100
+            ? `<span style="color:#1A7A4A;font-size:11.5px;font-weight:800">✓ Fully invoiced</span>`
+            : `<button onclick="renderInvoiceEditor('${s.id}','${po.id}')" style="background:#1A7A4A;border:none;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;padding:6px 12px;border-radius:7px">💵 Create invoice${pct>0?' ('+(100-pct)+'% left)':''}</button>`}
           <button onclick="renderPOEditor('${s.id}','${po.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button>
           <button onclick="deletePO('${s.id}','${po.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
         </div>
