@@ -6388,8 +6388,21 @@ async function uploadQuoteThenInvoice(siteId, input){
   const s=(SUMMARY && SUMMARY.site)||{};
   const dd = Object.assign({}, s.details || {});
   dd.quote_url = url; dd.quote_name = f.name;
-  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:dd});
-  if(ok){ s.details=dd; if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=dd; } showSaveToast('Quotation saved'); }
+  // If it's a PDF and the site has no quote value yet, read the Total (excl VAT) from it.
+  let readVal = 0;
+  const haveQuote = (siteQuoteValue(s)||parseFloat(s.quote_value)||0) > 0;
+  if(/\.pdf$/i.test(f.name) && !haveQuote){
+    showSaveToast('Reading the total from the quote…');
+    try{ const r = await extractQuoteTotalFromPdf(f); if(r && r.value>0) readVal = Math.round(r.value*100)/100; }catch(e){}
+  }
+  const patch = { details:dd };
+  if(readVal>0) patch.quote_value = readVal;
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),patch);
+  if(ok){
+    s.details=dd; if(readVal>0) s.quote_value=readVal;
+    if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os){ os.details=dd; if(readVal>0) os.quote_value=readVal; } }
+    showSaveToast(readVal>0 ? ('Quotation saved · read '+R(readVal)) : 'Quotation saved');
+  }
   renderInvoiceEditor(siteId);
 }
 
