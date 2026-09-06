@@ -1368,6 +1368,7 @@ async function loadOwnerFin(){
 }
 function ownerDays(s){
   if(!s.started) return 1;
+  if(typeof siteNotStarted==='function' && siteNotStarted(s)) return 0;   // hasn't started — no days yet
   const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
   return Math.max(1, Math.floor((end-new Date(s.started))/86400000)+1);
 }
@@ -3991,7 +3992,7 @@ async function renderFinancials(){
     const f = ownerFin(s);
     return { site:s, name:s.name || 'Unnamed site', turnover:f.quote, material:f.material,
              labour:f.labourActual, petrol:f.petrol, accommodation:f.accommodation,
-             other:f.additional, henk:f.henk, net:f.net, dpd:(f.days>0?f.net/f.days:f.net) };
+             other:f.additional, henk:f.henk, net:f.net, dpd:(f.days>0?f.net/f.days:0) };
   });
 
   if(rows.length === 0){
@@ -5187,6 +5188,19 @@ function summaryDays(s){
   const end = (s.status === 'done' && s.end_date) ? new Date(s.end_date) : new Date();
   return Math.max(1, Math.floor((end - new Date(s.started)) / 86400000) + 1);
 }
+// A site whose start date is still in the future — registered early (e.g. to send a
+// deposit invoice) but the team hasn't started, so no days/costs are counted yet.
+function siteNotStarted(s){
+  if(!s || !s.started || s.status === 'done') return false;
+  const st = new Date(s.started); st.setHours(0,0,0,0);
+  const t = new Date(); t.setHours(0,0,0,0);
+  return st.getTime() > t.getTime();
+}
+function daysUntilStart(s){
+  const st = new Date(s.started); st.setHours(0,0,0,0);
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.max(0, Math.round((st - t) / 86400000));
+}
 function sumMaterialActual(){ return (SUMMARY.invoices||[]).reduce(function(a,iv){ return a + (parseFloat(iv.total)||0); }, 0); }
 
 // One line of the Site Profit Sheet. Clickable when it has an onclick.
@@ -5648,8 +5662,9 @@ function paintSiteSummaryBody(){
   const totalExpenses  = labourAgreed + materialActual + additionalCosts + accommodation + petrol + henkInCalc;
   const netProfit      = quote - totalExpenses;
   const netPct         = quote > 0 ? (netProfit / quote * 100) : 0;
-  const days           = summaryDays(s);
-  const dailyProfit    = netProfit / days;
+  const notStarted     = siteNotStarted(s);
+  const days           = notStarted ? 0 : summaryDays(s);
+  const dailyProfit    = days > 0 ? netProfit / days : 0;
   const leaderName     = henkLeaderName(s.team_leader);
   const pos            = netProfit >= 0;
 
@@ -5657,9 +5672,12 @@ function paintSiteSummaryBody(){
 
   // ── HEADER ──
   const startTxt = s.started ? fd(s.started) : '—';
+  const untilStart = notStarted ? daysUntilStart(s) : 0;
   const datesLine = s.status === 'done'
     ? `Started ${startTxt} → Completed ${s.end_date ? fd(s.end_date) : '—'} · ${days} days`
-    : `Started ${startTxt} · active · Day ${days}`;
+    : (notStarted
+        ? `Starts ${startTxt} · in ${untilStart} day${untilStart!==1?'s':''} — not started yet`
+        : `Started ${startTxt} · active · Day ${days}`);
   h += `<div style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
       <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A;line-height:1.2">${s.name}</div>
@@ -5682,29 +5700,34 @@ function paintSiteSummaryBody(){
         <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
       </div>
     </div>
-    <div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>
+    ${notStarted
+      ? `<div class="disp" style="font-size:23px;font-weight:800;color:#E5B96B;line-height:1.15">Starts ${startTxt}</div>
+         <div style="font-size:11.5px;color:rgba(255,255,255,0.6);margin-top:5px">Team starts in ${untilStart} day${untilStart!==1?'s':''} — no days or costs are counted until then.</div>`
+      : `<div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>`}
     <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
-      <div><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Net profit to date</div>
+      <div><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">${notStarted?'Projected net profit':'Net profit to date'}</div>
         <div style="display:flex;align-items:baseline;gap:7px;margin-top:3px">
           <span class="disp" style="font-size:17px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'}">${R(netProfit)}</span>
           <span class="disp" style="font-size:12px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};opacity:0.85">${netPct.toFixed(0)}%</span>
         </div></div>
       <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Days on site</div>
-        <div class="disp" style="font-size:17px;font-weight:800;margin-top:3px">${days}</div></div>
+        <div class="disp" style="font-size:17px;font-weight:800;margin-top:3px">${notStarted?'—':days}</div></div>
     </div>
     <div style="display:flex;justify-content:space-between;gap:10px;margin-top:11px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;font-size:11px;color:rgba(255,255,255,0.5)">
       <div>Target net <b style="color:rgba(255,255,255,0.85);font-weight:700">${R(quote*0.35)}</b> · 35% <span style="color:${netPct>=35?'#8FBF9F':'#E5B96B'};font-weight:800">${netPct>=35?'✓':'⚠'}</span></div>
-      <div style="text-align:right">Target/day <b style="color:rgba(255,255,255,0.85);font-weight:700">${R(5000)}</b> <span style="color:${dailyProfit>=5000?'#8FBF9F':'#E5B96B'};font-weight:800">${dailyProfit>=5000?'✓':'⚠'}</span></div>
+      <div style="text-align:right">Target/day <b style="color:rgba(255,255,255,0.85);font-weight:700">${R(5000)}</b> ${notStarted?'<span style="color:rgba(255,255,255,0.5)">—</span>':`<span style="color:${dailyProfit>=5000?'#8FBF9F':'#E5B96B'};font-weight:800">${dailyProfit>=5000?'✓':'⚠'}</span>`}</div>
     </div>
     ${s.status === 'done'
       ? `<div style="background:rgba(95,122,107,0.25);border:1px solid #5C7A6B;border-radius:10px;padding:11px 14px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px">
           <span style="font-size:12px;font-weight:800;color:#8FBF9F">✓ Started ${s.started?fd(s.started):'—'} → Completed ${s.end_date?fd(s.end_date):'—'}</span>
           <button onclick="reopenProject('${s.id}')" style="background:none;border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:7px;padding:5px 11px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">Reopen</button>
         </div>`
-      : `<div style="margin-top:14px">
+      : (notStarted
+        ? `<div style="margin-top:14px;background:rgba(229,185,107,0.15);border:1px solid rgba(229,185,107,0.5);border-radius:10px;padding:11px 14px;font-size:12px;font-weight:700;color:#E5B96B">⏳ Registered early for the deposit invoice. The team starts ${startTxt} — day counting &amp; costings begin then. You can still invoice the deposit above.</div>`
+        : `<div style="margin-top:14px">
           <div style="font-size:11.5px;font-weight:700;color:rgba(255,255,255,0.65);margin-bottom:9px">Started ${s.started?fd(s.started):'—'} → still running</div>
           <button onclick="openCompleteProject('${s.id}')" style="width:100%;background:#B2342A;color:#fff;border:none;border-radius:10px;padding:13px;font-size:13.5px;font-weight:800;letter-spacing:0.4px;cursor:pointer;font-family:inherit">✓ PROJECT COMPLETE</button>
-        </div>`}
+        </div>`)}
   </div>`;
 
   // ── SITE PROFIT SHEET — one clickable list, no repeated blocks ──
