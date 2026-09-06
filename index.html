@@ -6207,6 +6207,13 @@ function renderPOEditor(siteId, poId){
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${po?'Edit':'Add'} purchase order</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${s.name||''}</div>
+    <div style="background:#1A7A4A;border-radius:12px;padding:14px 15px;margin-bottom:16px">
+      <div style="font-size:12.5px;font-weight:800;color:#fff;margin-bottom:4px">📎 Upload the PO — I'll read the details in</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.85);margin-bottom:10px">Pick the client's PO (PDF) and the order number, client, VAT, reference &amp; total fill in below automatically. Then just check them.</div>
+      <label style="display:block;background:#fff;color:#1A1A1A;border-radius:8px;padding:11px 12px;font-size:13px;font-weight:800;text-align:center;cursor:pointer">Choose PO file (PDF or photo)
+        <input type="file" id="po_file" accept=".pdf,image/*" onchange="handlePOFile(this)" style="display:none"/></label>
+      <div id="po_file_note" style="font-size:11px;color:rgba(255,255,255,0.9);margin-top:8px">${v.file_url?`Current: <a href="${v.file_url}" target="_blank" style="color:#fff;font-weight:800">📄 ${esc(v.file_name||'view')}</a> — choose a new file to replace.`:'No file chosen yet.'}</div>
+    </div>
     ${fld('Order number','po_order',v.order_nr,'e.g. 140557')}
     ${fld('Client name','po_client',v.client_name,'e.g. Leopont 213 Properties (Pty) Ltd')}
     <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Client address</label>
@@ -6215,12 +6222,50 @@ function renderPOEditor(siteId, poId){
     ${fld('Project / reference (RE)','po_ref',v.project_ref,'e.g. ABSA Tzaneen - SETA interior offices')}
     ${fld('PO total (ex-VAT, R)','po_total',v.po_total,'e.g. 9940','number')}
     ${fld('PO date','po_date',v.po_date||'', '', 'date')}
-    <label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">PO document (PDF or photo)</label>
-    <input type="file" id="po_file" accept=".pdf,image/*" style="margin-bottom:12px;font-size:13px;width:100%"/>
-    ${v.file_url?`<div style="font-size:11px;color:#8A8470;margin:-6px 0 12px">Current: <a href="${v.file_url}" target="_blank" style="color:#2c5f8a">📄 ${esc(v.file_name||'view')}</a> — choose a new file to replace.</div>`:''}
-    <button class="cta-btn" onclick="savePO('${s.id}'${po?`,'${po.id}'`:''})">Save purchase order</button>
+    <button class="cta-btn" style="margin-top:4px" onclick="savePO('${s.id}'${po?`,'${po.id}'`:''})">Save purchase order</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="refreshSitePOs()">← Back</button>`;
   $('siteDetailContent').innerHTML = h;
+}
+// Read a client PO PDF and auto-fill the capture form (order, client, VAT, ref, total).
+async function extractPOFieldsFromPdf(file){
+  await loadPdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+  let t='';
+  for(let i=1;i<=pdf.numPages;i++){ const pg=await pdf.getPage(i); const c=await pg.getTextContent(); t+=c.items.map(function(it){return it.str;}).join('\n')+'\n'; }
+  const out={};
+  let m=/Order\s*No\.?\s*\n?\s*(\d{4,})/i.exec(t) || /order\s*(?:no|number|nr)\.?\s*[:#]?\s*(\d{4,})/i.exec(t);
+  out.order_nr = m ? m[1] : ((file.name.match(/(\d{5,6})/)||[])[1]||'');
+  m=/total\s*excl[a-z ]*(?:tax|vat)?\s*\n?\s*([0-9][0-9 .,]{2,})/i.exec(t);
+  out.po_total = m ? parseZAR(m[1]) : null;
+  const vats=t.match(/\b4\d{9}\b/g)||[];
+  out.client_vat = (vats.filter(function(x){return x!=='4630267633';})[0]||'');
+  m=/([A-Z][A-Za-z0-9&.,'\- ]{2,}?\((?:Pty|PTY)\)\s*Ltd)/.exec(t);
+  out.client_name = (m && m[1].toUpperCase().indexOf('POWER ROCK')<0) ? m[1].replace(/^[A-Z]\s+/,'').trim() : '';
+  // Moolman Group has a separate company per centre — tag "(Moolman Group)" for our records.
+  if(out.client_name && /moolman/i.test(t) && !/moolman/i.test(out.client_name)){
+    out.client_name += ' (Moolman Group)';
+  }
+  const addrM=/this order refers to\s*\n?\s*(.+)/i.exec(t);
+  out.client_address = addrM ? addrM[1].trim().slice(0,120) : '';
+  const refM=/further\s*\n?\s*description\s*\n?\s*(.+)/i.exec(t);
+  out.project_ref = refM ? refM[1].trim().slice(0,90)
+                  : (out.client_address ? out.client_address.split(' - ')[0].split(',')[0].trim() : '');
+  return out;
+}
+async function handlePOFile(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const note=$('po_file_note');
+  if(!/\.pdf$/i.test(f.name)){ if(note) note.innerHTML='✓ '+esc(f.name)+' — will be uploaded when you save. (Photos can’t be read — type the details below.)'; return; }
+  if(note) note.textContent='✓ '+f.name+' — reading the PO…';
+  try{
+    const r=await extractPOFieldsFromPdf(f);
+    const set=function(id,val){ const e=$(id); if(e && val!=null && String(val)!=='' && !e.value) e.value=val; };
+    set('po_order', r.order_nr); set('po_client', r.client_name); set('po_vat', r.client_vat);
+    set('po_address', r.client_address); set('po_ref', r.project_ref); if(r.po_total>0) set('po_total', r.po_total);
+    const got=[]; if(r.order_nr)got.push('order'); if(r.client_name)got.push('client'); if(r.client_vat)got.push('VAT'); if(r.client_address)got.push('address'); if(r.po_total>0)got.push('total'); if(r.project_ref)got.push('ref');
+    if(note) note.innerHTML='✓ '+esc(f.name)+' — read '+(got.length?got.join(', '):'nothing automatically')+'. Please check the details below.';
+  }catch(e){ if(note) note.innerHTML='✓ '+esc(f.name)+' — couldn’t auto-read; type the details below.'; }
 }
 
 async function savePO(siteId, poId){
