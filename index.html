@@ -5591,6 +5591,7 @@ function paintSiteSummaryBody(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
       <div style="display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end">
+        <button onclick="openSitePOs('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🧾 Orders</button>
         <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Invoices</button>
         <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
         <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
@@ -5995,6 +5996,114 @@ async function saveInvoiceNames(invId){
   } else {
     showSaveToast('Could not save — check your signal');
   }
+}
+
+// ═══════════════════════════════════════════
+// PURCHASE ORDERS (Income) — Stage 1
+// A client's PO captured against a site (client details + PO total ex-VAT), so an
+// invoice can later be auto-filled and % billed against it. Lives in sites.details.purchase_orders.
+// ═══════════════════════════════════════════
+function sitePOs(s){ return (s && s.details && Array.isArray(s.details.purchase_orders)) ? s.details.purchase_orders : []; }
+
+function openSitePOs(siteId){ $('siteDetailContent').innerHTML = sitePOsHtml(); openModal('modalSiteDetail'); }
+function refreshSitePOs(){ $('siteDetailContent').innerHTML = sitePOsHtml(); }
+
+function sitePOsHtml(){
+  const s = (SUMMARY && SUMMARY.site) || {};
+  const pos = sitePOs(s).slice().sort(function(a,b){ return String(b.po_date||'').localeCompare(String(a.po_date||'')); });
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Purchase orders</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${s.name||''} · orders received from the client. Capture one, then invoice against it (any %).</div>
+    <button class="cta-btn" style="margin-bottom:14px" onclick="renderPOEditor('${s.id}')">+ Add purchase order</button>`;
+  if(!pos.length){
+    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">No purchase orders captured yet.</div>`;
+  } else {
+    pos.forEach(function(po){
+      const total = parseFloat(po.po_total)||0, pct = Math.round(parseFloat(po.invoiced_pct)||0);
+      h += `<div class="ledger-card" style="padding:13px 15px;margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">Order ${esc(po.order_nr||'—')}</div>
+          <div class="disp" style="font-weight:800;font-size:14px;white-space:nowrap">${R(total)} <span style="font-size:10px;font-weight:600;color:#A39E8C">ex VAT</span></div>
+        </div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(po.client_name||'')}${po.project_ref?' · '+esc(po.project_ref):''}</div>
+        <div style="font-size:11px;color:#8A8470;margin-top:2px">${po.po_date?fd(po.po_date):'no date'} · invoiced ${pct}%${po.file_url?` · <a href="${po.file_url}" target="_blank" style="color:#2c5f8a">📄 view PO</a>`:''}</div>
+        <div style="display:flex;gap:16px;margin-top:8px">
+          <button onclick="renderPOEditor('${s.id}','${po.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button>
+          <button onclick="deletePO('${s.id}','${po.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
+        </div>
+      </div>`;
+    });
+  }
+  h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  return h;
+}
+
+function renderPOEditor(siteId, poId){
+  const s = (SUMMARY && SUMMARY.site) || {};
+  const po = poId ? sitePOs(s).find(function(x){ return x.id===poId; }) : null;
+  const v = po || {};
+  const fld = function(label, id, val, hint, type){
+    return `<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">${label}</label>
+      <input class="f-input" id="${id}" type="${type||'text'}" value="${esc(val==null?'':String(val))}" ${hint?`placeholder="${hint}"`:''} style="margin:0"/></div>`;
+  };
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${po?'Edit':'Add'} purchase order</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${s.name||''}</div>
+    ${fld('Order number','po_order',v.order_nr,'e.g. 140557')}
+    ${fld('Client name','po_client',v.client_name,'e.g. Leopont 213 Properties (Pty) Ltd')}
+    <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Client address</label>
+      <textarea class="f-input" id="po_address" rows="2" style="margin:0" placeholder="C/O … , street, town, code">${esc(v.client_address||'')}</textarea></div>
+    ${fld('Client VAT number','po_vat',v.client_vat,'e.g. 4440177295')}
+    ${fld('Project / reference (RE)','po_ref',v.project_ref,'e.g. ABSA Tzaneen - SETA interior offices')}
+    ${fld('PO total (ex-VAT, R)','po_total',v.po_total,'e.g. 9940','number')}
+    ${fld('PO date','po_date',v.po_date||'', '', 'date')}
+    <label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">PO document (PDF or photo)</label>
+    <input type="file" id="po_file" accept=".pdf,image/*" style="margin-bottom:12px;font-size:13px;width:100%"/>
+    ${v.file_url?`<div style="font-size:11px;color:#8A8470;margin:-6px 0 12px">Current: <a href="${v.file_url}" target="_blank" style="color:#2c5f8a">📄 ${esc(v.file_name||'view')}</a> — choose a new file to replace.</div>`:''}
+    <button class="cta-btn" onclick="savePO('${s.id}'${po?`,'${po.id}'`:''})">Save purchase order</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="refreshSitePOs()">← Back</button>`;
+  $('siteDetailContent').innerHTML = h;
+}
+
+async function savePO(siteId, poId){
+  const s = (SUMMARY && SUMMARY.site); if(!s) return;
+  const v = function(id){ return ($(id)||{}).value; };
+  const order_nr = (v('po_order')||'').trim();
+  const client_name = (v('po_client')||'').trim();
+  if(!order_nr && !client_name){ alert('Please enter at least the order number or the client name.'); return; }
+  const po_address=(v('po_address')||'').trim(), po_vat=(v('po_vat')||'').trim(),
+        po_ref=(v('po_ref')||'').trim(), po_total=parseFloat(v('po_total'))||0, po_date=v('po_date')||'';
+  const fileEl = $('po_file'); const file = fileEl && fileEl.files[0];
+  $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
+  const d = Object.assign({}, s.details||{});
+  if(!Array.isArray(d.purchase_orders)) d.purchase_orders = [];
+  const existing = poId ? d.purchase_orders.find(function(x){ return x.id===poId; }) : null;
+  let file_url='', file_name='';
+  if(file){ const url = await sbUploadFile('po/'+siteId+'/'+Date.now()+'-'+file.name, file); if(url){ file_url=url; file_name=file.name; } }
+  const rec = {
+    id: (existing&&existing.id) || poId || uid(),
+    order_nr: order_nr, client_name: client_name, client_address: po_address, client_vat: po_vat,
+    project_ref: po_ref, po_total: po_total, po_date: po_date,
+    file_url: file_url || (existing&&existing.file_url) || '',
+    file_name: file_name || (existing&&existing.file_name) || '',
+    invoiced_pct: existing ? (parseFloat(existing.invoiced_pct)||0) : 0,
+    created: existing ? existing.created : new Date().toISOString().split('T')[0]
+  };
+  if(existing){ d.purchase_orders[d.purchase_orders.indexOf(existing)] = rec; }
+  else d.purchase_orders.push(rec);
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId), { details:d });
+  if(ok){ s.details = d; showSaveToast('Purchase order saved'); refreshSitePOs(); }
+  else { showSaveToast('Could not save — check your signal'); refreshSitePOs(); }
+}
+
+async function deletePO(siteId, poId){
+  const s = (SUMMARY && SUMMARY.site); if(!s) return;
+  if(!confirm('Remove this purchase order? (The uploaded file stays in storage.)')) return;
+  const d = Object.assign({}, s.details||{});
+  d.purchase_orders = (d.purchase_orders||[]).filter(function(x){ return x.id!==poId; });
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId), { details:d });
+  if(ok){ s.details=d; showSaveToast('Purchase order removed'); refreshSitePOs(); }
+  else showSaveToast('Could not remove — check your signal');
 }
 
 function renderEmpty(){
