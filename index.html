@@ -631,7 +631,10 @@ const DEFAULT_DATA = {
     "2026-02": 156444.13,
     "2026-03": 574435.14,
     "2026-04": 852424.67,
-    "2026-05": 1032964.75
+    "2026-05": 1032964.75,
+    "2026-07": 1229132.41,
+    "2026-08": 1130371.44,
+    "2026-09": 736272.94
   },
   sites: [
     {
@@ -786,7 +789,11 @@ function loadData(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
       const parsed = JSON.parse(raw);
-      return Object.assign({}, DEFAULT_DATA, parsed);
+      const merged = Object.assign({}, DEFAULT_DATA, parsed);
+      // Deep-merge the monthly turnover backfill so newly-shipped months fill gaps
+      // without wiping any month the user has set on this device.
+      merged.monthlyBackfill = Object.assign({}, DEFAULT_DATA.monthlyBackfill, parsed.monthlyBackfill || {});
+      return merged;
     }
   }catch(e){ console.warn('Could not load saved data', e); }
   return JSON.parse(JSON.stringify(DEFAULT_DATA));
