@@ -1389,13 +1389,17 @@ function siteProfitPerDay(s){ return siteNetProfitLive(s) / siteDaysOnSite(s); }
 function slugId(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
 function mapsLinkFor(name){ return name ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(name) : ''; }
 
+// Total of client invoices created in the app (turnover = invoiced, incl VAT).
+function appInvoiceTotal(){
+  return (typeof allAppInvoices==='function'?allAppInvoices():[]).reduce((a,iv)=>a+(parseFloat(iv.total_incl)||0),0);
+}
 function ytdTurnoverPaid(){
   const fromPayments = DATA.payments.filter(p=>p.paid).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
   const fromBackfill = Object.values(DATA.monthlyBackfill||{}).reduce((a,v)=>a+(parseFloat(v)||0),0);
-  return fromPayments + fromBackfill;
+  return fromPayments + fromBackfill + appInvoiceTotal();
 }
 function ytdTurnoverInvoiced(){
-  return DATA.payments.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
+  return DATA.payments.reduce((a,p)=>a+(parseFloat(p.amount)||0),0) + appInvoiceTotal();
 }
 
 function monthlyTurnoverMap(){
@@ -1404,6 +1408,11 @@ function monthlyTurnoverMap(){
     const d = new Date(p.date);
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     map[key] = (map[key]||0) + (parseFloat(p.amount)||0);
+  });
+  (typeof allAppInvoices==='function'?allAppInvoices():[]).forEach(iv=>{
+    if(!iv.date) return;
+    const key = String(iv.date).slice(0,7);   // YYYY-MM
+    map[key] = (map[key]||0) + (parseFloat(iv.total_incl)||0);
   });
   return map;
 }
@@ -6011,13 +6020,14 @@ function refreshSitePOs(){ $('siteDetailContent').innerHTML = sitePOsHtml(); }
 function sitePOsHtml(){
   const s = (SUMMARY && SUMMARY.site) || {};
   const pos = sitePOs(s).slice().sort(function(a,b){ return String(b.po_date||'').localeCompare(String(a.po_date||'')); });
+  const invs = siteInvoices(s).slice().sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); });
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Purchase orders</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${s.name||''} · orders received from the client. Capture one, then invoice against it (any %).</div>
-    <button class="cta-btn" style="margin-bottom:14px" onclick="renderPOEditor('${s.id}')">+ Add purchase order</button>`;
-  if(!pos.length){
-    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">No purchase orders captured yet.</div>`;
-  } else {
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Orders &amp; invoices</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${s.name||''} · capture a client order, then invoice against it — or invoice straight from a quotation (no order needed).</div>
+    <button class="cta-btn" style="margin-bottom:8px" onclick="renderPOEditor('${s.id}')">+ Add purchase order</button>
+    <button class="cta-btn ghost" style="margin-bottom:16px" onclick="renderInvoiceEditor('${s.id}')">💵 New invoice (no PO / from quote)</button>`;
+  if(pos.length){
+    h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:2px 0 8px">PURCHASE ORDERS</div>`;
     pos.forEach(function(po){
       const total = parseFloat(po.po_total)||0, pct = Math.round(parseFloat(po.invoiced_pct)||0);
       h += `<div class="ledger-card" style="padding:13px 15px;margin-bottom:9px">
@@ -6027,15 +6037,51 @@ function sitePOsHtml(){
         </div>
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(po.client_name||'')}${po.project_ref?' · '+esc(po.project_ref):''}</div>
         <div style="font-size:11px;color:#8A8470;margin-top:2px">${po.po_date?fd(po.po_date):'no date'} · invoiced ${pct}%${po.file_url?` · <a href="${po.file_url}" target="_blank" style="color:#2c5f8a">📄 view PO</a>`:''}</div>
-        <div style="display:flex;gap:16px;margin-top:8px">
+        <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
+          <button onclick="renderInvoiceEditor('${s.id}','${po.id}')" style="background:#1A7A4A;border:none;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;padding:6px 12px;border-radius:7px">💵 Create invoice</button>
           <button onclick="renderPOEditor('${s.id}','${po.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button>
           <button onclick="deletePO('${s.id}','${po.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
         </div>
       </div>`;
     });
   }
+  if(invs.length){
+    h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:16px 0 8px">INVOICES CREATED</div>`;
+    invs.forEach(function(iv){
+      h += `<div class="ledger-card" style="padding:13px 15px;margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${esc(iv.number_str||'')} <span style="font-size:10.5px;font-weight:700;color:${iv.paid?'#1A7A4A':'#C08A00'}">${iv.paid?'PAID':'unpaid'}</span></div>
+          <div class="disp" style="font-weight:800;font-size:14px;white-space:nowrap">${R(iv.total_incl||0)} <span style="font-size:10px;font-weight:600;color:#A39E8C">incl</span></div>
+        </div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(iv.client_name||'')}${iv.pct?' · '+Math.round(iv.pct)+'%':''}${iv.date?' · '+fd(iv.date):''}</div>
+        <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
+          <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:${iv.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
+          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ Download again</button>
+          <button onclick="deleteInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
+        </div>
+      </div>`;
+    });
+  }
+  if(!pos.length && !invs.length){
+    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">Nothing captured yet. Add a purchase order, or create an invoice from a quotation.</div>`;
+  }
   h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Close</button>`;
   return h;
+}
+function redownloadInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
+  if(iv) generateInvoiceDoc(iv);
+}
+async function deleteInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  if(!confirm('Remove this invoice? Its number will not be reused.')) return;
+  const d=Object.assign({}, s.details||{});
+  const iv=(d.invoices||[]).find(function(x){ return x.id===invId; });
+  d.invoices=(d.invoices||[]).filter(function(x){ return x.id!==invId; });
+  if(iv && iv.po_id){ const po=(d.purchase_orders||[]).find(function(x){ return x.id===iv.po_id; }); if(po) po.invoiced_pct=Math.max(0,(parseFloat(po.invoiced_pct)||0)-(parseFloat(iv.pct)||0)); }
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){ s.details=d; if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=d; } showSaveToast('Invoice removed'); refreshSitePOs(); }
 }
 
 function renderPOEditor(siteId, poId){
@@ -6104,6 +6150,152 @@ async function deletePO(siteId, poId){
   const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId), { details:d });
   if(ok){ s.details=d; showSaveToast('Purchase order removed'); refreshSitePOs(); }
   else showSaveToast('Could not remove — check your signal');
+}
+
+// ═══════════════════════════════════════════
+// CLIENT INVOICES (Income) — Stage 2 · created from a PO, feed turnover
+// Stored in sites.details.invoices. Number = PR + 6 digits, continuing the 17xx series.
+// ═══════════════════════════════════════════
+function siteInvoices(s){ return (s && s.details && Array.isArray(s.details.invoices)) ? s.details.invoices : []; }
+function invToday(){ return new Date().toISOString().split('T')[0]; }
+function allAppInvoices(){
+  const seen={}, out=[];
+  const push=function(s){ ((s.details&&s.details.invoices)||[]).forEach(function(iv){ if(!seen[iv.id]){ seen[iv.id]=1; out.push(iv); } }); };
+  if(typeof OWNER!=='undefined' && Array.isArray(OWNER.sites)) OWNER.sites.forEach(push);
+  (DATA.sites||[]).forEach(push);
+  if(SUMMARY && SUMMARY.site) push(SUMMARY.site);
+  return out;
+}
+function nextInvoiceNumber(){
+  let mx = 1820;   // his Excel series ends at 1820; app starts 1821
+  allAppInvoices().forEach(function(iv){ const n=parseInt(iv.number)||0; if(n>mx) mx=n; });
+  return mx+1;
+}
+
+let INV_PO=null;
+// poId optional. With a PO → fields pre-filled from it & its invoiced% is tracked.
+// Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
+function renderInvoiceEditor(siteId, poId){
+  const s=(SUMMARY && SUMMARY.site)||{};
+  const po=poId ? sitePOs(s).find(function(x){ return x.id===poId; }) : null;
+  INV_PO=po;
+  const src=po||{};
+  const basis=po ? (parseFloat(po.po_total)||0) : 0;
+  const done=po?Math.round(parseFloat(po.invoiced_pct)||0):0;
+  const remaining=Math.max(0,100-done);
+  const numStr='PR'+String(nextInvoiceNumber()).padStart(6,'0');
+  const defDesc = po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
+                     : 'Preparation & Paint as per quotation';
+  const startPct = po ? (remaining>0?remaining:100) : 100;
+  const startAmt = Math.round(basis*startPct)/100;
+  const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
+      <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">New invoice · ${numStr}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoice from a quotation'}</div>
+    ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
+    <div style="margin-bottom:10px"><label style="${lbl}">Client address</label>
+      <textarea class="f-input" id="inv_addr" rows="2" style="margin:0" placeholder="street, town, code">${esc(src.client_address||'')}</textarea></div>
+    ${fld('Client VAT number','inv_vat',src.client_vat,'optional')}
+    ${fld('Order number (leave blank if none)','inv_order',src.order_nr,'e.g. 140557')}
+    ${fld('Project / reference (RE)','inv_ref',src.project_ref,'e.g. Antigua Complex - exterior')}
+    <div style="margin-bottom:10px"><label style="${lbl}">${po?'PO':'Quote / contract'} total (ex-VAT, R) — used to work out the %</label>
+      <input class="f-input" id="inv_base" type="number" step="0.01" value="${basis||''}" oninput="invPctToAmt()" style="margin:0" ${po?'':'placeholder="e.g. 250000"'}/></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Description (you can edit)</label>
+      <textarea class="f-input" id="inv_desc" rows="2" style="margin:0">${esc(defDesc)}</textarea></div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <div style="flex:1;min-width:0"><label style="${lbl}">% of total</label><input class="f-input" id="inv_pct" type="number" step="0.01" value="${startPct}" oninput="invPctToAmt()" style="margin:0"/></div>
+      <div style="flex:1;min-width:0"><label style="${lbl}">Amount (ex-VAT, R)</label><input class="f-input" id="inv_amt" type="number" step="0.01" value="${startAmt||''}" oninput="invAmtToPct()" style="margin:0"/></div>
+    </div>
+    <div style="margin-bottom:12px"><label style="${lbl}">Invoice date</label><input class="f-input" id="inv_date" type="date" value="${invToday()}" style="margin:0"/></div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp" id="inv_pv_sub">${R(startAmt)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="inv_pv_vat">${R(startAmt*0.15)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="inv_pv_tot">${R(startAmt*1.15)}</span></div>
+    </div>
+    <button class="cta-btn" onclick="saveInvoice('${s.id}',${po?`'${po.id}'`:'null'})">Save invoice &amp; download</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="refreshSitePOs()">← Back</button>`;
+  $('siteDetailContent').innerHTML=h;
+}
+function invBase(){ return parseFloat(($('inv_base')||{}).value)||0; }
+function invPctToAmt(){ const t=invBase(); const pct=parseFloat(($('inv_pct')||{}).value)||0; if($('inv_amt')&&t>0) $('inv_amt').value=(Math.round(t*pct)/100).toFixed(2); invPreview(); }
+function invAmtToPct(){ const t=invBase(); const amt=parseFloat(($('inv_amt')||{}).value)||0; if($('inv_pct')&&t>0) $('inv_pct').value=(amt/t*100).toFixed(2); invPreview(); }
+function invPreview(){ const amt=parseFloat(($('inv_amt')||{}).value)||0; if($('inv_pv_sub'))$('inv_pv_sub').textContent=R(amt); if($('inv_pv_vat'))$('inv_pv_vat').textContent=R(amt*0.15); if($('inv_pv_tot'))$('inv_pv_tot').textContent=R(amt*1.15); }
+
+async function saveInvoice(siteId, poId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const amt=parseFloat(($('inv_amt')||{}).value)||0;
+  const pct=parseFloat(($('inv_pct')||{}).value)||0;
+  const desc=(($('inv_desc')||{}).value||'').trim();
+  const date=($('inv_date')||{}).value||invToday();
+  const g=function(id){ return (($(id)||{}).value||'').trim(); };
+  if(amt<=0){ alert('Please enter an amount (or a % with a total).'); return; }
+  const d=Object.assign({}, s.details||{});
+  if(!Array.isArray(d.invoices)) d.invoices=[];
+  if(!Array.isArray(d.purchase_orders)) d.purchase_orders=[];
+  const po=poId ? d.purchase_orders.find(function(x){ return x.id===poId; }) : null;
+  const numStr='PR'+String(nextInvoiceNumber()).padStart(6,'0');
+  const inv={ id:uid(), number:parseInt(numStr.replace(/\D/g,''))||0, number_str:numStr, po_id:poId||null,
+    client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'),
+    order_nr: g('inv_order'), project_ref: g('inv_ref'),
+    description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100,
+    date:date, paid:false, paid_date:'', created:invToday() };
+  d.invoices.push(inv);
+  if(po) po.invoiced_pct=(parseFloat(po.invoiced_pct)||0)+pct;
+  $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){
+    s.details=d;
+    if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=d; }
+    generateInvoiceDoc(inv);
+    showSaveToast('Invoice '+numStr+' created');
+    refreshSitePOs();
+  } else { showSaveToast('Could not save — check your signal'); refreshSitePOs(); }
+}
+
+async function togglePaidInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const d=Object.assign({}, s.details||{});
+  const iv=(d.invoices||[]).find(function(x){ return x.id===invId; }); if(!iv) return;
+  iv.paid=!iv.paid; iv.paid_date=iv.paid?invToday():'';
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){ s.details=d; showSaveToast(iv.paid?'Marked paid':'Marked unpaid'); refreshSitePOs(); }
+}
+
+function generateInvoiceDoc(inv){
+  const e=function(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  const m=function(n){ return 'R ' + (Math.round((n||0)*100)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const addr=(inv.client_address||'').split('\n').map(e).join('<br/>');
+  const dateTxt=inv.date?new Date(inv.date+'T12:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'long',year:'numeric'}):'';
+  const inner=`<div style="font-family:Calibri,Arial,sans-serif;color:#1A1A1A;font-size:11pt">
+    ${LETTERHEAD?`<div style="text-align:center;margin:0 0 16px"><img src="${LETTERHEAD}" style="max-width:560px"/></div>`:`<h2 style="color:#8B1A1A">POWER ROCK PAINTING</h2>`}
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="width:120px;vertical-align:top"><u><b>ATTENTION:</b></u></td><td>${e(inv.client_name)}<br/>${addr}</td></tr>
+      <tr><td style="vertical-align:top"><u><b>RE:</b></u></td><td>${e(inv.project_ref)}</td></tr>
+      <tr><td><u><b>VAT NR:</b></u></td><td>${e(inv.client_vat)}</td></tr>
+      <tr><td><u><b>ORDER NR:</b></u></td><td>${e(inv.order_nr)}</td></tr>
+      <tr><td><u><b>DATE:</b></u></td><td>${dateTxt}</td></tr>
+      <tr><td><u><b>INVOICE NR:</b></u></td><td>${e(inv.number_str)}</td></tr>
+    </table>
+    <h3 style="text-align:center;margin:20px 0 10px">TAX INVOICE</h3>
+    <table style="width:100%;border-collapse:collapse" border="1" cellpadding="8">
+      <tr><td style="font-weight:bold">${e(inv.project_ref||'')}</td><td style="text-align:right;font-weight:bold;width:130px">AMOUNT</td></tr>
+      <tr><td style="height:70px;vertical-align:top">${e(inv.description)}</td><td style="text-align:right;vertical-align:top">${m(inv.amount_ex)}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin-top:8px">
+      <tr><td style="text-align:right">SUB TOTAL</td><td style="text-align:right;width:130px">${m(inv.amount_ex)}</td></tr>
+      <tr><td style="text-align:right">VAT 15%</td><td style="text-align:right">${m(inv.vat)}</td></tr>
+      <tr><td style="text-align:right;font-weight:bold">TOTAL</td><td style="text-align:right;font-weight:bold">${m(inv.total_incl)}</td></tr>
+    </table>
+    <div style="margin-top:24px"><u><b>BANKING DETAILS:</b></u><br/>
+      <b>POWER ROCK.paint</b><br/>FNB WATERFALL MALL<br/>CHEQUE ACCOUNT: 62486424072<br/>BRANCH: 258055</div>
+  </div>`;
+  const doc=`<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>${inner}</body></html>`;
+  const blob=new Blob(['﻿',doc],{type:'application/msword'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download=inv.number_str+' '+String(inv.client_name||'invoice').replace(/[^A-Za-z0-9]+/g,'-')+'.doc';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); },2000);
 }
 
 function renderEmpty(){
