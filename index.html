@@ -479,6 +479,14 @@ input[type=password]{letter-spacing:5px}
       <label class="f-label">Upload the actual quote (PDF or photo)</label>
       <input type="file" id="as_quotefile" accept=".pdf,image/*" onchange="handleQuoteFile(this)" style="margin-bottom:8px;font-size:13px;width:100%"/>
       <div id="as_quotefile_note" style="font-size:11px;color:#8A8470;margin-bottom:8px">Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.</div>
+
+      <div style="background:#1A7A4A;border-radius:12px;padding:14px 15px;margin-top:6px">
+        <div style="font-size:12.5px;font-weight:800;color:#fff;margin-bottom:4px">📎 Client Purchase Order — if you have one (optional)</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.85);margin-bottom:10px">Upload the PO now and I'll read it in and save it against this site, ready to invoice against. You can also add it later on the site.</div>
+        <label style="display:block;background:#fff;color:#1A1A1A;border-radius:8px;padding:11px 12px;font-size:13px;font-weight:800;text-align:center;cursor:pointer">Choose PO file (PDF or photo)
+          <input type="file" id="as_pofile" accept=".pdf,image/*" onchange="handleSitePOFile(this)" style="display:none"/></label>
+        <div id="as_pofile_note" style="font-size:11px;color:rgba(255,255,255,0.9);margin-top:8px">No PO chosen — that's fine, it's optional.</div>
+      </div>
     </div>
 
     <div class="f-err" id="as_err">Please fill in at least the site name, team leader, start date and a quote value (or scope lines).</div>
@@ -3159,6 +3167,7 @@ function renderPreviousSites(){
 
 let PENDING_SPEC = null;
 let PENDING_QUOTE = null;
+let PENDING_SITE_PO = null;   // a client PO uploaded during new-site registration
 let productRowCount = 0;
 
 function openAddSite(){
@@ -3171,8 +3180,11 @@ function openAddSite(){
   productRowCount = 0;
   PENDING_SPEC = null;
   PENDING_QUOTE = null;
+  PENDING_SITE_PO = null;
   if($('as_quotefile')) $('as_quotefile').value='';
   $('as_quotefile_note').textContent = 'Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.';
+  if($('as_pofile')) $('as_pofile').value='';
+  if($('as_pofile_note')) $('as_pofile_note').textContent = "No PO chosen — that's fine, it's optional.";
   $('as_hasspec').value=''; $('as_manufacturer').value=''; $('as_warranty').value='';
   $('as_manufacturer_wrap').style.display='none';
   $('as_spec_upload_wrap').style.display='none';
@@ -3282,6 +3294,21 @@ async function handleQuoteFile(input){
   }catch(e){
     note.textContent = '✓ '+f.name+' — will be uploaded when you save the site. (Couldn’t auto-read the total — type it above.)';
   }
+}
+
+// A client PO uploaded during new-site registration — read it and hold it to save with the site.
+async function handleSitePOFile(input){
+  const f=input.files&&input.files[0]; if(!f){ PENDING_SITE_PO=null; return; }
+  PENDING_SITE_PO={ name:f.name, file:f, fields:{} };
+  const note=$('as_pofile_note');
+  if(!/\.pdf$/i.test(f.name)){ if(note) note.innerHTML='✓ '+esc(f.name)+' — saved with the site (photos can’t be read; add the details on the site after).'; return; }
+  if(note) note.textContent='✓ '+f.name+' — reading the PO…';
+  try{
+    const r=await extractPOFieldsFromPdf(f);
+    PENDING_SITE_PO.fields=r;
+    const got=[]; if(r.order_nr)got.push('order '+r.order_nr); if(r.client_name)got.push(r.client_name+(r.client_group?' ('+r.client_group+')':'')); if(r.po_total>0)got.push(R(r.po_total)); if(r.client_vat)got.push('VAT'); if(r.client_address)got.push('address');
+    if(note) note.innerHTML='✓ '+esc(f.name)+' — read '+(got.length?esc(got.join(' · ')):'nothing automatically')+'. It’ll be saved against this site, ready to invoice.';
+  }catch(e){ if(note) note.innerHTML='✓ '+esc(f.name)+' — saved with the site; add the details on the site after.'; }
 }
 
 function prefillProducts(){
@@ -3493,6 +3520,22 @@ async function saveSite(){
   if(PENDING_SPEC && PENDING_SPEC.file) specUrl = await sbUploadFile(siteId + '/spec-' + stamp + '-' + PENDING_SPEC.name, PENDING_SPEC.file);
   if(PENDING_QUOTE && PENDING_QUOTE.file) quoteUrl = await sbUploadFile(siteId + '/quote-' + stamp + '-' + PENDING_QUOTE.name, PENDING_QUOTE.file);
 
+  // A client PO uploaded during registration → save it against the site, ready to invoice.
+  const poRecords = [];
+  if(PENDING_SITE_PO){
+    let poUrl = '';
+    if(PENDING_SITE_PO.file) poUrl = await sbUploadFile(siteId + '/po-' + stamp + '-' + PENDING_SITE_PO.name, PENDING_SITE_PO.file);
+    const pf = PENDING_SITE_PO.fields || {};
+    poRecords.push({
+      id: uid(),
+      order_nr: pf.order_nr||'', client_name: pf.client_name||client||'', client_address: pf.client_address||'',
+      client_vat: pf.client_vat||'', client_reg: pf.client_reg||'', client_group: pf.client_group||'',
+      project_ref: pf.project_ref||'', po_total: parseFloat(pf.po_total)||0, po_date: '',
+      file_url: poUrl||'', file_name: PENDING_SITE_PO.name||'', invoiced_pct: 0,
+      created: new Date().toISOString().split('T')[0]
+    });
+  }
+
   const details = {
     contact: contactPerson, address: addressName, maps_link: mapsLinkFor(addressName),
     has_spec: hasSpec, spec_manufacturer: hasSpec === 'yes' ? $('as_manufacturer').value : '',
@@ -3500,6 +3543,8 @@ async function saveSite(){
     warranty: warranty, warranty_by: warrantyBy,
     spec_name: PENDING_SPEC ? PENDING_SPEC.name : '', spec_url: specUrl,
     quote_name: PENDING_QUOTE ? PENDING_QUOTE.name : '', quote_url: quoteUrl,
+    client_reg: (PENDING_SITE_PO && PENDING_SITE_PO.fields && PENDING_SITE_PO.fields.client_reg) || '',
+    purchase_orders: poRecords,
     scope_lines: scopeLines
   };
 
