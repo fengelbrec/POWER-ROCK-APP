@@ -1585,37 +1585,38 @@ async function openMonthSnapshot(monthKey){
     const from=start>monthStart?start:monthStart, to=end<monthEnd?end:monthEnd;
     return Math.floor((to-from)/86400000)+1;
   };
-  // Progress invoices (incl VAT) submitted for a site this month — stored on the
-  // site (details.progress_invoices), added via the button in the sheet.
+  // Real client invoices (incl VAT) dated in this month — from the app's invoicing.
   const invIn = (s)=>{
-    const list=(s.details && Array.isArray(s.details.progress_invoices))?s.details.progress_invoices:[];
-    return list.filter(function(pi){ const d=new Date(pi.date); return d.getFullYear()===monthStart.getFullYear() && d.getMonth()===monthStart.getMonth(); })
-               .reduce(function(a,pi){ return a+(parseFloat(pi.amount)||0); },0);
+    return siteInvoices(s).filter(function(iv){ if(!iv.date) return false; const d=new Date(iv.date+'T12:00:00'); return d.getFullYear()===monthStart.getFullYear() && d.getMonth()===monthStart.getMonth(); })
+               .reduce(function(a,iv){ return a+(parseFloat(iv.total_incl)||0); },0);
   };
 
-  // Every site that ran any days in this month (so a job spanning two months shows in both).
+  // Every site that RAN days this month OR had an invoice dated this month (so turnover matches Income).
   const rows = (OWNER.sites||[]).map(s=>{
     if(!s.started) return null;
     const start=new Date(s.started);
     const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
-    if(isNaN(start.getTime()) || end<monthStart || start>monthEnd) return null;
-    const dim=daysIn(s); if(dim<=0) return null;
+    if(isNaN(start.getTime())) return null;
+    const ran = !(end<monthStart || start>monthEnd);
+    const dim = ran ? Math.max(0, daysIn(s)) : 0;
+    const invThisMonth = invIn(s);
+    if(dim<=0 && invThisMonth<=0) return null;   // neither ran nor invoiced this month
+    const isGen = !!(s.details && s.details.is_general);
     const fin=ownerFin(s);
-    const projectValue=fin.quote;
-    const totalNet=fin.net;
-    const dailyNet=fin.net/fin.days;
-    const projInclVAT=projectValue*1.15;
-    const piList=(s.details && Array.isArray(s.details.progress_invoices))?s.details.progress_invoices:[];
-    const invTotal=piList.reduce((a,pi)=>a+(parseFloat(pi.amount)||0),0);  // all progress invoices, incl VAT
-    return { site:s, projectValue, projInclVAT, progInv:invIn(s), invTotal,
-             billPct: projInclVAT>0 ? invTotal/projInclVAT : null,
-             outstanding: projInclVAT - invTotal,
-             labourBudget:fin.labourBudget, labourActual:fin.labourActual,
-             materialBudget:fin.materialBudget, materialActual:fin.material,
-             henk:fin.henk, henkPaid:((OWNER.costs[s.id]||{}).henk)||0, overheads:fin.overheads,
+    const projectValue = isGen ? 0 : fin.quote;
+    const projInclVAT = projectValue*1.15;
+    const invTotalAll = siteInvoices(s).reduce((a,iv)=>a+(parseFloat(iv.total_incl)||0),0);  // all app invoices, incl VAT
+    const dailyNet = (isGen || fin.days<=0 || dim<=0) ? 0 : fin.net/fin.days;
+    const totalNet = isGen ? 0 : fin.net;
+    return { site:s, isGen:isGen, projectValue, projInclVAT, progInv:invThisMonth, invTotal:invTotalAll,
+             billPct: projInclVAT>0 ? invTotalAll/projInclVAT : null,
+             outstanding: Math.max(0, projInclVAT - invTotalAll),
+             labourBudget:isGen?0:fin.labourBudget, labourActual:isGen?0:fin.labourActual,
+             materialBudget:isGen?0:fin.materialBudget, materialActual:isGen?0:fin.material,
+             henk:isGen?0:fin.henk, henkPaid:isGen?0:(((OWNER.costs[s.id]||{}).henk)||0), overheads:isGen?0:fin.overheads,
              dpd:dailyNet, monthNet:dailyNet*dim, totalNet:totalNet,
-             marginPct: projectValue>0 ? totalNet/projectValue : null };
-  }).filter(Boolean).sort((a,b)=> new Date(b.site.started)-new Date(a.site.started));
+             marginPct: (!isGen && projectValue>0) ? totalNet/projectValue : null };
+  }).filter(Boolean).sort((a,b)=> (b.progInv||0)-(a.progInv||0));
 
   const Rs = (n) => "R" + Math.round(n||0).toLocaleString("en-ZA");
   const GC='#1FA24C', RC='#C0392B', NET_TARGET=0.35, PPD_TARGET=5000;
@@ -1654,7 +1655,7 @@ async function openMonthSnapshot(monthKey){
         return `<tr class="p-top">
           <td rowspan="2" style="vertical-align:middle;font-weight:700" title="${r.site.name}">${r.site.name}</td>
           <td rowspan="2" class="alt" style="vertical-align:middle">${Rs(r.projInclVAT)}</td>
-          <td rowspan="2" style="vertical-align:middle;white-space:nowrap">${r.progInv>0?`<div onclick="openProgressInvoice('${sid}','${monthKey}')" style="cursor:pointer;font-weight:700">${Rs(r.progInv)}${r.billPct!=null?` <span class="mini">${Math.round(r.billPct*100)}%</span>`:''}</div>`:''}<button onclick="openProgressInvoice('${sid}','${monthKey}')" style="background:#f2f6fb;border:1px solid #cdddec;border-radius:5px;padding:2px 7px;font-size:10px;font-weight:800;color:#2c5f8a;cursor:pointer;font-family:inherit;margin-top:${r.progInv>0?'3px':'0'}">＋ Add</button></td>
+          <td rowspan="2" style="vertical-align:middle;white-space:nowrap">${r.progInv>0?`<div style="font-weight:700">${Rs(r.progInv)}${r.billPct!=null?` <span class="mini">${Math.round(r.billPct*100)}% billed</span>`:''}</div>`:''}<button onclick="monthAddInvoice('${sid}')" style="background:#eaf4ee;border:1px solid #bfe0cc;border-radius:5px;padding:2px 7px;font-size:10px;font-weight:800;color:#1A7A4A;cursor:pointer;font-family:inherit;margin-top:${r.progInv>0?'3px':'0'}">＋ Invoice</button></td>
           <td rowspan="2" class="alt" style="vertical-align:middle">${Rs(r.outstanding)}</td>
           <td class="muted">${mini('Bud')}${Rs(r.labourBudget)}</td>
           <td class="alt muted">${mini('Bud')}${Rs(r.materialBudget)}</td>
@@ -6850,6 +6851,8 @@ async function incomeGoInvoice(siteId){
   if(s.details&&s.details.is_general){ openModal('modalSiteDetail'); renderInvoiceEditor(siteId); }   // once-off → straight to the invoice
   else openSitePOs(siteId);
 }
+// From the month snapshot "＋ Invoice" — jump to that site's invoicing screen.
+async function monthAddInvoice(siteId){ closeModal('modalMonthSnapshot'); await incomeGoInvoice(siteId); }
 
 function renderEmpty(){
   $('pageBody').innerHTML = `<div class="empty-state"><div class="empty-state-ico">◆</div><div class="empty-state-txt">Section under construction.</div></div>`;
