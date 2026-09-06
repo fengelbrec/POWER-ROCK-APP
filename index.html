@@ -822,9 +822,9 @@ function uid(){ return 'id_' + Date.now() + '_' + Math.floor(Math.random()*10000
 
 const NAV = [
   {id:'overview', label:'Overview', icon:'◆'},
+  {id:'income', label:'Income', icon:'💰'},
   {id:'sites', label:'Sites', icon:'▦'},
   {id:'financials', label:'Site P+L', icon:'▤'},
-  {id:'splitengine', label:'Payment Split', icon:'◫'},
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
   {id:'cashflow', label:'Cashflow', icon:'∿'},
   {id:'suppliers', label:'Suppliers', icon:'▣'},
@@ -1285,7 +1285,7 @@ function paintDoor(id){
   }
   const renderers = {
     overview: renderOverview, dailyupdates: renderDailyUpdates,
-    sites: renderHenkSites, financials: renderFinancials,
+    sites: renderHenkSites, financials: renderFinancials, income: renderIncome,
     splitengine: renderSplitEngine, vat: renderVAT, cashflow: renderCashflow,
     suppliers: renderSuppliers, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
   };
@@ -2554,6 +2554,7 @@ function duSiteInfoTab(s){
   return `<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="duEditSiteInfo('${s.id}')" style="background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button></div>
     <div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
       ${bullet('Client', s.client)}
+      ${bullet('Client VAT', d.client_vat)}
       ${bullet('Contact', d.contact)}
       ${bullet('Site address', addressTxt)}
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
@@ -3039,9 +3040,9 @@ async function renderOverview(){
       <div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:4px">ACTIVE SITES</div>
       <div class="disp" style="font-size:22px;font-weight:800">${DATA.sites.filter(s=>s.status==='active').length}</div>
     </div>
-    <div class="ledger-card" style="padding:16px" onclick="renderDoor('splitengine')">
-      <div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:4px">INVOICES LOGGED</div>
-      <div class="disp" style="font-size:22px;font-weight:800">${DATA.payments.length}</div>
+    <div class="ledger-card" style="padding:16px" onclick="renderDoor('income')">
+      <div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:4px">💰 INCOME · INVOICES</div>
+      <div class="disp" style="font-size:22px;font-weight:800">${allAppInvoices().length}</div>
     </div>
   </div>`;
 
@@ -5387,6 +5388,7 @@ function openSiteInfo(siteId, canEdit, editing){
     const addressTxt = d.address ? (d.maps_link ? `${d.address} · <a href="${d.maps_link}" target="_blank" style="color:#8B1A1A;font-weight:700">map</a>` : d.address) : '';
     h += `<div class="ledger-card" style="padding:4px 15px;margin-bottom:16px">
       ${bullet('Client', s.client)}
+      ${bullet('Client VAT', d.client_vat)}
       ${bullet('Contact', d.contact)}
       ${bullet('Site address', addressTxt)}
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
@@ -5414,6 +5416,7 @@ function openSiteInfo(siteId, canEdit, editing){
   h += `<div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
       ${fld('Site name', 'si_name', s.name)}
       ${fld('Client', 'si_client', s.client)}
+      ${fld('Client VAT number', 'si_client_vat', d.client_vat, 'Shown on invoices')}
       ${fld('Contact', 'si_contact', d.contact, 'Name — number')}
       ${fld('Site address', 'si_address', d.address, 'For the map link')}
       ${fld('Quote (ex-VAT, R)', 'si_quote', s.quote_value||'')}
@@ -5447,6 +5450,7 @@ async function saveSiteInfo(siteId){
   const leader = v('si_leader') || s.team_leader;
   const started = v('si_started') || s.started || '';
   const name = v('si_name').trim() || s.name;
+  d.client_vat = v('si_client_vat').trim();
   d.contact = v('si_contact').trim();
   d.address = v('si_address').trim();
   d.maps_link = d.address ? mapsLinkFor(d.address) : '';
@@ -5600,8 +5604,8 @@ function paintSiteSummaryBody(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
       <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase">Live snapshot — profit per day on site</div>
       <div style="display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end">
-        <button onclick="openSitePOs('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🧾 Orders</button>
-        <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Invoices</button>
+        <button onclick="openSitePOs('${s.id}')" style="background:rgba(26,122,74,0.28);color:#fff;border:1px solid rgba(120,220,160,0.5);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">💵 Invoice client</button>
+        <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Supplier invoices</button>
         <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
         <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
         <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
@@ -6021,11 +6025,13 @@ function sitePOsHtml(){
   const s = (SUMMARY && SUMMARY.site) || {};
   const pos = sitePOs(s).slice().sort(function(a,b){ return String(b.po_date||'').localeCompare(String(a.po_date||'')); });
   const invs = siteInvoices(s).slice().sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); });
+  const d = s.details || {};
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Orders &amp; invoices</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:16px">${s.name||''} · capture a client order, then invoice against it — or invoice straight from a quotation (no order needed).</div>
-    <button class="cta-btn" style="margin-bottom:8px" onclick="renderPOEditor('${s.id}')">+ Add purchase order</button>
-    <button class="cta-btn ghost" style="margin-bottom:16px" onclick="renderInvoiceEditor('${s.id}')">💵 New invoice (no PO / from quote)</button>`;
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Create an invoice</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${s.name||''} · choose how you're invoicing this client.</div>
+    <button class="cta-btn" style="margin-bottom:9px;background:#1A7A4A" onclick="renderInvoiceEditor('${s.id}')">🧾 No PO — invoice from the Quotation</button>
+    <div style="font-size:10.5px;color:#A39E8C;margin:-4px 0 12px;padding-left:2px">Fills in the client &amp; quote total automatically.${d.quote_url?' Quotation is on file ✓':' (You can upload the quotation on the next screen.)'}</div>
+    <button class="cta-btn ghost" style="margin-bottom:16px" onclick="renderPOEditor('${s.id}')">📎 I have a Purchase Order — capture it</button>`;
   if(pos.length){
     h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:2px 0 8px">PURCHASE ORDERS</div>`;
     pos.forEach(function(po){
@@ -6183,10 +6189,13 @@ let INV_PO=null;
 // Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
 function renderInvoiceEditor(siteId, poId){
   const s=(SUMMARY && SUMMARY.site)||{};
+  const d=s.details||{};
   const po=poId ? sitePOs(s).find(function(x){ return x.id===poId; }) : null;
   INV_PO=po;
-  const src=po||{};
-  const basis=po ? (parseFloat(po.po_total)||0) : 0;
+  // With a PO → fill from the PO. Without a PO → fill from the site's QUOTATION
+  // (client, address, VAT, project name and quote total captured on the site).
+  const src = po ? po : { client_name:s.client, client_address:d.address, client_vat:d.client_vat, order_nr:'', project_ref:s.name };
+  const basis = po ? (parseFloat(po.po_total)||0) : (siteQuoteValue(s)||parseFloat(s.quote_value)||0);
   const done=po?Math.round(parseFloat(po.invoiced_pct)||0):0;
   const remaining=Math.max(0,100-done);
   const numStr='PR'+String(nextInvoiceNumber()).padStart(6,'0');
@@ -6197,9 +6206,14 @@ function renderInvoiceEditor(siteId, poId){
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
+  // Quotation strip (no-PO path): open the quote on file, or upload it right here.
+  const quoteStrip = po ? '' : (d.quote_url
+      ? `<div style="background:#EEF4EE;border:1px solid #CFE3CF;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2b5a2b">📄 Quotation on file${d.quote_name?' · '+esc(d.quote_name):''} — <a href="${d.quote_url}" target="_blank" style="color:#1A7A4A;font-weight:800">Open</a>. Details below were filled in from the site quote — edit if needed.</div>`
+      : `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">No quotation on file for this site yet. <label style="color:#8B1A1A;font-weight:800;cursor:pointer;text-decoration:underline">Upload the quotation<input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadQuoteThenInvoice('${siteId}',this)"/></label> (optional — you can still invoice below).</div>`);
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">New invoice · ${numStr}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoice from a quotation'}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoiced from the quotation'}</div>
+    ${quoteStrip}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
     <div style="margin-bottom:10px"><label style="${lbl}">Client address</label>
       <textarea class="f-input" id="inv_addr" rows="2" style="margin:0" placeholder="street, town, code">${esc(src.client_address||'')}</textarea></div>
@@ -6258,6 +6272,20 @@ async function saveInvoice(siteId, poId){
     showSaveToast('Invoice '+numStr+' created');
     refreshSitePOs();
   } else { showSaveToast('Could not save — check your signal'); refreshSitePOs(); }
+}
+
+// Upload a quotation from inside the invoice screen, then re-open it (stays put).
+async function uploadQuoteThenInvoice(siteId, input){
+  const f = input.files && input.files[0]; if(!f) return;
+  showSaveToast('Uploading quotation…');
+  const url = await sbUploadFile(siteId + '/quote-' + Date.now() + '-' + f.name, f);
+  if(!url){ showSaveToast('Upload failed — check your signal'); return; }
+  const s=(SUMMARY && SUMMARY.site)||{};
+  const dd = Object.assign({}, s.details || {});
+  dd.quote_url = url; dd.quote_name = f.name;
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:dd});
+  if(ok){ s.details=dd; if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=dd; } showSaveToast('Quotation saved'); }
+  renderInvoiceEditor(siteId);
 }
 
 async function togglePaidInvoice(siteId, invId){
@@ -6352,6 +6380,101 @@ async function generateInvoicePDF(inv){
   }finally{
     holder.remove();
   }
+}
+
+// ═══════════════════════════════════════════
+// INCOME TAB — every client invoice, by month (the Excel replacement)
+// ═══════════════════════════════════════════
+let INCOME_YEAR = new Date().getFullYear();
+async function renderIncome(){
+  if(!OWNER.loaded){
+    $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Income — Invoices</div><div style="text-align:center;padding:44px;color:#8A8470">Loading invoices…</div>`;
+    await loadOwnerFin();
+  }
+  const rows=[];
+  (OWNER.sites||[]).forEach(function(s){
+    ((s.details&&s.details.invoices)||[]).forEach(function(iv){ rows.push(Object.assign({_siteId:s.id,_siteName:s.name||''}, iv)); });
+  });
+  const years={}; rows.forEach(function(r){ if(r.date) years[String(r.date).slice(0,4)]=1; });
+  years[String(INCOME_YEAR)]=1;
+  const yearList=Object.keys(years).sort().reverse();
+  const yr=String(INCOME_YEAR);
+  const yrRows=rows.filter(function(r){ return String(r.date||'').slice(0,4)===yr; });
+  const byMonth={};
+  yrRows.forEach(function(r){ const k=String(r.date).slice(0,7); (byMonth[k]=byMonth[k]||[]).push(r); });
+  const months=Object.keys(byMonth).sort().reverse();
+  const MONTHS_L=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const grand=yrRows.reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
+  const grandPaid=yrRows.filter(function(r){return r.paid;}).reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
+  const grandUnpaid=grand-grandPaid;
+
+  let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Income — Invoices</div>`;
+  h+=`<div style="font-size:12.5px;color:#8A8470;margin:-6px 0 14px">Every client invoice you've created, listed by month — your live invoice book.</div>`;
+  h+=`<button class="cta-btn" style="margin-bottom:14px" onclick="openIncomeNewInvoice()">💵 Create / send a new invoice</button>`;
+  if(yearList.length>1){
+    h+=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">`+yearList.map(function(y){
+      return `<button onclick="setIncomeYear('${y}')" style="background:${y===yr?'#1A1A1A':'#EFECE3'};color:${y===yr?'#fff':'#1A1A1A'};border:none;border-radius:20px;padding:7px 15px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">${y}</button>`;
+    }).join('')+`</div>`;
+  }
+  h+=`<div class="headline-num" style="padding:18px;margin-bottom:16px">
+    <div class="headline-label">${yr} · INVOICED TOTAL (incl VAT)</div>
+    <div class="headline-figure" style="font-size:34px">${R(grand)}</div>
+    <div class="headline-sub">${R(grandPaid)} paid · <span style="color:#E8B84B">${R(grandUnpaid)} outstanding</span></div>
+  </div>`;
+  if(!months.length){
+    h+=`<div style="text-align:center;padding:36px;color:#A39E8C">No invoices for ${yr} yet.<br/>Tap “Create / send a new invoice” to make your first one.</div>`;
+  }
+  months.forEach(function(mk){
+    const list=byMonth[mk].slice().sort(function(a,b){return String(b.date||'').localeCompare(String(a.date));});
+    const mtot=list.reduce(function(a,r){return a+(parseFloat(r.total_incl)||0);},0);
+    const mi=parseInt(mk.slice(5,7),10)-1;
+    h+=`<div class="section-lbl" style="display:flex;justify-content:space-between;align-items:baseline"><span>${MONTHS_L[mi]} ${yr}</span><span class="disp" style="font-weight:800;color:#1A1A1A">${R(mtot)}</span></div>`;
+    list.forEach(function(r){
+      h+=`<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:13px">${esc(r.number_str||'')} <span style="font-size:10px;font-weight:700;color:${r.paid?'#1A7A4A':'#C08A00'}">${r.paid?'PAID':'unpaid'}</span></div>
+          <div class="disp" style="font-weight:800;font-size:13.5px;white-space:nowrap">${R(r.total_incl||0)}</div>
+        </div>
+        <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(r.client_name||'')} · ${esc(r._siteName)}${r.date?' · '+fd(r.date):''}</div>
+        <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
+          <button onclick="incomeTogglePaid('${r._siteId}','${r.id}')" style="background:none;border:none;color:${r.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${r.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
+          <button onclick="incomeDownloadPDF('${r._siteId}','${r.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
+          <button onclick="incomeDownloadWord('${r._siteId}','${r.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
+        </div>
+      </div>`;
+    });
+  });
+  $('pageBody').innerHTML=h;
+}
+function setIncomeYear(y){ INCOME_YEAR=parseInt(y,10)||new Date().getFullYear(); renderIncome(); }
+function incomeInvGet(siteId,invId){ const s=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(!s) return null; const iv=((s.details&&s.details.invoices)||[]).find(function(x){return x.id===invId;}); return iv?{site:s,inv:iv}:null; }
+function incomeDownloadPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoicePDF(g.inv); }
+function incomeDownloadWord(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoiceDoc(g.inv); }
+async function incomeTogglePaid(siteId,invId){
+  const g=incomeInvGet(siteId,invId); if(!g) return;
+  const d=Object.assign({}, g.site.details||{});
+  const iv=(d.invoices||[]).find(function(x){return x.id===invId;}); if(!iv) return;
+  iv.paid=!iv.paid; iv.paid_date=iv.paid?invToday():'';
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){ g.site.details=d; showSaveToast(iv.paid?'Marked paid':'Marked unpaid'); renderIncome(); }
+}
+// New invoice from the Income tab — pick which site, then open its invoicing screen.
+function openIncomeNewInvoice(){
+  const sites=(OWNER.sites||[]).slice().sort(function(a,b){return String(a.name||'').localeCompare(String(b.name||''));});
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Create an invoice</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Which site / project is this invoice for?</div>`;
+  if(!sites.length){ h+=`<div style="color:#A39E8C;padding:10px 0">No sites yet.</div>`; }
+  sites.forEach(function(s){
+    h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="incomeGoInvoice('${s.id}')">${esc(s.name||'(unnamed site)')}</button>`;
+  });
+  h+=`<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
+  $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+async function incomeGoInvoice(siteId){
+  $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Opening…</div>`;
+  await loadSiteSummary(siteId);
+  openSitePOs(siteId);
 }
 
 function renderEmpty(){
