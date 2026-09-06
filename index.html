@@ -2988,7 +2988,7 @@ async function renderOverview(){
         // Net profit only from July 2026 onward — the site data before then is
         // incomplete (app wasn't live), so Jan–Jun net is left blank for now.
         const showNet = net !== 0 && monthKey >= '2026-07';
-        return `<div class="month-cell ${val>0?'filled':''}">
+        return `<div class="month-cell ${val>0?'filled':''}" onclick="openMonthSnapshot('${monthKey}')" style="cursor:pointer" title="Tap to see ${m}'s invoices & profit">
           <div class="month-cell-lbl">${m}</div>
           <div class="month-cell-val">${val>0?R(val):'—'}</div>
           ${val>0?`<div style="font-size:8.5px;font-weight:700;letter-spacing:.6px;color:rgba(255,255,255,0.4)">TURNOVER</div>`:''}
