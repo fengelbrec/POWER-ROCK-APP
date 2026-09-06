@@ -3946,7 +3946,7 @@ async function renderFinancials(){
         const pc = (a) => t>0 ? ` <span class="mini">${Math.round(a/t*100)}%</span>` : '';
         return `<tr>
           <td onclick="openSiteSummary('${r.site.id}')" title="${r.name}" style="cursor:pointer">${r.name}</td>
-          <td class="alt">${Rs(r.turnover)}${pc(r.turnover)}</td>
+          <td class="alt">${Rs(r.turnover)}</td>
           <td>${Rs(r.material)}${pc(r.material)}</td>
           <td class="alt">${Rs(r.labour)}${pc(r.labour)}</td>
           <td>${Rs(r.petrol)}${pc(r.petrol)}</td>
@@ -3961,7 +3961,7 @@ async function renderFinancials(){
     <tfoot>
       ${(function(){ const pcT = (a) => gTurn>0 ? ` <span class="mini">${Math.round(a/gTurn*100)}%</span>` : ''; return `<tr>
         <td>TOTAL</td>
-        <td class="alt">${Rs(gTurn)}${pcT(gTurn)}</td>
+        <td class="alt">${Rs(gTurn)}</td>
         <td>${Rs(gMat)}${pcT(gMat)}</td>
         <td class="alt">${Rs(gLab)}${pcT(gLab)}</td>
         <td>${Rs(gPet)}${pcT(gPet)}</td>
@@ -5599,6 +5599,10 @@ function paintSiteSummaryBody(){
         </div></div>
       <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Days on site</div>
         <div class="disp" style="font-size:17px;font-weight:800;margin-top:3px">${days}</div></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:10px;margin-top:11px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;font-size:11px;color:rgba(255,255,255,0.5)">
+      <div>Target net <b style="color:rgba(255,255,255,0.85);font-weight:700">${R(quote*0.35)}</b> · 35% <span style="color:${netPct>=35?'#8FBF9F':'#E5B96B'};font-weight:800">${netPct>=35?'✓':'⚠'}</span></div>
+      <div style="text-align:right">Target/day <b style="color:rgba(255,255,255,0.85);font-weight:700">${R(5000)}</b> <span style="color:${dailyProfit>=5000?'#8FBF9F':'#E5B96B'};font-weight:800">${dailyProfit>=5000?'✓':'⚠'}</span></div>
     </div>
     ${s.status === 'done'
       ? `<div style="background:rgba(95,122,107,0.25);border:1px solid #5C7A6B;border-radius:10px;padding:11px 14px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px">
