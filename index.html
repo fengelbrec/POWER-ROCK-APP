@@ -1389,21 +1389,29 @@ function siteProfitPerDay(s){ return siteNetProfitLive(s) / siteDaysOnSite(s); }
 function slugId(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
 function mapsLinkFor(name){ return name ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(name) : ''; }
 
+// App-invoicing went live in September 2026. Months BEFORE this use the manual
+// backfill totals; from this month onward turnover comes ONLY from real invoices
+// created in the app (so Sept starts at zero and builds up as invoices are made).
+const BACKFILL_CUTOFF = '2026-09';
+function backfillActive(monthKey){ return String(monthKey) < BACKFILL_CUTOFF; }
+function backfillSumActive(){
+  return Object.keys(DATA.monthlyBackfill||{}).reduce((a,k)=> a + (backfillActive(k) ? (parseFloat(DATA.monthlyBackfill[k])||0) : 0), 0);
+}
 // Total of client invoices created in the app (turnover = invoiced, incl VAT).
 function appInvoiceTotal(){
   return (typeof allAppInvoices==='function'?allAppInvoices():[]).reduce((a,iv)=>a+(parseFloat(iv.total_incl)||0),0);
 }
 function ytdTurnoverPaid(){
   const fromPayments = DATA.payments.filter(p=>p.paid).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
-  const fromBackfill = Object.values(DATA.monthlyBackfill||{}).reduce((a,v)=>a+(parseFloat(v)||0),0);
-  return fromPayments + fromBackfill + appInvoiceTotal();
+  return fromPayments + backfillSumActive() + appInvoiceTotal();
 }
 function ytdTurnoverInvoiced(){
   return DATA.payments.reduce((a,p)=>a+(parseFloat(p.amount)||0),0) + appInvoiceTotal();
 }
 
 function monthlyTurnoverMap(){
-  const map = Object.assign({}, DATA.monthlyBackfill || {});
+  const map = {};
+  Object.keys(DATA.monthlyBackfill||{}).forEach(k=>{ if(backfillActive(k)) map[k] = parseFloat(DATA.monthlyBackfill[k])||0; });
   DATA.payments.filter(p=>p.paid).forEach(p=>{
     const d = new Date(p.date);
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -1533,7 +1541,7 @@ function monthOtherExpensesFor(monthKey){
 }
 
 function monthIsBackfilled(monthKey){
-  return !!(DATA.monthlyBackfill && DATA.monthlyBackfill[monthKey]) && monthPaymentsFor(monthKey).length === 0;
+  return backfillActive(monthKey) && !!(DATA.monthlyBackfill && DATA.monthlyBackfill[monthKey]) && monthPaymentsFor(monthKey).length === 0;
 }
 
 async function openMonthSnapshot(monthKey){
@@ -6191,7 +6199,7 @@ function allAppInvoices(){
   return out;
 }
 function nextInvoiceNumber(){
-  let mx = 1820;   // his Excel series ends at 1820; app starts 1821
+  let mx = 1813;   // last pre-app invoice; Sept invoices are recreated from 1814
   allAppInvoices().forEach(function(iv){ const n=parseInt(iv.number)||0; if(n>mx) mx=n; });
   return mx+1;
 }
@@ -6226,6 +6234,7 @@ function renderInvoiceEditor(siteId, poId){
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">New invoice · ${numStr}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoiced from the quotation'}</div>
     ${quoteStrip}
+    ${fld('Invoice number (you can change it to match your records)','inv_num',numStr)}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
     <div style="margin-bottom:10px"><label style="${lbl}">Client address</label>
       <textarea class="f-input" id="inv_addr" rows="2" style="margin:0" placeholder="street, town, code">${esc(src.client_address||'')}</textarea></div>
@@ -6267,8 +6276,13 @@ async function saveInvoice(siteId, poId){
   if(!Array.isArray(d.invoices)) d.invoices=[];
   if(!Array.isArray(d.purchase_orders)) d.purchase_orders=[];
   const po=poId ? d.purchase_orders.find(function(x){ return x.id===poId; }) : null;
-  const numStr='PR'+String(nextInvoiceNumber()).padStart(6,'0');
-  const inv={ id:uid(), number:parseInt(numStr.replace(/\D/g,''))||0, number_str:numStr, po_id:poId||null,
+  const typedNum=parseInt((($('inv_num')||{}).value||'').replace(/\D/g,''))||0;
+  const numN = typedNum>0 ? typedNum : nextInvoiceNumber();
+  const numStr='PR'+String(numN).padStart(6,'0');
+  if(allAppInvoices().some(function(x){ return (parseInt(x.number)||0)===numN; })){
+    if(!confirm('Invoice '+numStr+' already exists in the app. Save another with the same number?')){ refreshSitePOs(); return; }
+  }
+  const inv={ id:uid(), number:numN, number_str:numStr, po_id:poId||null,
     client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'),
     order_nr: g('inv_order'), project_ref: g('inv_ref'),
     description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100,
