@@ -1442,6 +1442,7 @@ function monthlyNetProfitMap(){
   const map = {};
   (OWNER.sites||[]).forEach(function(s){
     if(!s.started) return;
+    if(s.details&&s.details.is_general) return;   // once-off/supply bucket — not a real project's profit
     const start = new Date(s.started);
     const end = (s.status==='done' && s.end_date) ? new Date(s.end_date) : new Date();
     if(isNaN(start.getTime()) || end < start) return;
@@ -4034,7 +4035,7 @@ async function renderFinancials(){
 
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Site P+L</div>`;
 
-  const rows = (OWNER.sites||[]).filter(s=> !/greenhill/i.test(s.name||'')).map(s=>{  // Greenhill left out — its data is incomplete/skewed
+  const rows = (OWNER.sites||[]).filter(s=> !/greenhill/i.test(s.name||'') && !(s.details&&s.details.is_general)).map(s=>{  // Greenhill left out — incomplete data; is_general = once-off/supply bucket, not a real site
     const f = ownerFin(s);
     return { site:s, name:s.name || 'Unnamed site', turnover:f.quote, material:f.material,
              labour:f.labourActual, petrol:f.petrol, accommodation:f.accommodation,
@@ -6430,13 +6431,14 @@ function renderInvoiceEditor(siteId, poId, invId){
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
+  const isGen = !!(d && d.is_general);
   // Quotation strip (no-PO path): open the quote on file, or upload it right here.
-  const quoteStrip = po ? '' : (d.quote_url
+  const quoteStrip = (po || isGen) ? '' : (d.quote_url
       ? `<div style="background:#EEF4EE;border:1px solid #CFE3CF;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2b5a2b">📄 Quotation on file${d.quote_name?' · '+esc(d.quote_name):''} — <a href="${d.quote_url}" target="_blank" style="color:#1A7A4A;font-weight:800">Open</a>. Details below were filled in from the site quote — edit if needed.</div>`
       : `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">No quotation on file for this site yet. <label style="color:#8B1A1A;font-weight:800;cursor:pointer;text-decoration:underline">Upload the quotation<input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadQuoteThenInvoice('${siteId}',this)"/></label> (optional — you can still invoice below).</div>`);
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit invoice':'New invoice'} · ${numStr}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):'No purchase order — invoiced from the quotation')}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation'))}</div>
     ${quoteStrip}
     ${fld('Invoice number (you can change it to match your records)','inv_num',numStr)}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
@@ -6828,10 +6830,12 @@ async function incomeTogglePaid(siteId,invId){
 }
 // New invoice from the Income tab — pick which site, then open its invoicing screen.
 function openIncomeNewInvoice(){
-  const sites=(OWNER.sites||[]).slice().sort(function(a,b){return String(a.name||'').localeCompare(String(b.name||''));});
+  const sites=(OWNER.sites||[]).filter(function(s){ return !(s.details&&s.details.is_general); }).slice().sort(function(a,b){return String(a.name||'').localeCompare(String(b.name||''));});
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Create an invoice</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Which site / project is this invoice for?</div>`;
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Which site / project is this invoice for?</div>
+    <button class="cta-btn" style="margin-bottom:6px;background:#5C5748" onclick="incomeGoInvoice('site_general_oneoff')">➕ Once-off invoice (no project site)</button>
+    <div style="font-size:10.5px;color:#A39E8C;margin:-2px 0 14px;padding-left:2px">For supply-only / pass-through jobs with no site — type the client &amp; amount.</div>`;
   if(!sites.length){ h+=`<div style="color:#A39E8C;padding:10px 0">No sites yet.</div>`; }
   sites.forEach(function(s){
     h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="incomeGoInvoice('${s.id}')">${esc(s.name||'(unnamed site)')}</button>`;
@@ -6842,7 +6846,9 @@ function openIncomeNewInvoice(){
 async function incomeGoInvoice(siteId){
   $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Opening…</div>`;
   await loadSiteSummary(siteId);
-  openSitePOs(siteId);
+  const s=(SUMMARY&&SUMMARY.site)||{};
+  if(s.details&&s.details.is_general){ openModal('modalSiteDetail'); renderInvoiceEditor(siteId); }   // once-off → straight to the invoice
+  else openSitePOs(siteId);
 }
 
 function renderEmpty(){
