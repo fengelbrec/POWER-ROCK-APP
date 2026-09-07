@@ -2989,88 +2989,89 @@ async function renderOverview(){
     $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Annual Performance</div><div style="text-align:center;padding:44px;color:#8A8470">Loading live figures…</div>`;
     await loadOwnerFin();
   }
+  const Rs = (n) => { const v = Math.round(n||0); return (v<0?'-R':'R') + Math.abs(v).toLocaleString('en-ZA'); };
+  const col = (good) => good ? '#3F5A4C' : '#B2342A';
   const target = DATA.annualTargetZAR;
   const ytd = ytdTurnoverPaid();
-  const pct = target ? Math.min(100, Math.round((ytd/target)*100)) : 0;
+  const pct = target ? Math.round((ytd/target)*100) : 0;
   const now = new Date();
-  const monthsElapsed = now.getMonth() + 1;
-  const monthsRemaining = 12 - monthsElapsed;
-  const requiredPerMonth = monthsRemaining > 0 ? (target - ytd) / monthsRemaining : 0;
-  const statusColour = pct >= 80 ? '#5C7A6B' : pct >= 50 ? '#D4A55A' : '#B2342A';
-  const statusPill = pct >= 80 ? 'pill-green' : pct >= 50 ? 'pill-amber' : 'pill-red';
-  const statusText = pct >= 80 ? 'On track' : pct >= 50 ? 'Needs attention' : 'Behind target';
-  const monthMap = monthlyTurnoverMap();
-  const netMap = monthlyNetProfitMap();
-  const MONTHS_S = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-  let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Annual Performance</div>`;
-
-  h += `<div class="headline-num">
-    <button onclick="openMonthSnapshot('${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}')" style="position:absolute;top:15px;right:15px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);color:#fff;border-radius:8px;padding:8px 13px;font-size:11px;font-weight:800;font-family:inherit;cursor:pointer;z-index:3;letter-spacing:.3px">📊 Cashflow Statement</button>
-    <div class="headline-label">R${(target/1000000).toFixed(0)}M ANNUAL TARGET — ${now.getFullYear()} · JAN–MAY BACKFILLED, JUN+ LIVE</div>
-    <div class="headline-figure">${R(ytd)}</div>
-    <div class="headline-sub">${pct}% of annual target · ${monthsRemaining} month${monthsRemaining!==1?'s':''} remaining · ${R(ytdTurnoverInvoiced())} invoiced total</div>
-    <div class="target-bar-wrap"><div class="target-bar-fill" style="width:${pct}%;background:${statusColour}"></div></div>
-    <div class="target-row">
-      <span class="status-pill ${statusPill}">${statusText}</span>
-      <span style="color:rgba(255,255,255,0.55)">Need ${R(requiredPerMonth)}/mo to close gap</span>
-    </div>
-    <div class="month-grid">
-      ${MONTHS_S.map((m,i)=>{
-        const monthKey = `${now.getFullYear()}-${String(i+1).padStart(2,'0')}`;
-        const val = monthMap[monthKey] || 0;
-        const net = netMap[monthKey] || 0;
-        // Net profit only from July 2026 onward — the site data before then is
-        // incomplete (app wasn't live), so Jan–Jun net is left blank for now.
-        const showNet = net !== 0 && monthKey >= '2026-07';
-        return `<div class="month-cell ${val>0?'filled':''}" onclick="openMonthSnapshot('${monthKey}')" style="cursor:pointer" title="Tap to see ${m}'s invoices & profit">
-          <div class="month-cell-lbl">${m}</div>
-          <div class="month-cell-val">${val>0?R(val):'—'}</div>
-          ${val>0?`<div style="font-size:8.5px;font-weight:700;letter-spacing:.6px;color:rgba(255,255,255,0.4)">TURNOVER</div>`:''}
-          ${showNet?`<div style="font-size:13px;font-weight:800;color:${net>=0?'#8FBF9F':'#E58C82'};margin-top:6px">${R(net)}</div><div style="font-size:8.5px;font-weight:700;letter-spacing:.6px;color:rgba(255,255,255,0.4)">NET PROFIT</div>`:''}
-        </div>`;
-      }).join('')}
-    </div>
-    <div style="font-size:10.5px;color:rgba(255,255,255,0.45);margin-top:10px;line-height:1.6">Top figure = turnover for the month (all sites). Green = combined net profit, split day-by-day for jobs that run across months.</div>
-  </div>`;
-
-  // ── This month: two big blocks (turnover + net profit) → tap for the per-team breakdown ──
   const curMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const topTurnover = monthTurnover(curMonthKey);
-  const topNet = netMap[curMonthKey] || 0;
-  h += `<div class="section-lbl">This month — ${MONTH_NAMES_FULL[now.getMonth()]} ${now.getFullYear()}</div>`;
-  h += `<div onclick="openTeamBreakdown('${curMonthKey}')" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;cursor:pointer">
-    <div class="ledger-card" style="padding:17px 16px">
-      <div style="font-size:10.5px;color:#8A8470;font-weight:800;letter-spacing:.5px;margin-bottom:6px">TURNOVER · INCL VAT</div>
-      <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A">${R(topTurnover)}</div>
-      <div style="font-size:10.5px;color:#B0AA98;margin-top:4px">invoiced so far</div>
-    </div>
-    <div class="ledger-card" style="padding:17px 16px">
-      <div style="font-size:10.5px;color:#8A8470;font-weight:800;letter-spacing:.5px;margin-bottom:6px">NET PROFIT · THIS MONTH</div>
-      <div class="disp" style="font-size:21px;font-weight:800;color:${topNet>=0?'#3F7A54':'#B2342A'}">${R(topNet)}</div>
-      <div style="font-size:10.5px;color:#3F7A54;font-weight:700;margin-top:4px">tap to see each team →</div>
-    </div>
+
+  // Same per-site P+L as the Site P+L sheet, with Project Value (incl VAT) added.
+  const rows = (OWNER.sites||[]).filter(s=> !/greenhill/i.test(s.name||'') && !(s.details&&s.details.is_general)).map(s=>{
+    const f = ownerFin(s);
+    return { site:s, name:s.name || 'Unnamed site', projval:f.quote*1.15, turnover:f.quote, material:f.material,
+             labour:f.labourActual, petrol:f.petrol, accommodation:f.accommodation,
+             other:f.additional, henk:f.henk, net:f.net, dpd:(f.days>0?f.net/f.days:0) };
+  });
+  const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
+  const gProj=T('projval'), gTurn=T('turnover'), gMat=T('material'), gLab=T('labour'), gPet=T('petrol'),
+        gAcc=T('accommodation'), gOth=T('other'), gHenk=T('henk'), gNet=T('net'), gDpd=T('dpd');
+  const gPct = gTurn>0 ? Math.round(gNet/gTurn*100) : null;
+
+  let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Overview</div>`;
+  h += `<div class="snap-meta" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div>R${(target/1000000).toFixed(0)}M target ${now.getFullYear()} · Turnover to date <strong>${R(ytd)}</strong> (${pct}%) · Net profit <strong style="color:${col(gNet>=0)}">${Rs(gNet)}${gPct!=null?' · '+gPct+'%':''}</strong><br/>Swipe the table sideways for every column · tap a site for its profit sheet.</div>
+    <button onclick="openMonthSnapshot('${curMonthKey}')" style="flex:0 0 auto;background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:11px;font-weight:800;font-family:inherit;cursor:pointer;white-space:nowrap">📊 This month</button>
   </div>`;
 
-  h += `<div class="section-lbl">Quick access</div>`;
-  h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
-    <div class="ledger-card" style="padding:16px" onclick="renderDoor('sites')">
-      <div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:4px">ACTIVE SITES</div>
-      <div class="disp" style="font-size:22px;font-weight:800">${DATA.sites.filter(s=>s.status==='active').length}</div>
-    </div>
-    <div class="ledger-card" style="padding:16px" onclick="renderDoor('income')">
-      <div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:4px">💰 INCOME · INVOICES</div>
-      <div class="disp" style="font-size:22px;font-weight:800">${allAppInvoices().length}</div>
-    </div>
-  </div>`;
-
-  if(DATA.sites.length === 0){
-    h += `<div class="section-lbl">Get started</div>
-    <div class="empty-state ledger-card" style="padding:32px 20px">
-      <div class="empty-state-ico"><svg width="30" height="30" viewBox="0 0 100 100"><path d="M62,12 C40,10 22,26 18,45 C14,64 26,82 45,88" fill="none" stroke="#8B1A1A" stroke-width="9" stroke-linecap="round"/></svg></div>
-      <div class="empty-state-txt">No sites logged yet.<br/>Add your first real site under <strong>Sites</strong>.</div>
-    </div>`;
+  if(rows.length === 0){
+    h += `<div class="empty-state ledger-card" style="padding:40px 20px"><div class="empty-state-ico">◆</div><div class="empty-state-txt">No sites yet — add your first under <strong>Sites</strong>.</div></div>`;
+    $('pageBody').innerHTML = h;
+    return;
   }
+
+  h += `<div class="ledger-card" style="padding:2px 14px 10px">
+    <div class="snap-scroll"><table class="snap-table" style="min-width:1180px">
+    <thead><tr>
+      <th>Site</th>
+      <th class="alt">Project Value<br/><span class="mini">incl VAT</span></th>
+      <th>Turnover<br/><span class="mini">ex VAT</span></th>
+      <th class="alt">Material</th>
+      <th>Labour</th>
+      <th class="alt">Petrol</th>
+      <th>Accommodation</th>
+      <th class="alt">Other<br/><span class="mini">cherry picker etc</span></th>
+      <th>Henk<br/><span class="mini">10%</span></th>
+      <th class="alt">Profit / day</th>
+      <th>Net profit</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map(r=>{
+        const t = r.turnover;
+        const pc = (a) => t>0 ? ` <span class="mini">${Math.round(a/t*100)}%</span>` : '';
+        return `<tr>
+          <td onclick="openSiteSummary('${r.site.id}')" title="${r.name}" style="cursor:pointer">${r.name}</td>
+          <td class="alt" style="font-weight:700">${Rs(r.projval)}</td>
+          <td>${Rs(r.turnover)}</td>
+          <td class="alt">${Rs(r.material)}${pc(r.material)}</td>
+          <td>${Rs(r.labour)}${pc(r.labour)}</td>
+          <td class="alt">${Rs(r.petrol)}${pc(r.petrol)}</td>
+          <td>${Rs(r.accommodation)}${pc(r.accommodation)}</td>
+          <td class="alt">${Rs(r.other)}${pc(r.other)}</td>
+          <td>${Rs(r.henk)}${pc(r.henk)}</td>
+          <td class="alt" style="font-weight:700;color:${col(r.dpd>=0)}">${Rs(r.dpd)}<span class="mini">/day</span></td>
+          <td style="font-weight:800;color:${col(r.net>=0)}">${Rs(r.net)}${pc(r.net)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      ${(function(){ const pcT = (a) => gTurn>0 ? ` <span class="mini">${Math.round(a/gTurn*100)}%</span>` : ''; return `<tr>
+        <td>TOTAL</td>
+        <td class="alt">${Rs(gProj)}</td>
+        <td>${Rs(gTurn)}</td>
+        <td class="alt">${Rs(gMat)}${pcT(gMat)}</td>
+        <td>${Rs(gLab)}${pcT(gLab)}</td>
+        <td class="alt">${Rs(gPet)}${pcT(gPet)}</td>
+        <td>${Rs(gAcc)}${pcT(gAcc)}</td>
+        <td class="alt">${Rs(gOth)}${pcT(gOth)}</td>
+        <td>${Rs(gHenk)}${pcT(gHenk)}</td>
+        <td class="alt" style="font-weight:800;color:${col(gDpd>=0)}">${Rs(gDpd)}<span class="mini">/day</span></td>
+        <td style="color:${col(gNet>=0)}">${Rs(gNet)}${pcT(gNet)}</td>
+      </tr>`; })()}
+    </tfoot>
+    </table></div>
+  </div>`;
 
   $('pageBody').innerHTML = h;
 }
