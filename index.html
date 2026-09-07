@@ -6450,8 +6450,9 @@ function renderInvoiceEditor(siteId, poId, invId){
     ${fld('Project / reference (RE)','inv_ref',(existing ? (existing.project_ref||'') : (s.name || src.project_ref || '')),'e.g. Absa Building Tzaneen')}
     <div style="margin-bottom:10px"><label style="${lbl}">${po?'PO':'Quote / contract'} total (ex-VAT, R) — used to work out the %</label>
       <input class="f-input" id="inv_base" type="number" step="0.01" value="${basis||''}" oninput="invPctToAmt()" style="margin:0" ${po?'':'placeholder="e.g. 250000"'}/></div>
+    ${fld('Invoice heading (top of the table, e.g. "PAYMENT 2")','inv_heading',(existing?(existing.heading||''):'PAYMENT 1'),'e.g. PAYMENT 2')}
     <div style="margin-bottom:10px"><label style="${lbl}">Description (you can edit)</label>
-      <textarea class="f-input" id="inv_desc" rows="2" style="margin:0">${esc(defDesc)}</textarea></div>
+      <textarea class="f-input" id="inv_desc" rows="3" style="margin:0">${esc(existing?existing.description:defDesc)}</textarea></div>
     <div style="display:flex;gap:10px;margin-bottom:10px">
       <div style="flex:1;min-width:0"><label style="${lbl}">% of total</label><input class="f-input" id="inv_pct" type="number" step="0.01" value="${startPct}" oninput="invPctToAmt()" style="margin:0"/></div>
       <div style="flex:1;min-width:0"><label style="${lbl}">Amount (ex-VAT, R)</label><input class="f-input" id="inv_amt" type="number" step="0.01" value="${startAmt||''}" oninput="invAmtToPct()" style="margin:0"/></div>
@@ -6493,7 +6494,7 @@ async function saveInvoice(siteId, poId, editId){
   const fields={ number:numN, number_str:numStr, po_id:poId||null,
     client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'), client_reg: g('inv_reg'),
     client_group: (($('inv_group')||{}).value||'').trim(),
-    order_nr: g('inv_order'), project_ref: g('inv_ref'),
+    order_nr: g('inv_order'), project_ref: g('inv_ref'), heading: g('inv_heading'),
     description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:date };
   let inv;
   if(editId){
@@ -6571,9 +6572,17 @@ function invoiceInnerHtml(inv){
       <tr><td><u><b>INVOICE NR:</b></u></td><td>${e(inv.number_str)}</td></tr>
     </table>
     <h3 style="text-align:center;margin:20px 0 10px">TAX INVOICE</h3>
-    <table style="width:100%;border-collapse:collapse" border="1" cellpadding="8">
-      <tr><td style="font-weight:bold">${e(inv.project_ref||'')}</td><td style="text-align:right;font-weight:bold;width:150px">AMOUNT</td></tr>
-      <tr><td style="height:90px;vertical-align:top">${e(inv.description)}</td><td style="text-align:right;vertical-align:middle;font-weight:bold">${m(inv.amount_ex)}</td></tr>
+    <table style="width:100%;border-collapse:collapse" border="1">
+      <tr>
+        <td style="width:34px"></td>
+        <td style="text-align:center;vertical-align:middle;font-weight:bold;padding:12px 10px">${e(inv.heading||inv.project_ref||'')}</td>
+        <td style="text-align:center;vertical-align:middle;font-weight:bold;width:150px;padding:12px 10px">AMOUNT</td>
+      </tr>
+      <tr>
+        <td style="width:34px;text-align:center;vertical-align:middle">1</td>
+        <td style="height:120px;vertical-align:middle;padding:12px 12px;white-space:pre-line">${e(inv.description)}</td>
+        <td style="text-align:right;vertical-align:middle;font-weight:bold;padding:12px 12px">${m(inv.amount_ex)}</td>
+      </tr>
     </table>
     <table style="width:100%;border-collapse:collapse;margin-top:10px">
       <tr><td style="text-align:right;padding:7px 10px">SUB TOTAL</td><td style="text-align:right;width:150px;padding:7px 10px">${m(inv.amount_ex)}</td></tr>
