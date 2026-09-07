@@ -6210,8 +6210,10 @@ function sitePOsHtml(){
         <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
           <button onclick="renderInvoiceEditor('${s.id}',${iv.po_id?`'${iv.po_id}'`:'null'},'${iv.id}')" style="background:none;border:none;color:#1A1A1A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button>
           <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:${iv.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
+          <button onclick="viewInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">👁 Open</button>
+          <button onclick="copyInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📋 Copy</button>
           <button onclick="shareInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#1A7A4A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📤 Share</button>
-          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ PDF</button>
+          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ Save PDF</button>
           <button onclick="redownloadInvoiceWord('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
           <button onclick="deleteInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
         </div>
@@ -6238,6 +6240,16 @@ function shareInvoice(siteId, invId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
   const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
   if(iv) shareInvoicePDF(iv);
+}
+function viewInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
+  if(iv) openInvoicePDF(iv);
+}
+function copyInvoice(siteId, invId){
+  const s=(SUMMARY && SUMMARY.site); if(!s) return;
+  const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
+  if(iv) copyInvoiceImage(iv);
 }
 async function deleteInvoice(siteId, invId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
@@ -6512,8 +6524,8 @@ async function saveInvoice(siteId, poId, editId){
   if(ok){
     s.details=d;
     if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=d; }
-    generateInvoicePDF(inv);
-    showSaveToast('Invoice '+numStr+(editId?' updated':' created'));
+    openInvoicePDF(inv);   // open for a look; use ⬇ PDF to save the file when needed
+    showSaveToast('Invoice '+numStr+(editId?' updated':' created')+' — opened for review');
     refreshSitePOs();
   } else { showSaveToast('Could not save — check your signal'); refreshSitePOs(); }
 }
@@ -6654,6 +6666,39 @@ function saveBlobFile(blob, name){
 async function generateInvoicePDF(inv){
   try{ const r=await buildInvoicePdfBlob(inv); saveBlobFile(r.blob, r.name); }
   catch(e){ printInvoiceFallback(inv); }
+}
+// Just OPEN the PDF to look at it (no download) — opens in a new tab's PDF viewer.
+async function openInvoicePDF(inv){
+  let r;
+  try{ r=await buildInvoicePdfBlob(inv); }
+  catch(e){ printInvoiceFallback(inv); return; }
+  const url=URL.createObjectURL(r.blob);
+  const w=window.open(url,'_blank');
+  if(!w){ saveBlobFile(r.blob, r.name); showSaveToast('Pop-up blocked — saved the PDF instead'); }
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+}
+// Copy the invoice as an IMAGE to the clipboard (paste into email/WhatsApp/a document).
+// (Browsers can't put a PDF *file* on the clipboard — for a file, use Save PDF or Share.)
+async function copyInvoiceImage(inv){
+  showSaveToast('Copying…');
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:40px;box-sizing:border-box';
+  holder.innerHTML=invoiceInnerHtml(inv);
+  document.body.appendChild(holder);
+  try{
+    await loadPdfLibs();
+    const img=holder.querySelector('img'); if(img && !img.complete){ await new Promise(function(rz){ img.onload=rz; img.onerror=rz; }); }
+    const canvas=await html2canvas(holder,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const blob=await new Promise(function(res){ canvas.toBlob(res,'image/png'); });
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+      showSaveToast('Invoice copied — paste it into your email, WhatsApp or a document');
+    }else{
+      saveBlobFile(blob, invoiceFileBase(inv)+'.png');
+      showSaveToast('Copy not supported here — saved it as an image instead');
+    }
+  }catch(e){ showSaveToast('Could not copy — use ⬇ Save PDF or 📤 Share'); }
+  finally{ holder.remove(); }
 }
 // Share the PDF — opens the phone's Share sheet (WhatsApp / Email / etc.).
 // On a desktop that can't share files, it saves the PDF instead.
@@ -6806,8 +6851,12 @@ function openInvoiceDetail(siteId, invId){
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp">${R(iv.total_incl||0)}</span></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="cta-btn" style="flex:1;margin:0" onclick="incomeViewPDF('${siteId}','${invId}')">👁 Open</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeCopyPDF('${siteId}','${invId}')">📋 Copy</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <button class="cta-btn" style="flex:1;margin:0" onclick="incomeShare('${siteId}','${invId}')">📤 Share</button>
-      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadPDF('${siteId}','${invId}')">⬇ PDF</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadPDF('${siteId}','${invId}')">⬇ Save PDF</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadWord('${siteId}','${invId}')">📄 Word</button>
@@ -6821,6 +6870,8 @@ function incomeInvGet(siteId,invId){ const s=(OWNER.sites||[]).find(function(x){
 function incomeDownloadPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoicePDF(g.inv); }
 function incomeDownloadWord(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoiceDoc(g.inv); }
 function incomeShare(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) shareInvoicePDF(g.inv); }
+function incomeViewPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) openInvoicePDF(g.inv); }
+function incomeCopyPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) copyInvoiceImage(g.inv); }
 async function incomeEditInvoice(siteId,invId){
   closeModal('modalSiteDetail');
   $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Opening…</div>`;
