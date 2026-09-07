@@ -6921,32 +6921,295 @@ async function monthAddInvoice(siteId){ closeModal('modalMonthSnapshot'); await 
 // ═══════════════════════════════════════════
 // QUOTATIONS — every project's quote value + the quote document, in one place.
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// QUOTATIONS TAB — build & keep quotations, by month, searchable
+// ═══════════════════════════════════════════
+const QUOTE_STORE_ID='site_general_quotes';
+let QUOTE_YEAR = new Date().getFullYear();
+let QUOTE_MONTH = 'all';        // 'all' or 'YYYY-MM'
+let QUOTE_SEARCH = '';
+function quoteStoreSite(){ return (OWNER.sites||[]).find(function(s){ return s.id===QUOTE_STORE_ID || (s.details&&s.details.is_quote_store); }); }
+function allQuotes(){ const s=quoteStoreSite(); return (s&&s.details&&Array.isArray(s.details.quotations))?s.details.quotations:[]; }
+function quoteGet(id){ return allQuotes().find(function(x){ return x.id===id; }); }
+function quoteNumStr(n){ return 'Q'+String(n).padStart(4,'0'); }
+function nextQuoteNumber(){ let mx=0; allQuotes().forEach(function(q){ const m=String(q.number_str||'').match(/(\d+)/); const n=m?parseInt(m[1],10):0; if(n>mx)mx=n; }); return mx+1; }
+// Rows = quotations built in the app + quotes uploaded on sites (so nothing is lost).
+function quotationRows(){
+  const out=[];
+  allQuotes().forEach(function(q){
+    const ex=parseFloat(q.amount_ex)||0;
+    out.push({ kind:'app', id:q.id, siteId:QUOTE_STORE_ID, number_str:q.number_str||'', date:q.date||'',
+      client:recClient(q), project:q.project_ref||'', amount_ex:ex, total_incl:parseFloat(q.total_incl)||ex*1.15 });
+  });
+  (OWNER.sites||[]).forEach(function(s){
+    if(s.details&&s.details.is_general) return;
+    if(/greenhill/i.test(s.name||'')) return;
+    const d=s.details||{}; const val=parseFloat(s.quote_value)||0;
+    if(!(val>0 || d.quote_url)) return;
+    out.push({ kind:'site', id:s.id, siteId:s.id, number_str:'', date:(s.created_at?String(s.created_at).slice(0,10):''),
+      client:s.client||'', project:s.name||'', amount_ex:val, total_incl:val*1.15, url:d.quote_url||'' });
+  });
+  return out;
+}
 async function renderQuotations(){
   if(!OWNER.loaded){
     $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Quotations</div><div style="text-align:center;padding:44px;color:#8A8470">Loading…</div>`;
     await loadOwnerFin();
   }
-  const sites=(OWNER.sites||[]).filter(function(s){ return !(s.details&&s.details.is_general) && !/greenhill/i.test(s.name||''); });
-  const rows=sites.map(function(s){ const d=s.details||{}; return { s:s, client:s.client||'', quote:parseFloat(s.quote_value)||0, url:d.quote_url||'', name:d.quote_name||'' }; })
-                  .sort(function(a,b){ return b.quote-a.quote; });
-  const total=rows.reduce(function(a,r){return a+r.quote;},0);
-  let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Quotations</div>`;
-  h+=`<div class="snap-meta" style="margin-bottom:12px">${rows.length} project${rows.length!==1?'s':''} · total quoted <strong>${R(total)}</strong> (ex VAT). Upload a quote on a site (Edit details → Documents) or when you register a new site — tap a project to open it.</div>`;
+  const rows=quotationRows().sort(function(a,b){ const da=a.date||'', db=b.date||''; if(da!==db) return da<db?1:-1; return (b.amount_ex||0)-(a.amount_ex||0); });
+  const yr=String(QUOTE_YEAR);
+  const MONTHS_L=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let monthOpts=`<option value="all"${QUOTE_MONTH==='all'?' selected':''}>All months</option>`;
+  for(let mi=0;mi<12;mi++){ const mk=yr+'-'+String(mi+1).padStart(2,'0'); monthOpts+=`<option value="${mk}"${QUOTE_MONTH===mk?' selected':''}>${MONTHS_L[mi]} ${yr}</option>`; }
+
+  let h=`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <div><div class="page-eyebrow">Door 1 · Owner</div><div class="page-title" style="margin:0">Quotations</div></div>
+    <button class="cta-btn" style="width:auto;height:44px;margin:0;padding:0 18px;flex:0 0 auto;white-space:nowrap" onclick="openQuoteNew()">＋ New quotation</button>
+  </div>`;
+  h+=`<div class="snap-meta" id="q_meta" style="margin-bottom:12px"></div>`;
+  h+=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <input id="q_search" class="f-input" style="flex:2;min-width:180px;margin:0;height:44px" placeholder="🔎 Search site or client…" value="${esc(QUOTE_SEARCH)}" oninput="quoteApplyFilter()"/>
+    <select id="q_month" class="f-input" style="flex:1;min-width:150px;margin:0;height:44px" onchange="quoteApplyFilter()">${monthOpts}</select>
+  </div>`;
   if(!rows.length){
-    h+=`<div style="text-align:center;padding:36px;color:#A39E8C">No quotations yet.</div>`;
+    h+=`<div style="text-align:center;padding:36px;color:#A39E8C">No quotations yet.<br/>Tap “＋ New quotation” to build your first one.</div>`;
     $('pageBody').innerHTML=h; return;
   }
-  h+=`<div class="ledger-card" style="padding:2px 14px 10px"><div class="snap-scroll"><table class="snap-table" style="min-width:620px">
-    <thead><tr><th>Project</th><th class="alt">Client</th><th>Quote<br/><span class="mini">ex VAT</span></th><th class="alt">Quotation</th></tr></thead>
-    <tbody>${rows.map(function(r){ return `<tr>
-      <td onclick="openSiteSummary('${r.s.id}')" style="cursor:pointer;font-weight:700">${esc(r.s.name||'')}</td>
-      <td class="alt">${esc(r.client)}</td>
-      <td style="font-weight:800">${R(r.quote)}</td>
-      <td class="alt">${r.url?`<a href="${r.url}" target="_blank" style="color:#1A7A4A;font-weight:800">📄 Open</a>`:'<span style="color:#C9C5BA">—</span>'}</td>
-    </tr>`; }).join('')}</tbody>
-    <tfoot><tr><td>TOTAL</td><td class="alt"></td><td>${R(total)}</td><td class="alt"></td></tr></tfoot>
+  h+=`<div class="ledger-card" style="padding:2px 14px 10px"><div class="snap-scroll"><table class="snap-table" style="min-width:640px">
+    <thead><tr><th>Quote</th><th class="alt">Date</th><th>Client</th><th class="alt">Project</th><th>Value<br/><span class="mini">ex VAT</span></th></tr></thead>
+    <tbody>${rows.map(function(r){
+      const mk=r.date?r.date.slice(0,7):'';
+      const txt=((r.number_str||'')+' '+(r.project||'')+' '+(r.client||'')).toLowerCase();
+      const open= r.kind==='app' ? `openQuoteDetail('${r.id}')` : `openSiteSummary('${r.siteId}')`;
+      const badge= r.kind==='app' ? esc(r.number_str||'—') : '📄';
+      return `<tr class="qrow" data-month="${mk}" data-text="${esc(txt)}" data-ex="${r.amount_ex||0}" style="cursor:pointer" onclick="${open}">
+        <td style="font-weight:800">${badge}</td>
+        <td class="alt">${r.date?fd(r.date):'—'}</td>
+        <td>${esc(r.client||'')}</td>
+        <td class="alt">${esc(r.project||'')}</td>
+        <td style="font-weight:800">${R(r.amount_ex||0)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+    <tfoot><tr><td>TOTAL</td><td class="alt"></td><td></td><td class="alt"></td><td id="q_total"></td></tr></tfoot>
   </table></div></div>`;
   $('pageBody').innerHTML=h;
+  quoteApplyFilter();
+}
+function quoteApplyFilter(){
+  const se=$('q_search'), me=$('q_month'); if(!se||!me) return;
+  QUOTE_SEARCH=se.value||''; QUOTE_MONTH=me.value||'all';
+  const q=QUOTE_SEARCH.trim().toLowerCase(); const mon=QUOTE_MONTH;
+  let vis=0, tot=0;
+  document.querySelectorAll('#pageBody tr.qrow').forEach(function(tr){
+    const mk=tr.getAttribute('data-month')||''; const txt=tr.getAttribute('data-text')||''; const ex=parseFloat(tr.getAttribute('data-ex'))||0;
+    const show=((mon==='all')||(mk===mon)) && (!q||txt.indexOf(q)>=0);
+    tr.style.display=show?'':'none'; if(show){ vis++; tot+=ex; }
+  });
+  const meta=$('q_meta'); if(meta){
+    const L=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monLbl = mon==='all' ? 'all months' : (L[parseInt(mon.slice(5,7),10)-1]+' '+mon.slice(0,4));
+    meta.innerHTML=`${vis} quotation${vis!==1?'s':''} · ${monLbl}${q?(' · “'+esc(QUOTE_SEARCH)+'”'):''} · total <strong>${R(tot)}</strong> (ex VAT)`;
+  }
+  const tt=$('q_total'); if(tt) tt.textContent=R(tot);
+}
+
+// ── Quote builder (editor) ──
+function openQuoteNew(){ renderQuoteEditor(null); openModal('modalSiteDetail'); }
+function renderQuoteEditor(editId){
+  const existing = editId ? quoteGet(editId) : null;
+  const numStr = existing ? existing.number_str : quoteNumStr(nextQuoteNumber());
+  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : 0;
+  const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
+      <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit quotation':'New quotation'} · ${esc(numStr)}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Fill in the client and the amount — the app builds a branded PDF you can open, copy or share.</div>
+    ${fld('Quote number (you can change it)','q_num',numStr)}
+    ${fld('Client name','q_client',existing?existing.client_name:'','e.g. Excellerate JHI')}
+    <div style="margin-bottom:10px"><label style="${lbl}">Client address</label>
+      <textarea class="f-input" id="q_addr" rows="2" style="margin:0" placeholder="street, town, code">${esc(existing?existing.client_address:'')}</textarea></div>
+    ${fld('Client VAT number','q_vat',existing?existing.client_vat:'','optional')}
+    ${fld('Client registration number','q_reg',existing?existing.client_reg:'','optional')}
+    <input type="hidden" id="q_group" value="${esc(existing?existing.client_group:'')}"/>
+    ${fld('Project / reference (RE)','q_ref',existing?existing.project_ref:'','e.g. Absa Building Tzaneen')}
+    ${fld('Heading (top of the table)','q_heading',existing?(existing.heading||'DESCRIPTION'):'DESCRIPTION','e.g. Preparation &amp; paint')}
+    <div style="margin-bottom:10px"><label style="${lbl}">Description (you can edit)</label>
+      <textarea class="f-input" id="q_desc" rows="4" style="margin:0" placeholder="Scope of work…">${esc(existing?existing.description:'Preparation & Paint as per site inspection')}</textarea></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Amount (ex-VAT, R)</label>
+      <input class="f-input" id="q_amt" type="number" step="0.01" value="${startAmt||''}" oninput="quotePreview()" style="margin:0" placeholder="e.g. 250000"/></div>
+    <div style="margin-bottom:12px"><label style="${lbl}">Quote date</label><input class="f-input" id="q_date" type="date" value="${existing&&existing.date?existing.date:invToday()}" style="margin:0"/></div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp" id="q_pv_sub">${R(startAmt)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="q_pv_vat">${R(startAmt*0.15)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="q_pv_tot">${R(startAmt*1.15)}</span></div>
+    </div>
+    <button class="cta-btn" onclick="saveQuote(${existing?`'${existing.id}'`:'null'})">${existing?'Save changes &amp; open PDF':'Save quotation &amp; open PDF'}</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
+  $('siteDetailContent').innerHTML=h;
+}
+function quotePreview(){ const amt=parseFloat(($('q_amt')||{}).value)||0; if($('q_pv_sub'))$('q_pv_sub').textContent=R(amt); if($('q_pv_vat'))$('q_pv_vat').textContent=R(amt*0.15); if($('q_pv_tot'))$('q_pv_tot').textContent=R(amt*1.15); }
+async function saveQuote(editId){
+  const g=function(id){ return (($(id)||{}).value||'').trim(); };
+  const amt=parseFloat(($('q_amt')||{}).value)||0;
+  if(amt<=0){ alert('Please enter the quote amount (ex-VAT).'); return; }
+  const store=quoteStoreSite();
+  if(!store){ alert('Quote store not found — please reload the page.'); return; }
+  const numN=parseInt(g('q_num').replace(/\D/g,''))||nextQuoteNumber();
+  const numStr=g('q_num')||quoteNumStr(numN);
+  const d=Object.assign({}, store.details||{});
+  if(!Array.isArray(d.quotations)) d.quotations=[];
+  const fields={ number_str:numStr, number:numN,
+    client_name:g('q_client'), client_address:g('q_addr'), client_vat:g('q_vat'), client_reg:g('q_reg'),
+    client_group:g('q_group'), project_ref:g('q_ref'), heading:g('q_heading'), description:g('q_desc'),
+    amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:g('q_date')||invToday() };
+  let rec;
+  if(editId){ rec=d.quotations.find(function(x){ return x.id===editId; }); if(!rec){ showSaveToast('Quotation not found'); return; } Object.assign(rec, fields); }
+  else { rec=Object.assign({ id:uid(), status:'open', created:invToday() }, fields); d.quotations.push(rec); }
+  $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Saving…</div>`;
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(QUOTE_STORE_ID),{details:d});
+  if(ok){ store.details=d; closeModal('modalSiteDetail'); openQuotePDF(rec); showSaveToast('Quotation '+numStr+(editId?' updated':' created')); renderQuotations(); }
+  else { showSaveToast('Could not save — check your signal'); renderQuoteEditor(editId); }
+}
+
+// ── Quote detail + actions ──
+function openQuoteDetail(id){
+  const q=quoteGet(id); if(!q) return;
+  const none='<span style="color:#C9C5BA">—</span>';
+  const row=function(lbl,val){ return `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #EFECE3"><div style="flex:0 0 42%;font-size:11.5px;color:#8A8470;font-weight:700">${lbl}</div><div style="flex:1;font-size:12.5px;color:#1A1A1A;min-width:0;word-break:break-word;white-space:pre-line">${val||none}</div></div>`; };
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:18px;font-weight:800;margin-bottom:12px">${esc(q.number_str||'Quotation')}</div>
+    <div class="ledger-card" style="padding:4px 15px;margin-bottom:14px">
+      ${row('Client', esc(recClient(q)))}
+      ${row('Address', esc(q.client_address))}
+      ${row('Client VAT', esc(q.client_vat))}
+      ${row('Project (RE)', esc(q.project_ref))}
+      ${row('Quote date', q.date?fd(q.date):'')}
+      ${row('Description', esc(q.description))}
+    </div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp">${R(q.amount_ex||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp">${R(q.vat||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp">${R(q.total_incl||0)}</span></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="cta-btn" style="flex:1;margin:0" onclick="quoteViewPDF('${id}')">👁 Open</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="quoteCopyImg('${id}')">📋 Copy</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="cta-btn" style="flex:1;margin:0" onclick="quoteShare('${id}')">📤 Share</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="quoteSavePDF('${id}')">⬇ Save PDF</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="quoteSaveWord('${id}')">📄 Word</button>
+      <button class="cta-btn ghost" style="flex:1;margin:0" onclick="quoteEdit('${id}')">✎ Edit</button>
+    </div>
+    <button class="cta-btn ghost" style="margin-top:4px;color:#B2342A" onclick="quoteDelete('${id}')">🗑 Delete quotation</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+function quoteEdit(id){ renderQuoteEditor(id); }
+function quoteViewPDF(id){ const q=quoteGet(id); if(q) openQuotePDF(q); }
+function quoteSavePDF(id){ const q=quoteGet(id); if(q) generateQuotePDF(q); }
+function quoteSaveWord(id){ const q=quoteGet(id); if(q) generateQuoteDoc(q); }
+function quoteShare(id){ const q=quoteGet(id); if(q) shareQuotePDF(q); }
+function quoteCopyImg(id){ const q=quoteGet(id); if(q) copyQuoteImage(q); }
+async function quoteDelete(id){
+  if(!confirm('Delete this quotation? This cannot be undone.')) return;
+  const store=quoteStoreSite(); if(!store) return;
+  const d=Object.assign({}, store.details||{});
+  d.quotations=(d.quotations||[]).filter(function(x){ return x.id!==id; });
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(QUOTE_STORE_ID),{details:d});
+  if(ok){ store.details=d; closeModal('modalSiteDetail'); showSaveToast('Quotation deleted'); renderQuotations(); }
+  else showSaveToast('Could not delete — check your signal');
+}
+
+// ── Quote PDF / Word (branded, mirrors the invoice look) ──
+function quoteFileBase(q){ return (q.number_str||'quotation')+' '+String(q.client_name||'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+function quoteInnerHtml(q){
+  const e=function(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  const m=function(n){ return 'R ' + (Math.round((n||0)*100)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const addr=(q.client_address||'').split('\n').map(e).join('<br/>');
+  const dateTxt=q.date?new Date(q.date+'T12:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'long',year:'numeric'}):'';
+  return `<div style="font-family:Calibri,Arial,sans-serif;color:#1A1A1A;font-size:11pt">
+    ${LETTERHEAD?`<div style="text-align:center;margin:0 0 16px"><img src="${LETTERHEAD}" style="max-width:560px"/></div>`:`<h2 style="color:#8B1A1A">POWER ROCK PAINTING</h2>`}
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="width:120px;vertical-align:top"><u><b>ATTENTION:</b></u></td><td>${e(q.client_name)}<br/>${addr}</td></tr>
+      <tr><td style="vertical-align:top"><u><b>RE:</b></u></td><td>${e(q.project_ref)}</td></tr>
+      <tr><td><u><b>VAT NR:</b></u></td><td>${e(q.client_vat)}</td></tr>
+      <tr><td><u><b>REG NR:</b></u></td><td>${e(q.client_reg)}</td></tr>
+      <tr><td><u><b>DATE:</b></u></td><td>${dateTxt}</td></tr>
+      <tr><td><u><b>QUOTE NR:</b></u></td><td>${e(q.number_str)}</td></tr>
+    </table>
+    <h3 style="text-align:center;margin:20px 0 10px">QUOTATION</h3>
+    <table style="width:100%;border-collapse:collapse" border="1">
+      <tr>
+        <td style="width:34px"></td>
+        <td style="text-align:center;vertical-align:middle;font-weight:bold;padding:12px 10px">${e(q.heading||q.project_ref||'')}</td>
+        <td style="text-align:center;vertical-align:middle;font-weight:bold;width:150px;padding:12px 10px">AMOUNT</td>
+      </tr>
+      <tr>
+        <td style="width:34px;text-align:center;vertical-align:middle">1</td>
+        <td style="height:120px;vertical-align:middle;padding:12px 12px;white-space:pre-line">${e(q.description)}</td>
+        <td style="text-align:right;vertical-align:middle;font-weight:bold;padding:12px 12px">${m(q.amount_ex)}</td>
+      </tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin-top:10px">
+      <tr><td style="text-align:right;padding:7px 10px">SUB TOTAL</td><td style="text-align:right;width:150px;padding:7px 10px">${m(q.amount_ex)}</td></tr>
+      <tr><td style="text-align:right;padding:7px 10px">VAT 15%</td><td style="text-align:right;padding:7px 10px">${m(q.vat)}</td></tr>
+      <tr><td style="text-align:right;padding:10px 10px;font-weight:bold">TOTAL</td><td style="text-align:right;padding:10px 10px;font-weight:bold;border-top:1.5px solid #1A1A1A;border-bottom:4px double #1A1A1A">${m(q.total_incl)}</td></tr>
+    </table>
+    <div style="margin-top:18px;font-size:10.5pt;color:#333">This quotation is valid for 30 days from the date above. Prices include materials &amp; labour as described. E&amp;OE.</div>
+    <div style="margin-top:16px"><u><b>BANKING DETAILS:</b></u><br/>
+      <b>POWER ROCK.paint</b><br/>FNB WATERFALL MALL<br/>CHEQUE ACCOUNT: 62486424072<br/>BRANCH: 258055</div>
+  </div>`;
+}
+function generateQuoteDoc(q){
+  const doc=`<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>${quoteInnerHtml(q)}</body></html>`;
+  const blob=new Blob(['﻿',doc],{type:'application/msword'});
+  saveBlobFile(blob, quoteFileBase(q)+'.doc');
+}
+// Generic HTML → A4 PDF blob (reuses the invoice PDF pipeline).
+async function htmlToPdfBlob(innerHtml, fileName){
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:40px;box-sizing:border-box';
+  holder.innerHTML=innerHtml;
+  document.body.appendChild(holder);
+  try{
+    await loadPdfLibs();
+    const img=holder.querySelector('img'); if(img && !img.complete){ await new Promise(function(r){ img.onload=r; img.onerror=r; }); }
+    const canvas=await html2canvas(holder,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const jsPDF=window.jspdf.jsPDF;
+    const pdf=new jsPDF('p','mm','a4');
+    const pw=210, ph=297;
+    const iw=pw, ih=canvas.height*pw/canvas.width;
+    const imgData=canvas.toDataURL('image/jpeg',0.94);
+    pdf.addImage(imgData,'JPEG',0,0,iw,ih);
+    let left=ih-ph, pos=-ph;
+    while(left>0.5){ pdf.addPage(); pdf.addImage(imgData,'JPEG',0,pos,iw,ih); left-=ph; pos-=ph; }
+    return { blob: pdf.output('blob'), name: fileName+'.pdf' };
+  } finally { holder.remove(); }
+}
+async function buildQuotePdfBlob(q){ return htmlToPdfBlob(quoteInnerHtml(q), quoteFileBase(q)); }
+async function generateQuotePDF(q){ try{ const r=await buildQuotePdfBlob(q); saveBlobFile(r.blob,r.name); }catch(e){ printQuoteFallback(q); } }
+async function openQuotePDF(q){ let r; try{ r=await buildQuotePdfBlob(q); }catch(e){ printQuoteFallback(q); return; } const url=URL.createObjectURL(r.blob); const w=window.open(url,'_blank'); if(!w){ saveBlobFile(r.blob,r.name); showSaveToast('Pop-up blocked — saved the PDF instead'); } setTimeout(function(){ URL.revokeObjectURL(url); },60000); }
+async function shareQuotePDF(q){ let r; try{ r=await buildQuotePdfBlob(q); }catch(e){ printQuoteFallback(q); return; } try{ const file=new File([r.blob],r.name,{type:'application/pdf'}); if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:r.name,text:'Quotation '+(q.number_str||'')+(q.client_name?(' — '+q.client_name):'')}); return; } saveBlobFile(r.blob,r.name); showSaveToast('Sharing isn’t available on this device — saved the PDF instead'); }catch(e){ if(e&&e.name==='AbortError') return; saveBlobFile(r.blob,r.name); } }
+function printQuoteFallback(q){ const w=window.open('','_blank'); if(!w){ alert('To get the PDF, please allow pop-ups — or use the Word version.'); return; } w.document.write(`<html><head><meta charset="utf-8"><title>${quoteFileBase(q)}</title></head><body style="margin:0">${quoteInnerHtml(q)}<scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt></body></html>`); w.document.close(); }
+async function copyQuoteImage(q){
+  showSaveToast('Copying…');
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:40px;box-sizing:border-box';
+  holder.innerHTML=quoteInnerHtml(q);
+  document.body.appendChild(holder);
+  try{
+    await loadPdfLibs();
+    const img=holder.querySelector('img'); if(img && !img.complete){ await new Promise(function(rz){ img.onload=rz; img.onerror=rz; }); }
+    const canvas=await html2canvas(holder,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const blob=await new Promise(function(res){ canvas.toBlob(res,'image/png'); });
+    if(navigator.clipboard && window.ClipboardItem){ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showSaveToast('Quotation copied — paste it into your email, WhatsApp or a document'); }
+    else{ saveBlobFile(blob, quoteFileBase(q)+'.png'); showSaveToast('Copy not supported here — saved it as an image instead'); }
+  }catch(e){ showSaveToast('Could not copy — use ⬇ Save PDF or 📤 Share'); }
+  finally{ holder.remove(); }
 }
 
 function renderEmpty(){
