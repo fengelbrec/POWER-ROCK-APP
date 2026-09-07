@@ -640,6 +640,7 @@ const DEFAULT_DATA = {
     "2026-03": 574435.14,
     "2026-04": 852424.67,
     "2026-05": 1032964.75,
+    "2026-06": 896671.31,
     "2026-07": 1229132.41,
     "2026-08": 1130371.44,
     "2026-09": 736272.94
@@ -798,9 +799,10 @@ function loadData(){
     if(raw){
       const parsed = JSON.parse(raw);
       const merged = Object.assign({}, DEFAULT_DATA, parsed);
-      // Deep-merge the monthly turnover backfill so newly-shipped months fill gaps
-      // without wiping any month the user has set on this device.
-      merged.monthlyBackfill = Object.assign({}, DEFAULT_DATA.monthlyBackfill, parsed.monthlyBackfill || {});
+      // Monthly turnover backfill: the built-in figures (from Ferdi's Excel) are the
+      // source of truth, so a corrected month always wins over a stale saved one.
+      // Any extra month the user added on this device (not in the defaults) is kept.
+      merged.monthlyBackfill = Object.assign({}, parsed.monthlyBackfill || {}, DEFAULT_DATA.monthlyBackfill);
       return merged;
     }
   }catch(e){ console.warn('Could not load saved data', e); }
@@ -1411,21 +1413,17 @@ function appInvoiceTotal(){
   return (typeof allAppInvoices==='function'?allAppInvoices():[]).reduce((a,iv)=>a+(parseFloat(iv.total_incl)||0),0);
 }
 function ytdTurnoverPaid(){
-  const fromPayments = DATA.payments.filter(p=>p.paid).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
-  return fromPayments + backfillSumActive() + appInvoiceTotal();
+  // Turnover = backfilled months (Jan–Aug) + real app invoices (Sept onward).
+  // The old "payments" system is legacy and no longer counted (it double-counted months).
+  return backfillSumActive() + appInvoiceTotal();
 }
 function ytdTurnoverInvoiced(){
-  return DATA.payments.reduce((a,p)=>a+(parseFloat(p.amount)||0),0) + appInvoiceTotal();
+  return appInvoiceTotal();
 }
 
 function monthlyTurnoverMap(){
   const map = {};
   Object.keys(DATA.monthlyBackfill||{}).forEach(k=>{ if(backfillActive(k)) map[k] = parseFloat(DATA.monthlyBackfill[k])||0; });
-  DATA.payments.filter(p=>p.paid).forEach(p=>{
-    const d = new Date(p.date);
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    map[key] = (map[key]||0) + (parseFloat(p.amount)||0);
-  });
   (typeof allAppInvoices==='function'?allAppInvoices():[]).forEach(iv=>{
     if(!iv.date) return;
     const key = String(iv.date).slice(0,7);   // YYYY-MM
@@ -1551,7 +1549,7 @@ function monthOtherExpensesFor(monthKey){
 }
 
 function monthIsBackfilled(monthKey){
-  return backfillActive(monthKey) && !!(DATA.monthlyBackfill && DATA.monthlyBackfill[monthKey]) && monthPaymentsFor(monthKey).length === 0;
+  return backfillActive(monthKey) && !!(DATA.monthlyBackfill && DATA.monthlyBackfill[monthKey]);
 }
 
 async function openMonthSnapshot(monthKey){
