@@ -1592,6 +1592,8 @@ async function openMonthSnapshot(monthKey){
   // Every site that RAN days this month OR had an invoice dated this month (so turnover matches Income).
   const rows = (OWNER.sites||[]).map(s=>{
     if(!s.started) return null;
+    const isGen = !!(s.details && s.details.is_general);
+    if(isGen || /greenhill/i.test(s.name||'')) return null;   // holders/greenhill aren't real projects
     const start=new Date(s.started);
     const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
     if(isNaN(start.getTime())) return null;
@@ -1599,7 +1601,6 @@ async function openMonthSnapshot(monthKey){
     const dim = ran ? Math.max(0, daysIn(s)) : 0;
     const invThisMonth = invIn(s);
     if(dim<=0 && invThisMonth<=0) return null;   // neither ran nor invoiced this month
-    const isGen = !!(s.details && s.details.is_general);
     const fin=ownerFin(s);
     const projectValue = isGen ? 0 : fin.quote;
     const projInclVAT = projectValue*1.15;
@@ -1607,6 +1608,8 @@ async function openMonthSnapshot(monthKey){
     const dailyNet = (isGen || fin.days<=0 || dim<=0) ? 0 : fin.net/fin.days;
     const totalNet = isGen ? 0 : fin.net;
     return { site:s, isGen:isGen, projectValue, projInclVAT, progInv:invThisMonth, invTotal:invTotalAll,
+             turnover: isGen?0:fin.quote, material:isGen?0:fin.material, labour:isGen?0:fin.labourActual,
+             petrol:isGen?0:fin.petrol, accommodation:isGen?0:fin.accommodation, other:isGen?0:fin.additional,
              billPct: projInclVAT>0 ? invTotalAll/projInclVAT : null,
              outstanding: Math.max(0, projInclVAT - invTotalAll),
              labourBudget:isGen?0:fin.labourBudget, labourActual:isGen?0:fin.labourActual,
@@ -1621,71 +1624,74 @@ async function openMonthSnapshot(monthKey){
   const col = ok => ok?GC:RC;
   const money = (v,c) => c ? `<td style="color:${c};font-weight:800">${Rs(v)}</td>` : `<td>${Rs(v)}</td>`;
   const T = k => rows.reduce((a,r)=>a+(r[k]||0),0);
-  const gProj=T('projectValue'), gInv=T('progInv'), gLabB=T('labourBudget'), gLabA=T('labourActual');
-  const gMatB=T('materialBudget'), gMatA=T('materialActual'), gHenk=T('henk'), gMonthNet=T('monthNet'), gDpd=T('dpd'), gOutstanding=T('outstanding'), gOvh=T('overheads'), gHenkPaid=T('henkPaid');
+  const gProj=T('projectValue'), gInv=T('progInv'), gMonthNet=T('monthNet');
+  const gTurn=T('turnover'), gMat=T('material'), gLab=T('labour'), gPet=T('petrol'), gAcc=T('accommodation'), gOth=T('other'), gHenk=T('henk'), gDpd=T('dpd');
   const gTotalNet = rows.reduce((a,r)=>a+ownerFin(r.site).net,0);
   const gMargin = gProj>0 ? gTotalNet/gProj : null;
+  const monthTurnIncl = (monthlyTurnoverMap()[monthKey]||0);   // true month turnover incl once-off, matches Income
 
   let h = `<button class="snap-close-x" onclick="closeModal('modalMonthSnapshot')">×</button>`;
 
   h += `<div class="snap-top">
     <div>
       <div class="snap-title"><span onclick="openMonthSnapshot('${shiftMonthKey(monthKey,-1)}')" title="Previous month" style="cursor:pointer;color:#B0AA98;padding:0 8px 0 0">‹</span>${monthName} ${y}<span onclick="openMonthSnapshot('${shiftMonthKey(monthKey,1)}')" title="Next month" style="cursor:pointer;color:#B0AA98;padding:0 0 0 8px">›</span></div>
-      <div class="snap-meta">${rows.length} site${rows.length!==1?'s':''} · Turnover ${Rs(gInv)} (incl VAT) · ${monthName} profit <strong style="color:${gMargin!=null?col(gMargin>=NET_TARGET):'inherit'}">${Rs(gMonthNet)}</strong></div>
+      <div class="snap-meta">${rows.length} project${rows.length!==1?'s':''} · Turnover ${Rs(monthTurnIncl)} (incl VAT) this month · ${monthName} profit <strong style="color:${col(gMargin!=null?gMargin>=NET_TARGET:true)}">${Rs(gMonthNet)}</strong></div>
     </div>
-    <div class="snap-grand-total">${Rs(gInv)}</div>
+    <div class="snap-grand-total">${Rs(monthTurnIncl)}</div>
   </div>`;
 
-  const mini = t => `<span class="mini">${t}</span>`;
-  h += `<div class="snap-scroll"><table class="snap-table snap2">
+  const netCol = (n)=> n>=0 ? '#3F5A4C' : '#B2342A';
+  h += `<div class="snap-scroll"><table class="snap-table" style="min-width:1180px">
     <thead><tr>
-      <th>Site</th><th class="alt">Project Value<br/><span class="mini">incl VAT</span></th><th>Progress invoice</th><th class="alt">Outstanding</th>
-      <th>Labour<br/><span class="mini">budget / actual</span></th><th class="alt">Material<br/><span class="mini">budget / actual</span></th><th>Overheads</th><th class="alt">Henk<br/><span class="mini">10% / paid</span></th>
-      <th>Profit / day</th><th class="alt">Profit for Month</th><th>Net profit</th>
+      <th>Site</th>
+      <th class="alt">Project Value<br/><span class="mini">incl VAT</span></th>
+      <th>Turnover<br/><span class="mini">ex VAT</span></th>
+      <th class="alt">Material</th>
+      <th>Labour</th>
+      <th class="alt">Petrol</th>
+      <th>Accommodation</th>
+      <th class="alt">Other<br/><span class="mini">cherry picker etc</span></th>
+      <th>Henk<br/><span class="mini">10%</span></th>
+      <th class="alt">Profit / day</th>
+      <th>Net profit</th>
     </tr></thead>
     <tbody>
       ${rows.map(r=>{
-        const labC = r.labourBudget>0 ? col(r.labourActual < r.labourBudget) : null;
-        const matC = r.materialBudget>0 ? col(r.materialActual < r.materialBudget) : null;
-        const dpdC = col(r.dpd >= PPD_TARGET);
-        const netC = r.marginPct!=null ? col(r.marginPct >= NET_TARGET) : null;
-        const sid = r.site.id;
-        return `<tr class="p-top">
-          <td rowspan="2" style="vertical-align:middle;font-weight:700" title="${r.site.name}">${r.site.name}</td>
-          <td rowspan="2" class="alt" style="vertical-align:middle">${Rs(r.projInclVAT)}</td>
-          <td rowspan="2" style="vertical-align:middle;white-space:nowrap">${r.progInv>0?`<div style="font-weight:700">${Rs(r.progInv)}${r.billPct!=null?` <span class="mini">${Math.round(r.billPct*100)}% billed</span>`:''}</div>`:''}<button onclick="monthAddInvoice('${sid}')" style="background:#eaf4ee;border:1px solid #bfe0cc;border-radius:5px;padding:2px 7px;font-size:10px;font-weight:800;color:#1A7A4A;cursor:pointer;font-family:inherit;margin-top:${r.progInv>0?'3px':'0'}">＋ Invoice</button></td>
-          <td rowspan="2" class="alt" style="vertical-align:middle">${Rs(r.outstanding)}</td>
-          <td class="muted">${mini('Bud')}${Rs(r.labourBudget)}</td>
-          <td class="alt muted">${mini('Bud')}${Rs(r.materialBudget)}</td>
-          <td rowspan="2" onclick="openSiteOverheads('${sid}','${monthKey}')" title="See overheads" style="cursor:pointer;vertical-align:middle;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${Rs(r.overheads)}</td>
-          <td class="alt muted">${mini('10%')}${Rs(r.henk)}</td>
-          <td rowspan="2" style="vertical-align:middle;font-weight:800;color:${dpdC}">${Rs(r.dpd)}</td>
-          <td rowspan="2" class="alt" style="vertical-align:middle;font-weight:800">${Rs(r.monthNet)}</td>
-          <td rowspan="2" style="vertical-align:middle;font-weight:800;color:${netC||'inherit'}">${Rs(r.totalNet)}${r.marginPct!=null?` <span class="mini">${Math.round(r.marginPct*100)}%</span>`:''}</td>
-        </tr>
-        <tr class="p-bot">
-          <td onclick="openSiteLabour('${sid}','${monthKey}')" title="See labour payments" style="cursor:pointer;font-weight:800;color:${labC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${mini('Act')}${Rs(r.labourActual)}</td>
-          <td class="alt" onclick="openSiteMaterial('${sid}','${monthKey}')" title="See material invoices" style="cursor:pointer;font-weight:800;color:${matC||'inherit'};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${mini('Act')}${Rs(r.materialActual)}</td>
-          <td class="alt" onclick="openSiteHenk('${sid}','${monthKey}')" title="See Henk payments" style="cursor:pointer;font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${mini('Paid')}${Rs(r.henkPaid)}</td>
+        const t=r.turnover;
+        const pc=(a)=> t>0 ? ` <span class="mini">${Math.round(a/t*100)}%</span>` : '';
+        return `<tr>
+          <td onclick="openSiteSummary('${r.site.id}')" title="${r.site.name}" style="cursor:pointer">${r.site.name}</td>
+          <td class="alt" style="font-weight:700">${Rs(r.projInclVAT)}</td>
+          <td>${Rs(r.turnover)}</td>
+          <td class="alt">${Rs(r.material)}${pc(r.material)}</td>
+          <td>${Rs(r.labour)}${pc(r.labour)}</td>
+          <td class="alt">${Rs(r.petrol)}${pc(r.petrol)}</td>
+          <td>${Rs(r.accommodation)}${pc(r.accommodation)}</td>
+          <td class="alt">${Rs(r.other)}${pc(r.other)}</td>
+          <td>${Rs(r.henk)}${pc(r.henk)}</td>
+          <td class="alt" style="font-weight:700;color:${netCol(r.dpd)}">${Rs(r.dpd)}<span class="mini">/day</span></td>
+          <td style="font-weight:800;color:${netCol(r.totalNet)}">${Rs(r.totalNet)}${r.marginPct!=null?` <span class="mini">${Math.round(r.marginPct*100)}%</span>`:''}</td>
         </tr>`;
       }).join('')}
     </tbody>
     <tfoot>
-      <tr>
+      ${(function(){ const pcT=(a)=> gTurn>0 ? ` <span class="mini">${Math.round(a/gTurn*100)}%</span>` : ''; return `<tr>
         <td>TOTAL</td>
-        <td class="alt">${Rs(gProj*1.15)}</td><td>${Rs(gInv)}</td><td class="alt">${Rs(gOutstanding)}</td>
-        <td style="color:${gLabB>0?col(gLabA<gLabB):'inherit'};font-weight:800">${Rs(gLabA)}</td>
-        <td class="alt" style="color:${gMatB>0?col(gMatA<gMatB):'inherit'};font-weight:800">${Rs(gMatA)}</td>
-        <td>${Rs(gOvh)}</td>
-        <td class="alt">${Rs(gHenkPaid)}</td>
-        <td style="color:#A39E8C">—</td>
-        <td class="alt" style="font-weight:800">${Rs(gMonthNet)}</td>
-        <td style="font-weight:800;color:${gMargin!=null?col(gMargin>=NET_TARGET):'inherit'}">${Rs(gTotalNet)}${gMargin!=null?` ${Math.round(gMargin*100)}%`:''}</td>
-      </tr>
+        <td class="alt">${Rs(gProj*1.15)}</td>
+        <td>${Rs(gTurn)}</td>
+        <td class="alt">${Rs(gMat)}${pcT(gMat)}</td>
+        <td>${Rs(gLab)}${pcT(gLab)}</td>
+        <td class="alt">${Rs(gPet)}${pcT(gPet)}</td>
+        <td>${Rs(gAcc)}${pcT(gAcc)}</td>
+        <td class="alt">${Rs(gOth)}${pcT(gOth)}</td>
+        <td>${Rs(gHenk)}${pcT(gHenk)}</td>
+        <td class="alt" style="font-weight:800;color:${netCol(gDpd)}">${Rs(gDpd)}<span class="mini">/day</span></td>
+        <td style="font-weight:800;color:${netCol(gTotalNet)}">${Rs(gTotalNet)}${gMargin!=null?` <span class="mini">${Math.round(gMargin*100)}%</span>`:''}</td>
+      </tr>`; })()}
     </tfoot>
   </table></div>`;
 
-  h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px;line-height:1.7"><span style="color:#1FA24C;font-weight:800">Green</span> = on target: labour &amp; material under budget, profit ≥ R5&nbsp;000/day, net ≥ 35%. <span style="color:#C0392B;font-weight:800">Red</span> = over budget or below target.</div>`;
+  h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px;line-height:1.7">These are ${monthName}'s projects with each one's live profit sheet. The month's invoiced turnover (${Rs(monthTurnIncl)} incl VAT) &amp; ${monthName} profit are shown above. Tap a site to open it.</div>`;
 
   $('monthSnapshotContent').innerHTML = h;
   openModal('modalMonthSnapshot');
