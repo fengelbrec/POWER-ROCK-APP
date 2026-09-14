@@ -196,6 +196,14 @@ table.cmp{border-collapse:collapse;width:100%}
 .cmpp.best{background:#eaf7f0;color:#1e7d4f}
 .cmpp.cmpna{color:#cbd2da;font-weight:600}
 .cmphint{font-size:11.5px;font-weight:800;color:#37c07a;text-align:center;margin:3px 0 8px}
+/* Quote Request Pack */
+.qrpbox{background:#f6f8fa;border:1px solid #e3e8ee;border-radius:12px;padding:12px 14px;margin-top:8px}
+.qrph{font-size:11px;font-weight:800;letter-spacing:.4px;color:#5a6b7b;text-transform:uppercase}
+.qrprow{display:flex;justify-content:space-between;font-size:14px;color:#12324e;font-weight:700;margin-top:7px}
+.qrpnote{font-size:10.5px;color:#8494a3;margin-top:1px}
+.qrpul{margin:6px 0 0 18px;padding:0}
+.qrpul li{font-size:12.5px;color:#16222e;margin-bottom:4px;line-height:1.4}
+.qrpask{font-size:12.5px;color:#12324e;font-weight:600;margin-top:10px;background:#eaf7f0;border:1px solid #b7e0c9;border-radius:8px;padding:9px;line-height:1.45}
 </style>
 </head>
 <body>
@@ -350,6 +358,14 @@ table.cmp{border-collapse:collapse;width:100%}
         <div class="card noprint" style="text-align:center">
           <button class="cta" onclick="window.print()">🖨️ Save your complete plan as a PDF</button>
           <div class="hint" style="margin-top:8px">Includes the shopping list, prices, costs &amp; scope of works. Opens your phone's print screen — choose <b>"Save as PDF"</b>.</div>
+        </div>
+        <div class="card" id="qrpCard">
+          <div class="step">📋 Your Quote Request Pack</div>
+          <div class="hint" style="margin-top:0">Send these <b>exact</b> figures to each painter — so every quote is on the same basis and you can compare them fairly, and no one can inflate the size.</div>
+          <div id="qrp"></div>
+          <button class="cta2 noprint" onclick="shareQRP()" style="margin-top:10px;background:#25D366">📲 Send to my painters (WhatsApp)</button>
+          <button class="locbtn2 noprint" onclick="copyQRP()">📋 Copy the text</button>
+          <div class="ulnote noprint" id="qrpMsg" style="text-align:center"></div>
         </div>
         <div class="card">
           <div class="step">What to buy</div>
@@ -657,6 +673,20 @@ function pcUseLocation(){
     ()=>{}, {enableHighAccuracy:true, timeout:10000});
 }
 
+// ── Quote Request Pack — share / copy ──────────────────────────
+function shareQRP(){
+  const t = window.qrpText || '';
+  if(navigator.share){ navigator.share({title:'Painting quote request', text:t}).catch(()=>{}); }
+  else { window.open('https://wa.me/?text='+encodeURIComponent(t), '_blank'); }
+}
+function copyQRP(){
+  const t = window.qrpText || '';
+  const msg = document.getElementById('qrpMsg');
+  const done = ()=>{ if(msg) msg.textContent = '✓ Copied — paste it into WhatsApp, email or SMS to each painter.'; };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(done); }
+  else done();
+}
+
 const R = n => 'R ' + Math.round(n).toLocaleString('en-ZA');
 // 20L tins needed: allow up to 5L over a full tin before buying another (e.g. 63L → 3 tins, 26L → 2)
 const tinCount = L => { const rem = L - Math.floor(L/20)*20; return Math.max(1, rem<=5 ? Math.floor(L/20) : Math.ceil(L/20)); };
@@ -889,6 +919,35 @@ function calc(){
   if(state.surf.interior||state.surf.ceiling) dl += `<a class="cta dlbtn" href="${INTERIOR_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: INTERIOR WALLS &amp; CEILINGS — SCOPE OF WORKS</a>`;
   if(state.surf.roof) dl += `<a class="cta dlbtn" href="${ROOF_SCOPE_PDF}" target="_blank" rel="noopener">📄 Download: ROOF SURFACES — SCOPE OF WORKS</a>`;
   document.getElementById('scopeDls').innerHTML = dl;
+
+  // ── Quote Request Pack — the exact figures to hand painters ──
+  {
+    const lines = jobs.map(j=>{
+      let note;
+      if(j.cat==='exterior') note = state.measuredWall!=null ? 'measured — perimeter × height, less 15% for windows' : 'estimate from home size';
+      else if(j.cat==='roof') note = (state.measuredRoof!=null ? 'measured' : 'estimate') + ` · ${state.roof}`;
+      else if(j.cat==='ceiling') note = state.measuredCeiling!=null ? 'measured' : 'estimate from home size';
+      else note = 'estimate from home size';
+      return {name:j.name, area:j.area, note};
+    });
+    const scopeBits = ['2 full coats of good-quality paint (product to be agreed)',
+                       'Full surface prep — clean / pressure-wash, fill cracks, sand smooth'];
+    if(wallPrimerL>0) scopeBits.push('One binding coat of solvent-based plaster primer on all bare / flaky / chalky areas');
+    if(state.damp) scopeBits.push('Trace & fix the cause of the damp first, then treat the affected area (damp primer)');
+    if(state.surf.roof && state.roof==='corrugated' && state.rust) scopeBits.push('Wire-brush rust back to sound metal & patch-prime with an anti-rust primer');
+    let h = '<div class="qrpbox"><div class="qrph">The job — areas to quote on</div>';
+    lines.forEach(l=> h += `<div class="qrprow"><span>${l.name}</span><b>${l.area} m²</b></div><div class="qrpnote">${l.note}</div>`);
+    h += '<div class="qrph" style="margin-top:12px">Scope — please quote on this basis</div><ul class="qrpul">';
+    scopeBits.forEach(s=> h += `<li>${s}</li>`);
+    h += '</ul><div class="qrpask">Please give me your <b>all-in price (materials + labour)</b> on these exact areas and this scope, so I can compare quotes fairly.</div></div>';
+    document.getElementById('qrp').innerHTML = h;
+    let t = 'PAINTING QUOTE REQUEST\n\nPlease quote on these exact areas:\n';
+    lines.forEach(l=> t += `• ${l.name}: ${l.area} m² (${l.note})\n`);
+    t += '\nScope — please quote on this basis:\n';
+    scopeBits.forEach(s=> t += `• ${s}\n`);
+    t += '\nPlease give me your all-in price (materials + labour) on these exact areas & this scope, so I can compare quotes fairly.\n\n— Measured with PaintCheck';
+    window.qrpText = t;
+  }
 
   // free vs paid
   const paid=document.getElementById('paid'), uc=document.getElementById('unlockCard');
