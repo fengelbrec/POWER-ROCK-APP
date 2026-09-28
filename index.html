@@ -3178,6 +3178,7 @@ function renderPreviousSites(){
 let PENDING_SPEC = null;
 let PENDING_QUOTE = null;
 let PENDING_SITE_PO = null;   // a client PO uploaded during new-site registration
+let NEW_SITE_THEN_INVOICE = false;   // when true, saving a new site jumps straight into invoicing it (deposit)
 let productRowCount = 0;
 
 function openAddSite(){
@@ -3191,6 +3192,7 @@ function openAddSite(){
   PENDING_SPEC = null;
   PENDING_QUOTE = null;
   PENDING_SITE_PO = null;
+  NEW_SITE_THEN_INVOICE = false;   // reset; the invoice-section path re-sets this true after opening
   if($('as_quotefile')) $('as_quotefile').value='';
   $('as_quotefile_note').textContent = 'Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.';
   if($('as_pofile')) $('as_pofile').value='';
@@ -3569,6 +3571,11 @@ async function saveSite(){
   });
 
   closeModal('modalAddSite');
+  if(NEW_SITE_THEN_INVOICE){
+    NEW_SITE_THEN_INVOICE = false;
+    await incomeGoInvoice(siteId);   // came from the Invoice section → straight into this site's PO / deposit invoice
+    return;
+  }
   paintDoor('sites'); // repaint in place — role-aware, so Henk lands on his own Sites page
 }
 
@@ -6905,6 +6912,8 @@ function openIncomeNewInvoice(){
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Create an invoice</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Which site / project is this invoice for?</div>
+    <button class="cta-btn" style="margin-bottom:6px;background:#1FA24C" onclick="incomeNewSiteInvoice()">➕ New site — register &amp; invoice deposit</button>
+    <div style="font-size:10.5px;color:#A39E8C;margin:-2px 0 12px;padding-left:2px">A job that hasn't started yet and you have the PO. Add it here (upload the PO, set a future start date), then invoice the deposit. Days &amp; costs only start counting once the team starts.</div>
     <button class="cta-btn" style="margin-bottom:6px;background:#5C5748" onclick="incomeGoInvoice('site_general_oneoff')">➕ Once-off invoice (no project site)</button>
     <div style="font-size:10.5px;color:#A39E8C;margin:-2px 0 14px;padding-left:2px">For supply-only / pass-through jobs with no site — type the client &amp; amount.</div>`;
   if(!sites.length){ h+=`<div style="color:#A39E8C;padding:10px 0">No sites yet.</div>`; }
@@ -6913,6 +6922,12 @@ function openIncomeNewInvoice(){
   });
   h+=`<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
   $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+// From the Invoice section: register a brand-new (not-yet-started) site, then jump straight to invoicing its deposit.
+function incomeNewSiteInvoice(){
+  closeModal('modalSiteDetail');
+  openAddSite();
+  NEW_SITE_THEN_INVOICE = true;   // set AFTER openAddSite (which resets it) so save() routes to invoicing
 }
 async function incomeGoInvoice(siteId){
   $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Opening…</div>`;
