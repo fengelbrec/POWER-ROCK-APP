@@ -3318,8 +3318,16 @@ async function handleSitePOFile(input){
   try{
     const r=await extractPOFieldsFromPdf(f);
     PENDING_SITE_PO.fields=r;
+    // Auto-fill the Total quoted value (and auto budgets) from the PO total (ex-VAT) if it's still blank.
+    const qv=$('as_quotevalue');
+    let filledQuote=false;
+    if(qv && !(parseFloat(qv.value)>0) && r.po_total>0){
+      qv.value = Math.round(r.po_total*100)/100;
+      if(typeof recalcQuoteTotal==='function') recalcQuoteTotal();
+      filledQuote=true;
+    }
     const got=[]; if(r.order_nr)got.push('order '+r.order_nr); if(r.client_name)got.push(r.client_name+(r.client_group?' ('+r.client_group+')':'')); if(r.po_total>0)got.push(R(r.po_total)); if(r.client_vat)got.push('VAT'); if(r.client_address)got.push('address');
-    if(note) note.innerHTML='✓ '+esc(f.name)+' — read '+(got.length?esc(got.join(' · ')):'nothing automatically')+'. It’ll be saved against this site, ready to invoice.';
+    if(note) note.innerHTML='✓ '+esc(f.name)+' — read '+(got.length?esc(got.join(' · ')):'nothing automatically')+'.'+(filledQuote?' Filled the Total quoted value — please check it.':'')+' It’ll be saved against this site, ready to invoice.';
   }catch(e){ if(note) note.innerHTML='✓ '+esc(f.name)+' — saved with the site; add the details on the site after.'; }
 }
 
