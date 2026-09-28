@@ -3570,6 +3570,14 @@ async function saveSite(){
 
   // Push to Supabase so both doors (and team leaders) see it, details included.
   await sbUpsert('sites', { id: siteId, name, client, team_leader: team, status, started, quote_value: totalQuote, labour_budget: labourBudget, material_budget: materialBudget, details: details });
+  // Also add it to the owner's already-loaded site cache, so Income / Overview / Site P+L show it (and its
+  // invoices) immediately — without needing to reload the app.
+  if(typeof OWNER!=='undefined' && OWNER.loaded && Array.isArray(OWNER.sites)){
+    const ownerRow = { id: siteId, name, client, team_leader: team, status, started, quote_value: totalQuote, labour_budget: labourBudget, material_budget: materialBudget, details: details };
+    const existingOwner = OWNER.sites.find(function(x){ return x.id===siteId; });
+    if(existingOwner) Object.assign(existingOwner, ownerRow);
+    else OWNER.sites.push(typeof normSiteEnd==='function' ? normSiteEnd(ownerRow) : ownerRow);
+  }
   products.forEach(p=>{
     sbUpsert('paint_stock', {
       id: 'stk_'+siteId+'_'+slugId(p.product)+'_'+slugId(p.colour||''),
