@@ -3101,7 +3101,7 @@ function renderSites(){
 
   const shownIds = [];
   LEADER_META.forEach(lm=>{
-    const leaderSites = active.filter(s=>s.team===lm.key).sort((a,b)=>new Date(b.started)-new Date(a.started));
+    const leaderSites = active.filter(s=>s.team===lm.key && !siteNotStarted(s)).sort((a,b)=>new Date(b.started)-new Date(a.started));
     if(leaderSites.length === 0){
       h += `<div class="site-block" style="background:#EFEDE6;border:2.5px dashed #1A1A1A">
         <div class="leader-tag" style="color:#A39E8C">${lm.name}</div>
@@ -5012,7 +5012,7 @@ async function renderHenkOverview(){
   h += `<div class="section-lbl">The four teams — today's profit per day</div>`;
   h += `<div class="sites-grid">`;
   LEADER_META.forEach(function(lm){
-    const mine = active.filter(function(s){ return s.team_leader === lm.key; })
+    const mine = active.filter(function(s){ return s.team_leader === lm.key && !siteNotStarted(s); })
       .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
     if(!mine.length){
       h += `<div class="site-block" style="background:#EFEDE6;border:2.5px dashed #1A1A1A;cursor:default">
@@ -5116,22 +5116,29 @@ function siteBlockProfit(s){
 
 // Live sites as the four coloured team blocks (like the Overview), tap for the
 // full summary. Any extra active site sits below so nothing is hidden.
+// A site with a FUTURE start date (registered early for a deposit invoice) is NOT
+// "live" — it goes in its own Upcoming section, never as a leader's live card.
 function henkLiveSitesHtml(){
   const active = (DU_SITELIST||[]).filter(function(s){ return s.status !== 'done'; });
+  const running  = active.filter(function(s){ return !siteNotStarted(s); });                 // actually on site now
+  const upcoming = active.filter(function(s){ return siteNotStarted(s); })
+    .sort(function(a,b){ return new Date(a.started||0) - new Date(b.started||0); });         // soonest start first
   if(!active.length){
     return `<div style="font-size:12px;color:#A39E8C;padding:2px 2px 14px">No current sites. Tap ＋ Add new site to start one.</div>`;
   }
-  let h = `<div class="section-lbl" style="margin-top:0">Current sites — live now (${active.length})</div>`;
+  let h = `<div class="section-lbl" style="margin-top:0">Current sites — live now (${running.length})</div>`;
   h += `<div class="sites-grid">`;
   const shown = [];
   LEADER_META.forEach(function(lm){
-    const mine = active.filter(function(s){ return s.team_leader === lm.key; })
+    const mine = running.filter(function(s){ return s.team_leader === lm.key; })
       .sort(function(a,b){ return new Date(b.started||0) - new Date(a.started||0); });
     if(!mine.length){
+      const soon = upcoming.find(function(s){ return s.team_leader === lm.key; });
+      const note = soon ? `${esc(soon.name)} starts ${fd(soon.started)}` : 'Add one with ＋ Add new site';
       h += `<div class="site-block" style="background:#EFEDE6;border:2.5px dashed #1A1A1A;cursor:default">
         <div class="leader-tag" style="color:#A39E8C;text-shadow:none">${lm.name}</div>
         <div class="sb-name" style="color:#A39E8C">No active site</div>
-        <div class="sb-meta">Add one with ＋ Add new site</div>
+        <div class="sb-meta">${note}</div>
       </div>`;
       return;
     }
@@ -5150,7 +5157,7 @@ function henkLiveSitesHtml(){
     </div>`;
   });
   h += `</div>`;
-  const others = active.filter(function(s){ return shown.indexOf(s.id) === -1; });
+  const others = running.filter(function(s){ return shown.indexOf(s.id) === -1; });
   if(others.length){
     h += `<div class="section-lbl">Other active sites</div>`;
     h += others.map(function(s){
@@ -5159,6 +5166,21 @@ function henkLiveSitesHtml(){
         <div style="padding:12px 14px;flex:1;min-width:0">
           <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${s.name}</div>
           <div style="font-size:11px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)} · Day ${henkDays(s)}</div>
+        </div>
+        <div style="align-self:center;padding-right:14px;color:#C9C5BA;font-weight:800">›</div>
+      </div>`;
+    }).join('');
+  }
+  // Upcoming — registered early (e.g. for a deposit invoice) but the team hasn't started. No profit/day yet.
+  if(upcoming.length){
+    h += `<div class="section-lbl">Upcoming — registered, not started yet</div>`;
+    h += upcoming.map(function(s){
+      const d = daysUntilStart(s);
+      return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openSiteSummary('${s.id}')">
+        <div style="width:5px;background:${henkLeaderColour(s.team_leader)};flex:0 0 auto;opacity:.55"></div>
+        <div style="padding:12px 14px;flex:1;min-width:0">
+          <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${s.name}</div>
+          <div style="font-size:11px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${henkLeaderName(s.team_leader)} · <span style="color:#9C6000;font-weight:700">Starts ${fd(s.started)} · in ${d} day${d!==1?'s':''}</span></div>
         </div>
         <div style="align-self:center;padding-right:14px;color:#C9C5BA;font-weight:800">›</div>
       </div>`;
