@@ -5878,7 +5878,103 @@ function paintSiteSummaryBody(){
     h += `<button class="cta-btn ghost" style="margin-top:6px;height:44px;font-size:12.5px" onclick="openSiteDetail('${s.id}')">⚙ Owner tools — client payments, mark complete</button>`;
   }
 
+  // Site photos — on-site pics Ferdi or Henk take (saved to the file locker, not the database).
+  h += siteSummaryPhotosHtml(s);
+
   body.innerHTML = h;
+}
+
+// ── SITE PHOTOS — Ferdi/Henk's own on-site photos, stored in the site-files bucket ──
+function siteSummaryPhotosHtml(s){
+  const photos = (s.details && Array.isArray(s.details.site_photos)) ? s.details.site_photos : [];
+  let h = `<div class="section-lbl">Site photos</div>
+    <div class="ledger-card" style="padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;color:#8A8470;margin-bottom:10px">Photos you or Henk take on site — before/after, problem areas, progress. Saved to the site locker.</div>`;
+  if(photos.length){
+    h += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">` + photos.map(function(p,i){
+      return `<div style="position:relative;width:90px">
+        <img src="${p.url}" onclick="openSitePhotoViewer('${p.url}')" loading="lazy" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #E6E2D8;cursor:pointer;display:block"/>
+        <button onclick="deleteSitePhoto('${s.id}',${i})" title="Remove" style="position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;border:none;background:#8B1A1A;color:#fff;font-size:13px;font-weight:800;line-height:22px;padding:0;cursor:pointer">×</button>
+        <div style="font-size:9px;color:#A39E8C;margin-top:3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.by||'')}${p.at?' · '+fd(p.at):''}</div>
+      </div>`;
+    }).join('') + `</div>`;
+  } else {
+    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 12px">No site photos yet.</div>`;
+  }
+  h += `<label class="cta-btn ghost" style="height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0">📷 Add site photos<input type="file" accept="image/*" multiple style="display:none" onchange="uploadSitePhotos('${s.id}',this)"/></label>
+    </div>`;
+  return h;
+}
+// Shrink a chosen photo on the device before upload (keeps the locker light, uploads fast on site signal).
+function shrinkImageFile(file, maxEdge, quality){
+  return new Promise(function(resolve){
+    const rd=new FileReader();
+    rd.onload=function(e){
+      const img=new Image();
+      img.onload=function(){
+        let w=img.width, h=img.height;
+        const scale=Math.min(1, maxEdge/Math.max(w,h));
+        w=Math.round(w*scale); h=Math.round(h*scale);
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        try{ c.toBlob(function(b){ resolve(b||file); }, 'image/jpeg', quality); }catch(err){ resolve(file); }
+      };
+      img.onerror=function(){ resolve(file); };
+      img.src=e.target.result;
+    };
+    rd.onerror=function(){ resolve(file); };
+    rd.readAsDataURL(file);
+  });
+}
+async function uploadSitePhotos(siteId, input){
+  const files = input.files ? Array.from(input.files) : [];
+  if(!files.length) return;
+  input.value='';
+  const s = (SUMMARY && SUMMARY.site && SUMMARY.site.id===siteId) ? SUMMARY.site : null;
+  if(!s){ showSaveToast('Open the site first'); return; }
+  showSaveToast('Uploading photo'+(files.length!==1?'s':'')+'…');
+  const who = (CURRENT_ROLE==='henk') ? 'Henk' : 'Ferdi';
+  const d = Object.assign({}, s.details||{});
+  if(!Array.isArray(d.site_photos)) d.site_photos = [];
+  let added=0;
+  for(let i=0;i<files.length;i++){
+    try{
+      const blob = await shrinkImageFile(files[i], 1600, 0.8);
+      const safe = (files[i].name||'photo.jpg').replace(/[^A-Za-z0-9._-]/g,'_');
+      const url = await sbUploadFile(siteId + '/photos/' + Date.now() + '-' + i + '-' + safe, blob);
+      if(url){ d.site_photos.push({ url:url, name:files[i].name||'', by:who, at:invToday() }); added++; }
+    }catch(e){}
+  }
+  if(!added){ showSaveToast('Upload failed — check your signal'); return; }
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{ details:d });
+  if(ok){
+    s.details=d;
+    if(typeof OWNER!=='undefined' && OWNER.sites){ const os=OWNER.sites.find(function(x){return x.id===siteId;}); if(os) os.details=d; }
+    showSaveToast(added+' photo'+(added!==1?'s':'')+' added');
+    paintSiteSummaryBody();
+  } else { showSaveToast('Could not save — check your signal'); }
+}
+function openSitePhotoViewer(url){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
+  ov.onclick=function(){ ov.remove(); };
+  const img=document.createElement('img');
+  img.src=url; img.style.cssText='max-width:100%;max-height:100%;border-radius:8px';
+  ov.appendChild(img); document.body.appendChild(ov);
+}
+async function deleteSitePhoto(siteId, idx){
+  if(!confirm('Remove this photo from the site record?')) return;
+  const s = (SUMMARY && SUMMARY.site && SUMMARY.site.id===siteId) ? SUMMARY.site : null;
+  if(!s) return;
+  const d = Object.assign({}, s.details||{});
+  if(!Array.isArray(d.site_photos)) return;
+  d.site_photos.splice(idx,1);
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{ details:d });
+  if(ok){
+    s.details=d;
+    if(typeof OWNER!=='undefined' && OWNER.sites){ const os=OWNER.sites.find(function(x){return x.id===siteId;}); if(os) os.details=d; }
+    showSaveToast('Photo removed'); paintSiteSummaryBody();
+  } else showSaveToast('Could not remove — check your signal');
 }
 
 // ── PRODUCTS BOUGHT — every invoice line item for a site, boxed by product so you
