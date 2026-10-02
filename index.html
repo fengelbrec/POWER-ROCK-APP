@@ -2797,7 +2797,7 @@ function wkPrepPhoto(url){
     const img = new Image();
     if(!/^data:/.test(url)) img.crossOrigin = 'anonymous';
     img.onload = function(){
-      const W = 810, H = 1080;   // portrait 3:4 — upright, a touch taller so photos read larger on the page
+      const W = 864, H = 1080;   // portrait 4:5 — upright; suits 2-per-row layout on page 2
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,W,H);
       const k = Math.max(W / img.width, H / img.height), w = img.width * k, h = img.height * k;
@@ -2837,17 +2837,15 @@ function wkPage1Html(r){
   </div>${wkFooter(r)}`;
 }
 function wkPage2Html(r, shots){
-  // Portrait photos, 3 across, each in a black frame. The rows are centred vertically on the
-  // page so they sit balanced (breathing room above & below) instead of bunched at the top.
+  // 2 photos per row, 3 rows down the page. Portrait, black-framed, spread evenly across the
+  // full page (even side gaps + even gaps between rows) so they don't feel cramped.
   const cells = shots.map(function(u){
-    return `<div style="width:32%;margin-bottom:24px"><img src="${u}" style="width:100%;display:block;border:3px solid #000"/></div>`;
+    return `<img src="${u}" style="height:300px;width:auto;display:block;border:3px solid #000"/>`;
   }).join('');
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
     ${wkBar('SITE PHOTOGRAPHS')}
-    <div style="font-size:12px;color:#5C5748;margin:-6px 0 14px">${esc(r.site)} · Weekly Report ${esc(r.number)} · ${wkFmtDate(r.date)}</div>
-    <div style="min-height:900px;display:flex;flex-direction:column;justify-content:center">
-      <div style="display:flex;flex-wrap:wrap;justify-content:space-between">${cells}</div>
-    </div>
+    <div style="font-size:12px;color:#5C5748;margin:-6px 0 12px">${esc(r.site)} · Weekly Report ${esc(r.number)} · ${wkFmtDate(r.date)}</div>
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-evenly;align-content:space-evenly;min-height:916px">${cells}</div>
   </div>${wkFooter(r)}`;
 }
 async function wkRenderCanvas(html){
