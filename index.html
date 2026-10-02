@@ -1076,6 +1076,7 @@ function paintView(v){
       DU_SITE   = (v.du && v.du.site) || null;
       DU_LEADER = (v.du && v.du.leader) || null;
       DU_SELECTED = null;
+      if(DU_VIEW === 'wksite') WK_TAB = (v.du && v.du.tab) || 'archive';
       // Restoring the weekly builder: reload its week (the data isn't kept in history).
       if(DU_VIEW === 'weekbuild'){
         DU_WEEK_SITE = (v.du && v.du.site) || null;
@@ -2041,6 +2042,7 @@ function paintUpdates(){
   if(DU_VIEW === 'weeklyhome'){ body.innerHTML = duPaintWeeklyHome(); return; }
   if(DU_VIEW === 'weekly')    { body.innerHTML = duPaintWeekly();  return; }
   if(DU_VIEW === 'weekbuild') { body.innerHTML = duPaintWeekBuild(); return; }
+  if(DU_VIEW === 'wksite')    { body.innerHTML = wkPaintSite(); return; }
   body.innerHTML = duPaintSitesHome();   // 'siteshome' — live sites + Add / Archives
 }
 
@@ -2225,7 +2227,7 @@ function duPaintWeekly(){
   if(!sites.length){ return h + `<div style="font-size:12px;color:#A39E8C">No current sites.</div>`; }
   h += sites.map(function(s){
     const col = (LEADER_META.find(function(l){ return l.key === s.team_leader; })||{}).colour || '#5C5748';
-    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openWeek('${s.id}')">
+    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;cursor:pointer;overflow:hidden;display:flex" onclick="openSiteWeekly('${s.id}','create')">
       <div style="width:5px;background:${col};flex:0 0 auto"></div>
       <div style="padding:13px 15px;flex:1;min-width:0">
         <div style="font-weight:800;font-size:13.5px;color:#1A1A1A">${s.name}</div>
@@ -2274,6 +2276,10 @@ function wkListHtml(saved){
   const list = q ? saved.filter(function(w){ return String(w.site.name||'').toLowerCase().indexOf(q) !== -1; }) : saved;
   if(!list.length) return `<div style="font-size:12px;color:#A39E8C;padding:6px 2px">${saved.length ? 'No saved report matches.' : "None yet. Tap Create weekly update to make one — it'll appear here once saved."}</div>`;
   return list.map(function(w){
+    if(w.v === 2) return `<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px;cursor:pointer" onclick="wkArchiveAct('${w.site.id}','${w.id}','open')">
+      <div style="font-weight:800;font-size:13px;color:#1A1A1A">${w.site.name}</div>
+      <div style="font-size:11px;color:#8A8470;margin-top:3px">Weekly Report ${esc(w.number)} · ${wkFmtDate(w.date)}</div>
+    </div>`;
     return `<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px;cursor:pointer" onclick="openWeek('${w.site.id}','${w.start}','${w.end}')">
       <div style="font-weight:800;font-size:13px;color:#1A1A1A">${w.site.name}</div>
       <div style="font-size:11px;color:#8A8470;margin-top:3px">${weeklyRangeLabel(w.start, w.end)}${w.created?' · saved '+fd(w.created):''}</div>
@@ -2453,6 +2459,504 @@ function downloadWeeklyDoc(){
   showSaveToast('Word document downloaded');
 }
 
+// ═══════════════════════════════════════════
+// WEEKLY CLIENT REPORT — typed by hand (the leaders' dailies aren't reliable yet).
+// Page 1 = site boxes + bullet summary; page 2 = up to 6 photos picked from what is
+// already on the app (Ferdi/Henk's site photos + the leaders' daily-update photos).
+// Saved in sites.details.weekly_reports (v:2); a PDF copy goes to the site-files locker.
+// A half-written report is also kept on the device so nothing typed is lost.
+// ═══════════════════════════════════════════
+let WK_TAB = 'archive';   // 'archive' | 'create'
+let WK_DRAFT = null;      // the report on the Create tab
+let WK_PHOTOS = {};       // siteId -> { list:[{key,url,from,date}], limit, loading }
+let WK_BUSY = false;
+const WK_MAX = 6;
+const WK_PHOTO_BATCH = 15; // leaders' daily updates whose photos load at a time (they're heavy) — more on request
+
+function wkSaved(s){ return (s && s.details && Array.isArray(s.details.weekly_reports)) ? s.details.weekly_reports : []; }
+function wkFmtDate(d){ return d ? new Date(String(d).slice(0,10) + 'T12:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}) : ''; }
+function wkLocalKey(d){ return 'pr_wk_draft_' + d.siteId + (d.id ? '_' + d.id : ''); }
+function wkReadLocal(siteId, id){ try{ return JSON.parse(localStorage.getItem('pr_wk_draft_' + siteId + (id ? '_' + id : ''))); }catch(e){ return null; } }
+function wkDropLocal(siteId, id){ try{ localStorage.removeItem('pr_wk_draft_' + siteId + (id ? '_' + id : '')); }catch(e){} }
+// Keep the draft on the device. Leaders' photos are stored as big image text, so
+// only their reference is kept here; the picture is matched back up when photos load.
+function wkPersist(){
+  if(!WK_DRAFT) return;
+  try{
+    const c = Object.assign({}, WK_DRAFT, { photos: WK_DRAFT.photos.map(function(p){ return { key:p.key, url: /^data:/.test(p.url||'') ? '' : p.url, date:p.date||'', from:p.from||'' }; }) });
+    localStorage.setItem(wkLocalKey(WK_DRAFT), JSON.stringify(c));
+  }catch(e){}
+}
+
+// Next report number: one after the last saved, else the week of the job we're in.
+function wkNextNumber(s){
+  let max = 0;
+  wkSaved(s).forEach(function(w){ const n = parseInt(w.number, 10); if(n > max) max = n; });
+  if(max) return max + 1;
+  if(!s.started) return 1;
+  const days = Math.floor((new Date(invToday() + 'T12:00:00') - new Date(String(s.started).slice(0,10) + 'T12:00:00')) / 86400000);
+  return Math.max(1, Math.ceil((days + 1) / 7));
+}
+function wkFresh(s){
+  const last = wkSaved(s).filter(function(w){ return w.v === 2; })
+    .sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); })[0];
+  return { siteId: s.id, id: null, number: String(wkNextNumber(s)), site: String(s.name||'').toUpperCase(),
+           scope: (last && last.scope) || '', date: invToday(), bullets: ['','','',''], photos: [] };
+}
+function wkFromSaved(siteId, rec){
+  const local = wkReadLocal(siteId, rec.id);   // unsaved edits to this report, if any
+  const src = local || rec;
+  return { siteId: siteId, id: rec.id, number: String(src.number||''), site: src.site||'', scope: src.scope||'', date: src.date||'',
+           bullets: (src.bullets && src.bullets.length) ? src.bullets.slice() : [''],
+           photos: (src.photos||[]).map(function(p){ return Object.assign({}, p); }) };
+}
+function wkEnsureDraft(siteId){
+  if(WK_DRAFT && WK_DRAFT.siteId === siteId) return;
+  const s = duSiteById(siteId); if(!s) return;
+  const local = wkReadLocal(siteId);
+  WK_DRAFT = (local && local.siteId === siteId) ? Object.assign(wkFresh(s), local, { id: null }) : wkFresh(s);
+}
+
+// From a live site's summary (📅 Weekly) → this site's weekly reports.
+function openSiteWeekly(siteId, tab){
+  SUMMARY_SITE = null;
+  DU_SITE = siteId; WK_TAB = tab || 'archive';
+  DU_VIEW = 'wksite';
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', du:{ view:'wksite', site:siteId, tab:WK_TAB } });
+  renderHenkSites();
+}
+function wkGoTab(t){
+  WK_TAB = t;
+  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', du:{ view:'wksite', site:DU_SITE, tab:t } });
+  paintUpdates();
+  const sc = $('sMain'); if(sc) sc.scrollTop = 0;
+}
+function wkNew(){
+  const s = duSiteById(DU_SITE); if(!s) return;
+  WK_DRAFT = null;
+  wkEnsureDraft(s.id);   // resumes an unsaved new report on this device, else a fresh one
+  if(WK_DRAFT.id){ WK_DRAFT = wkFresh(s); }
+  paintUpdates();
+}
+
+function wkPaintSite(){
+  const s = duSiteById(DU_SITE);
+  if(!s) return `<div style="font-size:12px;color:#A39E8C">Site not found.</div>`;
+  const n = wkSaved(s).length;
+  const tab = function(id, label){ const on = WK_TAB === id;
+    return `<button onclick="wkGoTab('${id}')" style="flex:1;padding:11px 6px;border:none;border-radius:9px;background:${on?'#1A1A1A':'transparent'};color:${on?'#fff':'#8A8470'};font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">${label}</button>`; };
+  let h = `<div style="font-family:'Poppins',sans-serif;font-size:19px;font-weight:800;color:#1A1A1A;margin-bottom:2px">${esc(s.name)}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.client||'No client')} · weekly client reports</div>
+    <div style="display:flex;gap:4px;background:#EFEDE7;border:1px solid #E6E2D8;border-radius:12px;padding:4px;margin-bottom:16px">
+      ${tab('archive','📁 Archive' + (n ? ' (' + n + ')' : ''))}${tab('create','＋ Create weekly update')}
+    </div>`;
+  h += WK_TAB === 'create' ? wkCreateHtml(s) : wkArchiveHtml(s, false);
+  return h;
+}
+
+// ── ARCHIVE — every weekly report saved for this site, newest first ──
+function wkArchiveHtml(s, withCreate){
+  const list = wkSaved(s).slice().sort(function(a,b){
+    return String(b.date||b.created||'').localeCompare(String(a.date||a.created||'')) || ((parseInt(b.number,10)||0) - (parseInt(a.number,10)||0));
+  });
+  let h = withCreate ? `<button class="cta-btn" onclick="openSiteWeekly('${s.id}','create')">＋ Create weekly update</button>` : '';
+  h += `<div class="section-lbl"${withCreate?'':' style="margin-top:0"'}>Saved weekly reports</div>`;
+  if(!list.length){
+    return h + `<div style="font-size:12px;color:#A39E8C;padding:6px 2px">None yet. Tap “Create weekly update” to write one — it appears here once saved.</div>`;
+  }
+  const btn = 'flex:1;background:#F0EEE6;color:#1A1A1A;border:none;border-radius:8px;padding:9px 6px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer';
+  h += list.map(function(w){
+    if(w.v !== 2){   // older reports compiled from the daily updates
+      return `<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px;cursor:pointer" onclick="openWeek('${s.id}','${w.start}','${w.end}')">
+        <div style="font-weight:800;font-size:13px;color:#1A1A1A">${weeklyRangeLabel(w.start, w.end)}</div>
+        <div style="font-size:11px;color:#8A8470;margin-top:3px">From daily updates${w.created?' · saved '+fd(w.created):''}</div>
+      </div>`;
+    }
+    const nb = (w.bullets||[]).filter(function(b){ return String(b).trim(); }).length, np = (w.photos||[]).length;
+    return `<div class="ledger-card" style="padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;cursor:pointer" onclick="wkArchiveAct('${s.id}','${w.id}','open')">
+        <div style="font-weight:800;font-size:14px;color:#1A1A1A">Weekly Report ${esc(w.number)}</div>
+        <div style="font-size:12px;font-weight:700;color:#5C5748;white-space:nowrap">${wkFmtDate(w.date)}</div>
+      </div>
+      <div style="font-size:11px;color:#8A8470;margin:3px 0 10px">${nb} bullet${nb!==1?'s':''} · ${np} photo${np!==1?'s':''}${w.by?' · by '+esc(w.by):''}${w.updated?' · saved '+fd(w.updated):''}</div>
+      <div style="display:flex;gap:6px">
+        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','open')">✎ Open</button>
+        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','pdf')">⬇ PDF</button>
+        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','share')">📤 Share</button>
+      </div>
+    </div>`;
+  }).join('');
+  return h;
+}
+async function wkArchiveAct(siteId, id, act){
+  const s = duSiteById(siteId); if(!s) return;
+  const rec = wkSaved(s).find(function(w){ return w.id === id; }); if(!rec) return;
+  if(act === 'open'){
+    WK_DRAFT = wkFromSaved(siteId, rec);
+    if(DU_VIEW === 'wksite' && DU_SITE === siteId){ wkGoTab('create'); }
+    else { openSiteWeekly(siteId, 'create'); }
+    return;
+  }
+  if(WK_BUSY) return;
+  WK_BUSY = true;
+  showSaveToast('Getting the PDF…');
+  try{
+    const r = await wkSavedPdf(siteId, rec);
+    if(act === 'share') await wkShareBlob(r, rec);
+    else { saveBlobFile(r.blob, r.name); showSaveToast('PDF downloaded'); }
+  }catch(e){ showSaveToast('Could not make the PDF — check your signal'); }
+  finally{ WK_BUSY = false; }
+}
+// The stored copy from the locker; rebuilt from the saved report if that isn't reachable.
+async function wkSavedPdf(siteId, rec){
+  const name = wkFileName(siteId, rec) + '.pdf';
+  if(rec.pdf_url){
+    try{ const res = await fetch(rec.pdf_url + '?t=' + encodeURIComponent(rec.updated||'')); if(res.ok){ const b = await res.blob(); if(b.size > 1000) return { blob: b, name: name }; } }catch(e){}
+  }
+  return wkBuildPdf(Object.assign({ siteId: siteId }, rec));
+}
+
+// ── CREATE — the boxes, the bullets, the photo picker ──
+function wkCreateHtml(s){
+  wkEnsureDraft(s.id);
+  const d = WK_DRAFT;
+  const lbl = 'display:block;font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:0.6px;margin-bottom:4px;text-transform:uppercase';
+  let h = '';
+  if(d.id){
+    h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:#FFF7E0;border:1px solid #F0D98A;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#5C4A00">
+      <div>Editing saved <b>Weekly Report ${esc(d.number)}</b>. Saving again updates it.</div>
+      <button onclick="wkNew()" style="background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer;white-space:nowrap">＋ New report</button>
+    </div>`;
+  }
+  h += `<div class="section-lbl" style="margin-top:0">Report details</div>
+    <div class="ledger-card" style="padding:14px 15px;margin-bottom:16px">
+      <label style="${lbl}">Project / Site</label>
+      <input class="f-input" value="${esc(d.site)}" oninput="wkSet('site',this.value)" placeholder="e.g. ANTIQUA ESTATE"/>
+      <label style="${lbl}">Scope of work</label>
+      <input class="f-input" value="${esc(d.scope)}" oninput="wkSet('scope',this.value)" placeholder="e.g. Exterior Preparation and Paint"/>
+      <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px">
+        <div><label style="${lbl}">Weekly report nr</label>
+          <input class="f-input" style="margin-bottom:0" value="${esc(d.number)}" inputmode="numeric" oninput="wkSet('number',this.value)"/></div>
+        <div><label style="${lbl}">Report date</label>
+          <input class="f-input" style="margin-bottom:0" type="date" value="${esc(d.date)}" oninput="wkSet('date',this.value)" onchange="wkSet('date',this.value)"/></div>
+      </div>
+    </div>
+
+    <div class="section-lbl">Page 1 — Weekly progress summary</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:16px">
+      <div style="font-size:11px;color:#8A8470;margin-bottom:10px">One point per line — e.g. “Unit 43: Preparation & paintwork completed 100%.” Empty lines are left out of the PDF.</div>
+      <div id="wkBullets">${wkBulletsHtml()}</div>
+      <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="wkAddBullet()">＋ Add bullet</button>
+    </div>
+
+    <div class="section-lbl">Page 2 — Site photographs (up to ${WK_MAX})</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:16px" id="wkPhotos">${wkPhotosHtml()}</div>
+
+    <button class="cta-btn" onclick="wkAction('save')">💾 Save to archive</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px">
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('view')">👁 View PDF</button>
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('pdf')">⬇ Download</button>
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('share')">📤 Share</button>
+    </div>
+    <div style="font-size:11px;color:#A39E8C;margin:8px 2px 4px;line-height:1.6">Download and Share also save the report to the archive, so there is always a copy on the app.</div>`;
+  return h;
+}
+function wkSet(field, v){ if(!WK_DRAFT) return; WK_DRAFT[field] = v; wkPersist(); }
+
+function wkBulletsHtml(){
+  return WK_DRAFT.bullets.map(function(b, i){
+    return `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+      <div style="font-size:20px;line-height:38px;color:#8B1A1A;font-weight:800;width:10px">•</div>
+      <textarea class="f-input" rows="2" style="margin:0;flex:1;min-height:44px;resize:vertical;line-height:1.45;padding-top:10px" placeholder="Bullet ${i+1}" oninput="wkSetBullet(${i},this)">${esc(b)}</textarea>
+      <button onclick="wkDelBullet(${i})" title="Remove this line" style="width:34px;height:38px;border:none;border-radius:8px;background:#F0EEE6;color:#8B1A1A;font-size:16px;font-weight:800;cursor:pointer;flex:0 0 auto">×</button>
+    </div>`;
+  }).join('');
+}
+function wkSetBullet(i, el){ WK_DRAFT.bullets[i] = el.value; wkPersist(); }
+function wkAddBullet(){
+  WK_DRAFT.bullets.push(''); wkPersist();
+  const box = $('wkBullets'); if(!box) return;
+  box.innerHTML = wkBulletsHtml();
+  const all = box.querySelectorAll('textarea'); if(all.length) all[all.length-1].focus();
+}
+function wkDelBullet(i){
+  WK_DRAFT.bullets.splice(i, 1);
+  if(!WK_DRAFT.bullets.length) WK_DRAFT.bullets.push('');
+  wkPersist();
+  const box = $('wkBullets'); if(box) box.innerHTML = wkBulletsHtml();
+}
+
+// Every photo already on the app for this site: Ferdi/Henk's site photos (all) and
+// the photos from the leaders' latest daily updates (more on request).
+async function wkEnsurePhotos(siteId, limit){
+  const cur = WK_PHOTOS[siteId];
+  if(cur && cur.loading) return;
+  if(cur && cur.list && !limit) return;
+  limit = limit || (cur && cur.limit) || WK_PHOTO_BATCH;
+  WK_PHOTOS[siteId] = { list: cur ? cur.list : null, limit: limit, more: cur ? cur.more : false, loading: true };
+  wkRepaintPhotos();
+  const s = duSiteById(siteId) || {};
+  const rows = await sbGetRows('daily_updates', `select=id,date,leader_name,photos&site_id=eq.${encodeURIComponent(siteId)}&order=date.desc&limit=${limit}`);
+  const list = [];
+  ((s.details && s.details.site_photos) || []).forEach(function(p){ if(p && p.url) list.push({ key:'sp:' + p.url, url:p.url, from:p.by||'Site photo', date:p.at||'' }); });
+  (Array.isArray(rows) ? rows : []).forEach(function(u){
+    (Array.isArray(u.photos) ? u.photos : []).forEach(function(p, i){ if(p) list.push({ key:'du:' + u.id + '#' + i, url:p, from:u.leader_name||'Daily update', date:u.date||'' }); });
+  });
+  list.sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  WK_PHOTOS[siteId] = { list: list, limit: limit, more: Array.isArray(rows) && rows.length >= limit, loading: false };
+  // A draft restored from the device holds only the reference of a leader's photo — fill the picture back in.
+  if(WK_DRAFT && WK_DRAFT.siteId === siteId){
+    WK_DRAFT.photos.forEach(function(p){ if(!p.url){ const m = list.find(function(x){ return x.key === p.key; }); if(m) p.url = m.url; } });
+  }
+  wkRepaintPhotos();
+}
+function wkOlderPhotos(){
+  const cur = WK_PHOTOS[WK_DRAFT.siteId] || {};
+  wkEnsurePhotos(WK_DRAFT.siteId, (cur.limit || WK_PHOTO_BATCH) + WK_PHOTO_BATCH);
+}
+function wkRepaintPhotos(){ const box = $('wkPhotos'); if(box && WK_DRAFT) box.innerHTML = wkPhotosHtml(); }
+
+function wkPhotosHtml(){
+  const d = WK_DRAFT, P = WK_PHOTOS[d.siteId];
+  if(!P){ setTimeout(function(){ wkEnsurePhotos(d.siteId); }, 0); }
+  const n = d.photos.length, full = n >= WK_MAX;
+  let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:13.5px;font-weight:800;color:#1A1A1A">Chosen: <span style="color:${full?'#8B1A1A':(n?'#3F5A4C':'#8A8470')}">${n} of ${WK_MAX}</span></div>
+      ${n?`<button onclick="wkClearPhotos()" style="background:none;border:none;color:#8B1A1A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">Clear all</button>`:''}
+    </div>`;
+  // The chosen six, in the order they print (left→right, top→bottom on page 2).
+  h += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px">`;
+  for(let i = 0; i < WK_MAX; i++){
+    const p = d.photos[i];
+    if(p && p.url){
+      h += `<div style="position:relative;aspect-ratio:4/3;border-radius:8px;overflow:hidden;border:2px solid #3F5A4C;background:#EFEDE7">
+        <img src="${p.url}" onclick="wkViewChosen(${i})" style="width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in"/>
+        <div style="position:absolute;top:4px;left:4px;background:#3F5A4C;color:#fff;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:800;line-height:22px;text-align:center">${i+1}</div>
+        <button onclick="wkRemovePhoto(${i})" title="Remove" style="position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:50%;border:none;background:#8B1A1A;color:#fff;font-size:14px;font-weight:800;line-height:24px;padding:0;cursor:pointer">×</button>
+      </div>`;
+    } else if(p){
+      h += `<div style="aspect-ratio:4/3;border-radius:8px;border:2px solid #3F5A4C;display:flex;align-items:center;justify-content:center;font-size:10.5px;color:#8A8470;text-align:center;padding:4px">Photo ${i+1}<br/>loading…</div>`;
+    } else {
+      h += `<div style="aspect-ratio:4/3;border-radius:8px;border:2px dashed #D8D3C6;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#C9C5BA">${i+1}</div>`;
+    }
+  }
+  h += `</div>
+    <div style="font-size:11px;color:#8A8470;margin-bottom:14px">${n ? 'Tap a chosen photo to see it big · × takes it out.' : 'Tap photos below to choose them (up to ' + WK_MAX + '). Tap 🔍 to see one bigger first.'}</div>
+    <div style="font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:1px;margin-bottom:8px">PHOTOS ON THIS SITE</div>`;
+  if(!P || !P.list){
+    return h + `<div style="font-size:12px;color:#8A8470;padding:10px 0">Loading photos…</div>`;
+  }
+  if(!P.list.length){
+    h += `<div style="font-size:12px;color:#A39E8C;padding:4px 0 10px;line-height:1.6">No photos on this site yet. Add some under “Site photos” on the site page — the leaders' daily-update photos also show here.</div>`;
+  } else {
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px">`;
+    P.list.forEach(function(p, idx){
+      const at = d.photos.findIndex(function(c){ return c.key === p.key; });
+      const on = at !== -1;
+      h += `<div style="position:relative;cursor:pointer;opacity:${(!on && full)?'0.45':'1'}" onclick="wkTogglePhoto(${idx})">
+        <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:3px solid ${on?'#3F5A4C':'transparent'};background:#EFEDE7">
+          <img src="${p.url}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"/>
+        </div>
+        ${on?`<div style="position:absolute;top:5px;right:5px;background:#3F5A4C;color:#fff;width:24px;height:24px;border-radius:50%;font-size:12.5px;font-weight:800;line-height:24px;text-align:center">${at+1}</div>`:''}
+        <button onclick="event.stopPropagation();wkViewList(${idx})" title="See bigger" style="position:absolute;top:5px;left:5px;width:30px;height:30px;border-radius:50%;border:none;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.35);font-size:14px;line-height:30px;padding:0;cursor:pointer">🔍</button>
+        <div style="font-size:9.5px;color:#8A8470;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.from)}${p.date?' · '+new Date(String(p.date).slice(0,10)+'T12:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'short'}):''}</div>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+  if(P.more || P.loading) h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:#8A8470">
+      <span>Showing the leaders' latest ${P.limit} daily updates</span>
+      <button onclick="wkOlderPhotos()" ${P.loading?'disabled':''} style="background:#F0EEE6;color:#1A1A1A;border:none;border-radius:8px;padding:8px 10px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer;white-space:nowrap">${P.loading?'Loading…':'Show older photos'}</button>
+    </div>`;
+  return h;
+}
+function wkTogglePhoto(idx){
+  const P = WK_PHOTOS[WK_DRAFT.siteId]; if(!P || !P.list) return;
+  const p = P.list[idx]; if(!p) return;
+  const at = WK_DRAFT.photos.findIndex(function(c){ return c.key === p.key; });
+  if(at !== -1) WK_DRAFT.photos.splice(at, 1);
+  else if(WK_DRAFT.photos.length >= WK_MAX){ showSaveToast('You already have ' + WK_MAX + ' photos — take one out first'); return; }
+  else WK_DRAFT.photos.push({ key:p.key, url:p.url, date:p.date, from:p.from });
+  wkPersist(); wkRepaintPhotos();
+}
+function wkRemovePhoto(i){ WK_DRAFT.photos.splice(i, 1); wkPersist(); wkRepaintPhotos(); }
+function wkClearPhotos(){ if(!confirm('Take out all the chosen photos?')) return; WK_DRAFT.photos = []; wkPersist(); wkRepaintPhotos(); }
+function wkViewChosen(i){ const p = WK_DRAFT.photos[i]; if(p && p.url) openSitePhotoViewer(p.url); }
+function wkViewList(idx){ const P = WK_PHOTOS[WK_DRAFT.siteId]; const p = P && P.list && P.list[idx]; if(p) openSitePhotoViewer(p.url); }
+
+// ── THE PDF — page 1 boxes + bullets under the letterhead, page 2 the photos ──
+function wkFileName(siteId, r){
+  const nm = String(duSiteName(siteId) || r.site || 'Site').replace(/[^A-Za-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return nm + ' - Week ' + String(r.number||'').replace(/[^A-Za-z0-9]+/g, '');
+}
+// Crop each photo to a neat 4:3 frame on the device (also sidesteps cross-site image limits).
+function wkPrepPhoto(url){
+  return new Promise(function(res){
+    if(!url){ res(''); return; }
+    const img = new Image();
+    if(!/^data:/.test(url)) img.crossOrigin = 'anonymous';
+    img.onload = function(){
+      const W = 1040, H = 780;
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,W,H);
+      const k = Math.max(W / img.width, H / img.height), w = img.width * k, h = img.height * k;
+      g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+      try{ res(c.toDataURL('image/jpeg', 0.86)); }catch(e){ res(''); }
+    };
+    img.onerror = function(){ res(''); };
+    img.src = url;
+  });
+}
+function wkFooter(r){
+  return `<div style="position:absolute;left:40px;right:40px;bottom:22px;border-top:1px solid #D8D3C6;padding-top:6px;font-size:10px;color:#8A8470;display:flex;justify-content:space-between">
+    <span>Power Rock Painting</span><span>Weekly Progress Report ${esc(r.number)} · ${wkFmtDate(r.date)}</span></div>`;
+}
+function wkBar(t){ return `<div style="background:#8B1A1A;color:#fff;font-weight:800;font-size:13px;letter-spacing:1.2px;padding:8px 12px;margin:0 0 14px">${t}</div>`; }
+function wkPage1Html(r){
+  const row = function(k, v){ return `<tr>
+    <td style="width:32%;border:1px solid #BDB8AA;background:#F0EEE6;font-weight:700;padding:9px 12px;font-size:13px">${k}</td>
+    <td style="border:1px solid #BDB8AA;padding:9px 12px;font-size:13px;font-weight:700">${esc(v)}</td></tr>`; };
+  const bul = (r.bullets||[]).filter(function(b){ return String(b).trim(); });
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
+    ${LETTERHEAD ? `<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 20px"/>` : `<div style="font-size:24px;font-weight:800;color:#8B1A1A;margin-bottom:20px">POWER ROCK PAINTING</div>`}
+    <div style="text-align:center;font-size:21px;font-weight:800;letter-spacing:1.5px;margin:0 0 16px">WEEKLY PROGRESS REPORT</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:26px">
+      ${row('Project / Site:', r.site)}${row('Scope of Work:', r.scope)}${row('Weekly Report Nr:', r.number)}${row('Report Date:', wkFmtDate(r.date))}
+    </table>
+    ${wkBar('WEEKLY PROGRESS SUMMARY')}
+    ${bul.map(function(b){ return `<div style="display:flex;margin:0 0 10px;font-size:13.5px;line-height:1.55">
+      <div style="width:22px;flex:0 0 22px;font-weight:800">•</div><div style="flex:1;white-space:pre-wrap">${esc(b)}</div></div>`; }).join('')}
+  </div>${wkFooter(r)}`;
+}
+function wkPage2Html(r, shots){
+  let rows = '';
+  const cell = function(u, left){ return `<td style="width:50%;padding:0 ${left?'7px':'0'} 14px ${left?'0':'7px'};vertical-align:top">${u?`<img src="${u}" style="width:100%;display:block;border:1px solid #BDB8AA"/>`:''}</td>`; };
+  for(let i = 0; i < shots.length; i += 2){ rows += `<tr>${cell(shots[i], true)}${cell(shots[i+1]||'', false)}</tr>`; }
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
+    ${wkBar('SITE PHOTOGRAPHS')}
+    <div style="font-size:12px;color:#5C5748;margin:-6px 0 14px">${esc(r.site)} · Weekly Report ${esc(r.number)} · ${wkFmtDate(r.date)}</div>
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed">${rows}</table>
+  </div>${wkFooter(r)}`;
+}
+async function wkRenderCanvas(html){
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;min-height:1123px;background:#fff;padding:40px 40px 64px;box-sizing:border-box';
+  holder.innerHTML = html;
+  document.body.appendChild(holder);
+  try{
+    await Promise.all(Array.from(holder.querySelectorAll('img')).map(function(im){
+      return im.complete ? null : new Promise(function(r){ im.onload = r; im.onerror = r; });
+    }));
+    return await html2canvas(holder, { scale:2, backgroundColor:'#ffffff', useCORS:true });
+  } finally { holder.remove(); }
+}
+// Lay a rendered page onto A4; a very long summary simply runs onto extra pages.
+function wkAddCanvas(pdf, canvas, first){
+  const pw = 210, ph = 297, ih = canvas.height * pw / canvas.width;
+  const data = canvas.toDataURL('image/jpeg', 0.9);
+  let pos = 0, left = ih, isFirst = first;
+  while(left > 0.5){ if(!isFirst) pdf.addPage(); isFirst = false; pdf.addImage(data, 'JPEG', 0, pos, pw, ih); left -= ph; pos -= ph; }
+}
+async function wkBuildPdf(r){
+  await loadPdfLibs();
+  const shots = [];
+  for(let i = 0; i < (r.photos||[]).length; i++){ const u = await wkPrepPhoto(r.photos[i].url); if(u) shots.push(u); }
+  if(shots.length < (r.photos||[]).length) showSaveToast((r.photos.length - shots.length) + ' photo(s) could not load and were left out');
+  const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
+  wkAddCanvas(pdf, await wkRenderCanvas(wkPage1Html(r)), true);
+  if(shots.length) wkAddCanvas(pdf, await wkRenderCanvas(wkPage2Html(r, shots)), false);
+  return { blob: pdf.output('blob'), name: wkFileName(r.siteId, r) + '.pdf' };
+}
+async function wkShareBlob(r, rec){
+  const file = new File([r.blob], r.name, { type:'application/pdf' });
+  if(navigator.canShare && navigator.canShare({ files:[file] })){
+    try{ await navigator.share({ files:[file], title:r.name, text:'Weekly Progress Report ' + (rec.number||'') + ' — ' + (rec.site||'') }); }
+    catch(e){ if(!(e && e.name === 'AbortError')) saveBlobFile(r.blob, r.name); }
+    return;
+  }
+  saveBlobFile(r.blob, r.name);
+  showSaveToast('Sharing isn’t available on this device — saved the PDF instead');
+}
+
+// Save to the site's archive: leaders' photos (held as image text) and the PDF go to
+// the locker first, so the site record stays light. Reads the site fresh so nothing
+// else saved on it in the meantime is overwritten.
+async function wkSaveToSite(pdf){
+  const d = WK_DRAFT;
+  const wasNew = !d.id;
+  if(!d.id) d.id = uid();
+  for(let i = 0; i < d.photos.length; i++){
+    const p = d.photos[i];
+    if(/^data:/.test(p.url||'')){
+      const raw = await (await fetch(p.url)).blob();
+      const small = await shrinkImageFile(raw, 1600, 0.82);
+      const url = await sbUploadFile(d.siteId + '/weekly/' + d.id + '-' + i + '-' + Date.now() + '.jpg', small);
+      if(!url) throw new Error('photo upload');
+      p.url = url;
+    }
+  }
+  const pdfUrl = await sbUploadFile(d.siteId + '/weekly/' + wkFileName(d.siteId, d).replace(/ /g,'_') + '-' + d.id + '.pdf', pdf.blob);
+  const rows = await sbGetRows('sites', 'id=eq.' + encodeURIComponent(d.siteId));
+  const fresh = Array.isArray(rows) && rows[0];
+  const s = duSiteById(d.siteId);
+  if(!fresh && !s) throw new Error('site');
+  const det = Object.assign({}, (fresh ? fresh.details : s.details) || {});
+  const list = Array.isArray(det.weekly_reports) ? det.weekly_reports.slice() : [];
+  const at = list.findIndex(function(w){ return w.id === d.id; });
+  const rec = { v:2, id:d.id, number:String(d.number||'').trim(), site:d.site||'', scope:d.scope||'', date:d.date||invToday(),
+    bullets: d.bullets.filter(function(b){ return String(b).trim(); }),
+    photos: d.photos.map(function(p){ return { key:p.key, url:p.url, date:p.date||'', from:p.from||'' }; }),
+    pdf_url: pdfUrl || (at !== -1 ? list[at].pdf_url : '') || '',
+    created: at !== -1 ? (list[at].created || invToday()) : invToday(),
+    updated: new Date().toISOString(),
+    by: CURRENT_ROLE === 'henk' ? 'Henk' : 'Ferdi' };
+  if(at !== -1) list[at] = rec; else list.push(rec);
+  det.weekly_reports = list;
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(d.siteId), { details: det });
+  if(!ok) throw new Error('save');
+  if(s) s.details = det;
+  if(typeof OWNER !== 'undefined' && OWNER.sites){ const os = OWNER.sites.find(function(x){ return x.id === d.siteId; }); if(os) os.details = det; }
+  if(SUMMARY && SUMMARY.site && SUMMARY.site.id === d.siteId) SUMMARY.site.details = det;
+  // Safely saved online — the device copy is no longer needed.
+  if(wasNew) wkDropLocal(d.siteId); else wkDropLocal(d.siteId, d.id);
+  return rec;
+}
+
+// save | view | pdf | share — one PDF build, then do the thing, then make sure it's archived.
+async function wkAction(act){
+  if(WK_BUSY || !WK_DRAFT) return;
+  const d = WK_DRAFT;
+  if(!d.bullets.some(function(b){ return String(b).trim(); }) && !d.photos.length){
+    if(!confirm('This report has no bullets and no photos yet. Carry on anyway?')) return;
+  }
+  if(d.photos.some(function(p){ return !p.url; })){ showSaveToast('Photos are still loading — try again in a moment'); return; }
+  WK_BUSY = true;
+  showSaveToast('Building the PDF…');
+  let r;
+  try{ r = await wkBuildPdf(d); }
+  catch(e){ WK_BUSY = false; showSaveToast('Could not build the PDF — check your signal'); return; }
+  try{
+    if(act === 'view'){
+      const url = URL.createObjectURL(r.blob);
+      const w = window.open(url, '_blank');
+      if(!w){ saveBlobFile(r.blob, r.name); showSaveToast('Pop-up blocked — downloaded the PDF instead'); }
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+      return;   // just a look — not saved
+    }
+    if(act === 'pdf') saveBlobFile(r.blob, r.name);
+    if(act === 'share') await wkShareBlob(r, d);
+    showSaveToast('Saving to the archive…');
+    try{
+      await wkSaveToSite(r);
+      showSaveToast(act === 'save' ? 'Saved — Weekly Report ' + d.number + ' is in the archive' : 'Done — also saved in the archive');
+      if(DU_VIEW === 'wksite') paintUpdates();
+    }catch(e){
+      wkPersist();
+      showSaveToast('Not saved online (check your signal) — it is kept on this device; tap Save again');
+    }
+  } finally { WK_BUSY = false; }
+}
+
 function duLeaderSites(leaderKey){
   return DU_SITELIST.filter(function(s){ return s.team_leader === leaderKey; })
     .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
@@ -2604,23 +3108,7 @@ function duEditSiteInfo(siteId){
 }
 
 // WEEKLY tab — this site's saved weekly reports, plus a Create button.
-function duSiteWeeklyTab(s){
-  const reports = (((s.details && s.details.weekly_reports) || [])).slice()
-    .sort(function(a,b){ return String(b.created||'').localeCompare(String(a.created||'')); });
-  let h = `<button class="cta-btn" onclick="openWeek('${s.id}')">＋ Create weekly report</button>
-    <div class="section-lbl">Saved weekly reports</div>`;
-  if(!reports.length){
-    h += `<div style="font-size:12px;color:#A39E8C;padding:6px 2px">None yet. Tap Create weekly report to compile one for the dates you choose.</div>`;
-  } else {
-    h += reports.map(function(w){
-      return `<div class="ledger-card" style="padding:12px 15px;margin-bottom:8px;cursor:pointer" onclick="openWeek('${s.id}','${w.start}','${w.end}')">
-        <div style="font-weight:800;font-size:13px;color:#1A1A1A">${weeklyRangeLabel(w.start, w.end)}</div>
-        <div style="font-size:11px;color:#8A8470;margin-top:3px">${w.created?'saved '+fd(w.created):''}</div>
-      </div>`;
-    }).join('');
-  }
-  return h;
-}
+function duSiteWeeklyTab(s){ return wkArchiveHtml(s, true); }
 
 // View-only site information from the archive (no summary loaded there).
 function duSiteInfoView(siteId){
@@ -5053,7 +5541,7 @@ function henkSitesView(v){ HENK_SITES_VIEW = v; renderHenkSites(); }
 
 async function renderHenkSites(){
   if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }
-  const views = ['siteshome','archive','site','leader','weeklyhome','weekly','weekbuild'];
+  const views = ['siteshome','archive','site','leader','weeklyhome','weekly','weekbuild','wksite'];
   if(views.indexOf(DU_VIEW) === -1) DU_VIEW = 'siteshome';
   $('pageBody').innerHTML = `
     <div class="page-eyebrow">${CURRENT_ROLE==='henk'?'Door 2 · Ops':'Door 1 · Owner'}</div>
@@ -5244,13 +5732,6 @@ function openSiteDaily(siteId){
 }
 
 // From a live site's summary → its weekly-report builder (on the Sites tab).
-function openSiteWeekly(siteId){
-  SUMMARY_SITE = null;
-  DU_WEEK_SITE = siteId; DU_WEEK_START = null; DU_WEEK_DATA = null; DU_WEEK_SEL = {};
-  DU_VIEW = 'weekbuild';
-  pushView({ kind:'door', role: CURRENT_ROLE, section:'sites', du:{ view:'weekbuild', site:siteId } });
-  renderHenkSites();
-}
 
 async function loadSiteSummary(siteId){
   const res = await Promise.all([
