@@ -2797,7 +2797,7 @@ function wkPrepPhoto(url){
     const img = new Image();
     if(!/^data:/.test(url)) img.crossOrigin = 'anonymous';
     img.onload = function(){
-      const W = 1040, H = 780;
+      const W = 864, H = 1080;   // portrait 4:5 — phone photos stand upright, not forced landscape
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,W,H);
       const k = Math.max(W / img.width, H / img.height), w = img.width * k, h = img.height * k;
@@ -2815,28 +2815,36 @@ function wkFooter(r){
 function wkBar(t){ return `<div style="background:#8B1A1A;color:#fff;font-weight:800;font-size:13px;letter-spacing:1.2px;padding:8px 12px;margin:0 0 14px">${t}</div>`; }
 function wkPage1Html(r){
   const row = function(k, v){ return `<tr>
-    <td style="width:32%;border:1px solid #BDB8AA;background:#F0EEE6;font-weight:700;padding:9px 12px;font-size:13px">${k}</td>
-    <td style="border:1px solid #BDB8AA;padding:9px 12px;font-size:13px;font-weight:700">${esc(v)}</td></tr>`; };
+    <td style="width:32%;border:1px solid #BDB8AA;background:#F0EEE6;font-weight:700;padding:13px 15px;font-size:14px">${k}</td>
+    <td style="border:1px solid #BDB8AA;padding:13px 15px;font-size:14px;font-weight:700">${esc(v)}</td></tr>`; };
   const bul = (r.bullets||[]).filter(function(b){ return String(b).trim(); });
-  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
-    ${LETTERHEAD ? `<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 20px"/>` : `<div style="font-size:24px;font-weight:800;color:#8B1A1A;margin-bottom:20px">POWER ROCK PAINTING</div>`}
-    <div style="text-align:center;font-size:21px;font-weight:800;letter-spacing:1.5px;margin:0 0 16px">WEEKLY PROGRESS REPORT</div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:26px">
-      ${row('Project / Site:', r.site)}${row('Scope of Work:', r.scope)}${row('Weekly Report Nr:', r.number)}${row('Report Date:', wkFmtDate(r.date))}
-    </table>
-    ${wkBar('WEEKLY PROGRESS SUMMARY')}
-    ${bul.map(function(b){ return `<div style="display:flex;margin:0 0 10px;font-size:13.5px;line-height:1.55">
-      <div style="width:22px;flex:0 0 22px;font-weight:800">•</div><div style="flex:1;white-space:pre-wrap">${esc(b)}</div></div>`; }).join('')}
+  // Flex column that fills the page height, so the content spreads down the whole page instead of bunching at the top.
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A;display:flex;flex-direction:column;min-height:1000px">
+    <div>
+      ${LETTERHEAD ? `<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 30px"/>` : `<div style="font-size:24px;font-weight:800;color:#8B1A1A;margin-bottom:30px">POWER ROCK PAINTING</div>`}
+      <div style="text-align:center;font-size:23px;font-weight:800;letter-spacing:1.5px;margin:6px 0 34px">WEEKLY PROGRESS REPORT</div>
+      <table style="width:100%;border-collapse:collapse">
+        ${row('Project / Site:', r.site)}${row('Scope of Work:', r.scope)}${row('Weekly Report Nr:', r.number)}${row('Report Date:', wkFmtDate(r.date))}
+      </table>
+    </div>
+    <div style="margin-top:34px;display:flex;flex-direction:column;flex:1">
+      ${wkBar('WEEKLY PROGRESS SUMMARY')}
+      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:22px 24px;flex:1">
+        ${bul.map(function(b){ return `<div style="display:flex;margin:0 0 18px;font-size:14.5px;line-height:1.7">
+          <div style="width:26px;flex:0 0 26px;font-weight:800;color:#8B1A1A">•</div><div style="flex:1;white-space:pre-wrap">${esc(b)}</div></div>`; }).join('')}
+      </div>
+    </div>
   </div>${wkFooter(r)}`;
 }
 function wkPage2Html(r, shots){
-  let rows = '';
-  const cell = function(u, left){ return `<td style="width:50%;padding:0 ${left?'7px':'0'} 14px ${left?'0':'7px'};vertical-align:top">${u?`<img src="${u}" style="width:100%;display:block;border:1px solid #BDB8AA"/>`:''}</td>`; };
-  for(let i = 0; i < shots.length; i += 2){ rows += `<tr>${cell(shots[i], true)}${cell(shots[i+1]||'', false)}</tr>`; }
+  // Portrait photos, 3 across, each in a black frame, evenly spaced across the page.
+  const cells = shots.map(function(u){
+    return `<div style="width:31.5%;margin-bottom:20px"><img src="${u}" style="width:100%;display:block;border:3px solid #000"/></div>`;
+  }).join('');
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
     ${wkBar('SITE PHOTOGRAPHS')}
-    <div style="font-size:12px;color:#5C5748;margin:-6px 0 14px">${esc(r.site)} · Weekly Report ${esc(r.number)} · ${wkFmtDate(r.date)}</div>
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed">${rows}</table>
+    <div style="font-size:12px;color:#5C5748;margin:-6px 0 18px">${esc(r.site)} · Weekly Report ${esc(r.number)} · ${wkFmtDate(r.date)}</div>
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between">${cells}</div>
   </div>${wkFooter(r)}`;
 }
 async function wkRenderCanvas(html){
