@@ -4766,6 +4766,149 @@ let VAT_YEAR = new Date().getFullYear();
 let VAT_PERIOD = Math.floor(new Date().getMonth()/2);   // 0..5 (current 2-month period)
 function setVatYear(y){ VAT_YEAR=parseInt(y,10)||VAT_YEAR; renderVAT(); }
 function setVatPeriod(p){ VAT_PERIOD=parseInt(p,10)||0; renderVAT(); }
+// ── EXPENSE CATEGORIES — the deductible income-statement line items from Power Rock's
+// audited financials. `vat` = whether input VAT can be claimed (wages, petrol, rates,
+// donations, interest = NO VAT). Confirm treatment with your accountant. ──
+const EXPENSE_CATEGORIES = [
+  {k:'materials',   label:'Materials / Paint (Cost of Sales)', vat:true},
+  {k:'accounting',  label:'Accounting fees', vat:true},
+  {k:'bank',        label:'Bank charges', vat:true},
+  {k:'computer',    label:'Computer expenses', vat:true},
+  {k:'subscriptions',label:'Subscriptions', vat:true},
+  {k:'telecoms',    label:'Telephone & internet', vat:true},
+  {k:'advertising', label:'Advertising & promotions', vat:true},
+  {k:'cleaning',    label:'Cleaning', vat:true},
+  {k:'consulting',  label:'Consulting fees', vat:true},
+  {k:'courier',     label:'Courier & postage', vat:true},
+  {k:'donations',   label:'Donations', vat:false},
+  {k:'electricity', label:'Electricity & water', vat:true},
+  {k:'wages',       label:'Wages (casual labour)', vat:false},
+  {k:'salaries',    label:'Salaries', vat:false},
+  {k:'entertainment',label:'Entertainment (VAT not claimable)', vat:false},
+  {k:'general',     label:'General expenses', vat:true},
+  {k:'insurance',   label:'Insurance (short-term)', vat:true},
+  {k:'legal',       label:'Legal expenses', vat:true},
+  {k:'motor',       label:'Motor vehicle expenses (repairs/running)', vat:true},
+  {k:'petrol',      label:'Petrol & diesel (zero-rated)', vat:false},
+  {k:'tolls',       label:'Toll fees', vat:true},
+  {k:'stationery',  label:'Printing & stationery', vat:true},
+  {k:'rates',       label:'Municipal rates', vat:false},
+  {k:'rent',        label:'Rent - building', vat:true},
+  {k:'repairs',     label:'Repairs & maintenance', vat:true},
+  {k:'security',    label:'Security', vat:true},
+  {k:'welfare',     label:'Staff welfare', vat:true},
+  {k:'transport',   label:'Transport', vat:true},
+  {k:'travel',      label:'Travel & accommodation', vat:true},
+  {k:'equipment',   label:'Equipment / assets purchased', vat:true},
+  {k:'interest',    label:'Interest / finance costs (no VAT)', vat:false},
+  {k:'loan',        label:'Ferdi Loan Account (not an expense)', vat:false, nonexp:true},
+  {k:'drawings',    label:'Drawings / shareholder (not an expense)', vat:false, nonexp:true},
+];
+function expenseCat(k){ return EXPENSE_CATEGORIES.find(function(c){ return c.k===k; }); }
+const EXPENSE_STORE_ID = 'site_general_expenses';
+
+// ── BANK STATEMENT UPLOAD — tag payments not already captured as invoices ──
+let BANK_ROWS = [];
+function openBankStatement(){
+  BANK_ROWS=[];
+  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Upload bank statement</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Export your statement as <b>CSV</b> from online banking, then choose the file here. We list the payments that aren't already in the app so you can tag each one (petrol, wages, tollgates, loan, stationery…). VAT is only claimed on items that carry it.</div>
+    <label class="cta-btn ghost" style="height:46px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 0 6px">📄 Choose CSV statement<input id="bankcsv" type="file" accept=".csv,text/csv,text/plain" style="display:none" onchange="handleBankCsv(this)"/></label>
+    <div id="bankReview"></div>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  openModal('modalSiteDetail');
+}
+async function handleBankCsv(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  let text=''; try{ text=await f.text(); }catch(e){ showSaveToast('Could not read the file'); return; }
+  BANK_ROWS = parseBankCsv(text);
+  renderBankReview();
+}
+function normBankDate(s){
+  s=String(s||'').trim(); if(!s) return ''; let m;
+  if((m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/))) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+  if((m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/))){ let y=m[3]; if(y.length===2) y='20'+y; return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
+  if((m=s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/))){ const mo={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12}[m[2].slice(0,3).toLowerCase()]; if(mo) return m[3]+'-'+String(mo).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
+  return s;
+}
+function parseBankCsv(text){
+  const rows=[]; const lines=String(text).split(/\r?\n/).filter(function(l){return l.trim();}); if(!lines.length) return rows;
+  const delim=(lines[0].split(';').length>lines[0].split(',').length)?';':',';
+  const cells=function(l){ const o=[]; let cur='',q=false; for(let i=0;i<l.length;i++){ const c=l[i]; if(c==='"') q=!q; else if(c===delim&&!q){ o.push(cur); cur=''; } else cur+=c; } o.push(cur); return o.map(function(x){return x.trim().replace(/^"|"$/g,'');}); };
+  let hi=-1, header=null;
+  for(let i=0;i<Math.min(lines.length,10);i++){ const low=lines[i].toLowerCase(); if(low.indexOf('date')>=0 && (low.indexOf('amount')>=0||low.indexOf('description')>=0||low.indexOf('debit')>=0||low.indexOf('detail')>=0)){ hi=i; header=cells(lines[i]).map(function(x){return x.toLowerCase();}); break; } }
+  const find=function(keys){ if(!header) return -1; for(let i=0;i<header.length;i++){ for(let j=0;j<keys.length;j++){ if(header[i].indexOf(keys[j])>=0) return i; } } return -1; };
+  const parseAmt=function(s){ if(s==null) return NaN; s=String(s).replace(/[R\s,]/g,''); let neg=false; if(/^\(.*\)$/.test(s)){ neg=true; s=s.replace(/[()]/g,''); } const v=parseFloat(s); return isNaN(v)?NaN:(neg?-v:v); };
+  let dI=-1,desI=-1,amtI=-1,debI=-1,creI=-1;
+  if(header){ dI=find(['date']); desI=find(['description','detail','reference','narrative']); amtI=find(['amount']); debI=find(['debit']); creI=find(['credit']); }
+  const start=hi>=0?hi+1:0;
+  for(let i=start;i<lines.length;i++){
+    const c=cells(lines[i]); if(c.length<2) continue;
+    let date='',desc='',amount=NaN;
+    if(header){
+      date=dI>=0?c[dI]:''; desc=desI>=0?c[desI]:'';
+      if(amtI>=0) amount=parseAmt(c[amtI]);
+      else { const dv=debI>=0?parseAmt(c[debI]):NaN; const cv=creI>=0?parseAmt(c[creI]):NaN; if(!isNaN(dv)&&dv!==0) amount=-Math.abs(dv); else if(!isNaN(cv)&&cv!==0) amount=Math.abs(cv); }
+    } else { date=c[0]||''; amount=parseAmt(c[1]); desc=c.slice(2).join(' ')||c[1]||''; }
+    if(isNaN(amount)) continue;
+    rows.push({ date:normBankDate(date), desc:desc, amount:amount, out:amount<0 });
+  }
+  return rows;
+}
+function bankGuessCat(desc){ const d=String(desc||'').toLowerCase();
+  if(/fuel|petrol|diesel|engen|shell|bp |sasol|total |caltex|garage/.test(d)) return 'petrol';
+  if(/toll|sanral|e-toll|bakwena|plaza/.test(d)) return 'tolls';
+  if(/salar|wage|loon|payroll/.test(d)) return 'wages';
+  if(/bank charge|service fee|admin fee|monthly fee|cash dep fee/.test(d)) return 'bank';
+  if(/insurance|santam|outsurance|hollard|miway/.test(d)) return 'insurance';
+  if(/telkom|vodacom|\bmtn\b|cell c|airtime|\bdata\b|fibre|internet|rain /.test(d)) return 'telecoms';
+  if(/\brent\b|huur/.test(d)) return 'rent';
+  if(/stationer|print/.test(d)) return 'stationery';
+  if(/accounting|ascor|accountant/.test(d)) return 'accounting';
+  if(/ferdi|loan|lening/.test(d)) return 'loan';
+  return '';
+}
+function renderBankReview(){
+  const box=$('bankReview'); if(!box) return;
+  if(!BANK_ROWS.length){ box.innerHTML=`<div style="color:#B2342A;font-size:12px;padding:12px 0;line-height:1.6">Couldn't read any transactions. Please export as <b>CSV</b> with Date, Description &amp; Amount columns. If it keeps failing, send me a sample of your bank's CSV and I'll tune the reader.</div>`; return; }
+  const outs=BANK_ROWS.map(function(r,i){return {r:r,i:i};}).filter(function(x){return x.r.out;});
+  const ins=BANK_ROWS.filter(function(r){return !r.out;});
+  const opts=EXPENSE_CATEGORIES.map(function(c){return `<option value="${c.k}">${esc(c.label)}${c.vat?'':' · no VAT'}</option>`;}).join('');
+  let h=`<div style="font-size:11.5px;color:#8A8470;margin:12px 0 10px">${outs.length} payment${outs.length!==1?'s':''} out found. Tag each to an expense (leave blank to skip). A guess is pre-filled where we recognised the name.</div>`;
+  h+=outs.map(function(x){ const r=x.r,i=x.i;
+    return `<div class="ledger-card" style="padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><div style="font-size:12px;font-weight:700;min-width:0;word-break:break-word">${esc(r.desc||'(no description)')}</div><div class="disp" style="font-weight:800;white-space:nowrap">${R(Math.abs(r.amount))}</div></div>
+      <div style="font-size:10.5px;color:#A39E8C;margin:2px 0 7px">${r.date?fd(r.date):'no date'}</div>
+      <select class="f-input" id="bankcat_${i}" style="margin:0;height:40px;font-size:12.5px"><option value="">— choose expense —</option>${opts}</select>
+    </div>`;
+  }).join('');
+  if(ins.length) h+=`<div style="font-size:11px;color:#A39E8C;margin:6px 0 2px">+ ${ins.length} deposit${ins.length!==1?'s':''} (money in) — left out for now (income comes from your invoices).</div>`;
+  h+=`<button class="cta-btn" style="margin-top:10px" onclick="saveBankExpenses()">Save tagged expenses</button>`;
+  box.innerHTML=h;
+  outs.forEach(function(x){ const g=bankGuessCat(x.r.desc); if(g){ const s=$('bankcat_'+x.i); if(s) s.value=g; } });
+}
+async function saveBankExpenses(){
+  const adds=[];
+  BANK_ROWS.forEach(function(r,i){ const sel=$('bankcat_'+i); if(!sel) return; const k=sel.value; if(!k) return;
+    const cat=expenseCat(k); if(!cat) return; const amt=Math.abs(parseFloat(r.amount)||0);
+    adds.push({ id:uid(), date:r.date||'', desc:r.desc||'', amount_incl:amt, category:k, category_label:cat.label, vat:!!cat.vat, input_vat: cat.vat?Math.round(amt*15/115*100)/100:0, nonexp:!!cat.nonexp, created:invToday() });
+  });
+  if(!adds.length){ showSaveToast('Choose a category for the rows you want to keep'); return; }
+  let holder=(OWNER.sites||[]).find(function(s){ return s.id===EXPENSE_STORE_ID || (s.details&&s.details.is_expense_store); });
+  const details = holder ? Object.assign({}, holder.details||{}) : { is_general:true, is_expense_store:true };
+  if(!Array.isArray(details.expenses)) details.expenses=[];
+  details.expenses=details.expenses.concat(adds);
+  $('bankReview').innerHTML=`<div style="text-align:center;padding:24px;color:#8A8470">Saving…</div>`;
+  const row={ id:EXPENSE_STORE_ID, name:'Expenses (bank)', client:'', team_leader:'', status:'active', quote_value:0, details:details };
+  const ok=await sbUpsert('sites', row);
+  if(ok){
+    if(holder) holder.details=details; else if(typeof OWNER!=='undefined'&&OWNER.sites){ OWNER.sites.push(typeof normSiteEnd==='function'?normSiteEnd(row):row); }
+    showSaveToast(adds.length+' expense'+(adds.length!==1?'s':'')+' saved');
+    closeModal('modalSiteDetail'); renderVAT();
+  } else { showSaveToast('Could not save — check your signal'); renderBankReview(); }
+}
+
 // VAT201 report built from REAL invoices: output VAT from sales invoices, input VAT from supplier invoices.
 // Invoice basis (Power Rock is >R2.5m) — VAT counts when invoiced, not when paid.
 async function renderVAT(){
@@ -4781,10 +4924,17 @@ async function renderVAT(){
   // sales / output VAT
   let outVat=0, outEx=0; const salesIn=[];
   sales.forEach(function(iv){ if(inPer(iv.date)){ outVat+=parseFloat(iv.vat)|| ((parseFloat(iv.total_incl)||0)*15/115); outEx+=parseFloat(iv.amount_ex)||((parseFloat(iv.total_incl)||0)/1.15); salesIn.push(iv); } });
-  // purchases / input VAT
+  // purchases / input VAT (supplier invoices)
   let inVat=0, inEx=0; const purIn=[];
   supList.forEach(function(s){ if(inPer(s.invoice_date||s.processed_at)){ const t=parseFloat(s.total)||0; inVat+=t*15/115; inEx+=t/1.15; purIn.push(s); } });
-  outVat=Math.round(outVat*100)/100; inVat=Math.round(inVat*100)/100; const net=Math.round((outVat-inVat)*100)/100;
+  // tagged bank-statement expenses (petrol, wages, tollgates, etc.) — only VAT-flagged ones add input VAT
+  const expHolder=(OWNER.sites||[]).find(function(s){ return s.id===EXPENSE_STORE_ID || (s.details&&s.details.is_expense_store); });
+  const allExp=(expHolder&&expHolder.details&&expHolder.details.expenses)||[];
+  let bankInVat=0, bankExclVat=0; const bankIn=[];
+  allExp.forEach(function(e){ if(inPer(e.date)){ bankIn.push(e); if(e.vat) bankInVat+=parseFloat(e.input_vat)||0; else bankExclVat+=parseFloat(e.amount_incl)||0; } });
+  bankInVat=Math.round(bankInVat*100)/100;
+  outVat=Math.round(outVat*100)/100; inVat=Math.round(inVat*100)/100;
+  const inVatTot=Math.round((inVat+bankInVat)*100)/100; const net=Math.round((outVat-inVatTot)*100)/100;
   // 12-month rolling turnover for the R2.3m threshold watch
   const mm = (typeof monthlyTurnoverMap==='function') ? monthlyTurnoverMap() : {};
   const now=new Date(); let turn12=0;
@@ -4806,7 +4956,7 @@ async function renderVAT(){
     </div>`;
     h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px">
       <div class="ledger-card" style="padding:15px 16px"><div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px">OUTPUT VAT (on sales)</div><div class="disp" style="font-size:19px;font-weight:800;margin-top:4px">${R(outVat)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">${salesIn.length} invoice${salesIn.length!==1?'s':''} · ${R(outEx)} ex-VAT</div></div>
-      <div class="ledger-card" style="padding:15px 16px"><div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px">INPUT VAT (on purchases)</div><div class="disp" style="font-size:19px;font-weight:800;margin-top:4px">${R(inVat)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">${purIn.length} supplier invoice${purIn.length!==1?'s':''} · ${R(inEx)} ex-VAT</div></div>
+      <div class="ledger-card" style="padding:15px 16px"><div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px">INPUT VAT (on purchases)</div><div class="disp" style="font-size:19px;font-weight:800;margin-top:4px">${R(inVatTot)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">${purIn.length} supplier invoice${purIn.length!==1?'s':''}${bankInVat>0?' + '+R(bankInVat)+' tagged':''}</div></div>
     </div>`;
     const payable = net>=0;
     h += `<div class="headline-num" style="background:${payable?'#B2342A':'#3F5A4C'};border-top-color:#1A1A1A">
@@ -4816,9 +4966,18 @@ async function renderVAT(){
     h += `<div class="section-lbl">VAT201 summary — ${pm[2]} ${yr}</div>
       <div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12.5px"><span>Sales — output VAT (15%)</span><span class="disp" style="font-weight:800">${R(outVat)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12.5px"><span>Purchases — input VAT (15%)</span><span class="disp" style="font-weight:800">− ${R(inVat)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12.5px"><span>Supplier invoices — input VAT (15%)</span><span class="disp" style="font-weight:800">− ${R(inVat)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12.5px"><span>Tagged bank expenses — input VAT</span><span class="disp" style="font-weight:800">− ${R(bankInVat)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:11px 0 6px;font-size:14px;font-weight:800"><span>${payable?'Net VAT payable':'Net VAT refund'}</span><span class="disp" style="color:${payable?'#B2342A':'#3F5A4C'}">${R(Math.abs(net))}</span></div>
       </div>`;
+    h += `<button class="cta-btn ghost" style="margin-bottom:6px" onclick="openBankStatement()">📥 Upload bank statement — tag other expenses</button>`;
+    if(bankIn.length){
+      h += `<div class="section-lbl">Tagged expenses this period — ${bankIn.length}</div><div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">`;
+      bankIn.slice().sort(function(a,b){ return (b.date||'')<(a.date||'')?-1:1; }).forEach(function(e){
+        h += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid #EFECE3;font-size:12px;gap:8px"><span style="min-width:0;word-break:break-word">${esc(e.desc||'')}<span style="color:#A39E8C"> · ${esc(e.category_label||e.category||'')}${e.vat?'':' · no VAT'}</span></span><span class="disp" style="font-weight:700;white-space:nowrap">${R(e.amount_incl)}</span></div>`;
+      });
+      h += `</div>`;
+    }
   } else {
     h += `<div class="ledger-card" style="padding:18px;margin-bottom:12px;font-size:13px;color:#5C5748;line-height:1.7"><strong>Not registered for VAT</strong> — no VAT return to file. You don't charge VAT on invoices and can't claim input VAT.</div>`;
   }
