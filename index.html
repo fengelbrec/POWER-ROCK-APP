@@ -4809,8 +4809,23 @@ const EXPENSE_STORE_ID = 'site_general_expenses';
 
 // ── BANK STATEMENT UPLOAD — tag payments not already captured as invoices ──
 let BANK_ROWS = [];
+let BANK_SUPINV = [];   // confirmed supplier invoices, to flag bank payments already captured
+async function loadBankSupInv(){
+  try{ const sup=await sbGetRows('invoice_inbox','status=eq.confirmed&order=invoice_date.desc');
+    BANK_SUPINV=(Array.isArray(sup)?sup:[]).map(function(s){ return {total:parseFloat(s.total)||0, supplier:s.supplier||'', date:s.invoice_date||s.processed_at||''}; }).filter(function(x){ return x.total>0; });
+  }catch(e){ BANK_SUPINV=[]; }
+}
+// A bank payment is "already captured" if its amount is within 5% of a supplier
+// invoice total — 5% so rounded transfers (e.g. to Joe/Daniel/Costa) still match.
+function bankSupMatch(amount){
+  const A=Math.abs(parseFloat(amount)||0); if(!A) return null;
+  let best=null, bestDiff=1;
+  BANK_SUPINV.forEach(function(s){ const T=s.total; if(!T) return; const diff=Math.abs(A-T)/Math.max(A,T); if(diff<=0.05 && diff<bestDiff){ best=s; bestDiff=diff; } });
+  return best;
+}
 function openBankStatement(){
   BANK_ROWS=[];
+  loadBankSupInv();
   $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Upload bank statement</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Export your statement as <b>CSV</b> from online banking, then choose the file here. We list the payments that aren't already in the app so you can tag each one (petrol, wages, tollgates, loan, stationery…). VAT is only claimed on items that carry it.</div>
@@ -4827,6 +4842,7 @@ async function handleBankCsv(input){
   BANK_FILE=f; BANK_FILENAME=f.name||'statement.csv';
   let text=''; try{ text=await f.text(); }catch(e){ showSaveToast('Could not read the file'); return; }
   BANK_ROWS = parseBankCsv(text);
+  if(!BANK_SUPINV.length) await loadBankSupInv();
   renderBankReview();
   storeBankStatement(f);   // save the file to records + show the success notice
 }
@@ -4920,18 +4936,22 @@ function renderBankReview(){
   const outs=BANK_ROWS.map(function(r,i){return {r:r,i:i};}).filter(function(x){return x.r.out;});
   const ins=BANK_ROWS.filter(function(r){return !r.out;});
   const opts=EXPENSE_CATEGORIES.map(function(c){return `<option value="${c.k}">${esc(c.label)}${c.vat?'':' · no VAT'}</option>`;}).join('');
-  let h=`<div style="font-size:11.5px;color:#8A8470;margin:12px 0 10px">${outs.length} payment${outs.length!==1?'s':''} out found. Tag each to an expense (leave blank to skip). A guess is pre-filled where we recognised the name.</div>`;
-  h+=outs.map(function(x){ const r=x.r,i=x.i;
-    return `<div class="ledger-card" style="padding:10px 12px;margin-bottom:8px">
+  let matchCnt=0;
+  const body=outs.map(function(x){ const r=x.r,i=x.i; const m=bankSupMatch(r.amount); if(m) matchCnt++;
+    const badge = m ? `<div style="background:#E8F3EC;border:1px solid #BFE0CB;color:#2F6B47;border-radius:7px;padding:6px 9px;font-size:10.5px;font-weight:700;margin:4px 0 7px;line-height:1.5">✓ Already in Supplier Invoices — ${R(m.total)}${m.supplier?' · '+esc(m.supplier):''}. Leave blank so it isn't counted twice.</div>` : '';
+    return `<div class="ledger-card" style="padding:10px 12px;margin-bottom:8px${m?';border-color:#BFE0CB':''}">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><div style="font-size:12px;font-weight:700;min-width:0;word-break:break-word">${esc(r.desc||'(no description)')}</div><div class="disp" style="font-weight:800;white-space:nowrap">${R(Math.abs(r.amount))}</div></div>
       <div style="font-size:10.5px;color:#A39E8C;margin:2px 0 7px">${r.date?fd(r.date):'no date'}</div>
-      <select class="f-input" id="bankcat_${i}" style="margin:0;height:40px;font-size:12.5px"><option value="">— choose expense —</option>${opts}</select>
+      ${badge}<select class="f-input" id="bankcat_${i}" style="margin:0;height:40px;font-size:12.5px"><option value="">— choose expense —</option>${opts}</select>
     </div>`;
   }).join('');
+  let h=`<div style="font-size:11.5px;color:#8A8470;margin:12px 0 10px">${outs.length} payment${outs.length!==1?'s':''} out found. Tag each to an expense (leave blank to skip). A guess is pre-filled where we recognised the name.${matchCnt?' <b style="color:#2F6B47">'+matchCnt+' look already captured as supplier invoices (flagged below).</b>':''}</div>`;
+  h+=body;
   if(ins.length) h+=`<div style="font-size:11px;color:#A39E8C;margin:6px 0 2px">+ ${ins.length} deposit${ins.length!==1?'s':''} (money in) — left out for now (income comes from your invoices).</div>`;
   h+=`<button class="cta-btn" style="margin-top:10px" onclick="saveBankExpenses()">Save tagged expenses</button>`;
   box.innerHTML=h;
-  outs.forEach(function(x){ const g=bankGuessCat(x.r.desc); if(g){ const s=$('bankcat_'+x.i); if(s) s.value=g; } });
+  // pre-fill name guesses, but NOT for rows already captured as supplier invoices
+  outs.forEach(function(x){ if(bankSupMatch(x.r.amount)) return; const g=bankGuessCat(x.r.desc); if(g){ const s=$('bankcat_'+x.i); if(s) s.value=g; } });
 }
 async function saveBankExpenses(){
   const adds=[];
