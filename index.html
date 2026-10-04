@@ -335,7 +335,7 @@ input[type=password]{letter-spacing:5px}
 </div>
 
 <!-- ADD SITE MODAL -->
-<div class="modal-overlay hidden" id="modalAddSite" onclick="if(event.target===this)closeModal('modalAddSite')">
+<div class="modal-overlay hidden" id="modalAddSite">
   <div class="modal-sheet">
     <div class="modal-title">Add new site</div>
     <div class="modal-sub">Everything the platform needs to run this site — stock sheet included</div>
@@ -498,12 +498,12 @@ input[type=password]{letter-spacing:5px}
 </div>
 
 <!-- SITE DETAIL / ADD COST MODAL -->
-<div class="modal-overlay hidden" id="modalSiteDetail" onclick="if(event.target===this)closeModal('modalSiteDetail')">
+<div class="modal-overlay hidden" id="modalSiteDetail">
   <div class="modal-sheet" id="siteDetailContent"></div>
 </div>
 
 <!-- LOG PAYMENT MODAL -->
-<div class="modal-overlay hidden" id="modalLogPayment" onclick="if(event.target===this)closeModal('modalLogPayment')">
+<div class="modal-overlay hidden" id="modalLogPayment">
   <div class="modal-sheet">
     <div class="modal-title">Log a payment / invoice</div>
     <div class="modal-sub">Progress payment against a site's total quote</div>
@@ -544,7 +544,7 @@ input[type=password]{letter-spacing:5px}
 </div>
 
 <!-- MATERIAL ENTRY MODAL — manual for now, will be auto-filled from emailed invoices later -->
-<div class="modal-overlay hidden" id="modalMaterialEntry" onclick="if(event.target===this)closeModal('modalMaterialEntry')">
+<div class="modal-overlay hidden" id="modalMaterialEntry">
   <div class="modal-sheet">
     <div class="modal-title">Log material invoice</div>
     <div class="modal-sub">From a supplier tax invoice — date, invoice number, amount</div>
@@ -581,7 +581,7 @@ input[type=password]{letter-spacing:5px}
 </div>
 
 <!-- OVERHEAD ENTRY MODAL -->
-<div class="modal-overlay hidden" id="modalOverheadEntry" onclick="if(event.target===this)closeModal('modalOverheadEntry')">
+<div class="modal-overlay hidden" id="modalOverheadEntry">
   <div class="modal-sheet">
     <div class="modal-title">Log site expense</div>
     <div class="modal-sub">Petrol, food, tool hire, equipment rental</div>
@@ -617,7 +617,7 @@ input[type=password]{letter-spacing:5px}
 </div>
 
 <!-- MONTH SNAPSHOT MODAL -->
-<div class="modal-overlay hidden" id="modalMonthSnapshot" onclick="if(event.target===this)closeModal('modalMonthSnapshot')" style="align-items:stretch">
+<div class="modal-overlay hidden" id="modalMonthSnapshot" style="align-items:stretch">
   <div class="snap-sheet" id="monthSnapshotContent"></div>
 </div>
 
@@ -3311,7 +3311,6 @@ function openReportPhoto(i){
     ov = document.createElement('div');
     ov.id = 'photoViewer';
     ov.style.cssText = 'position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;padding:16px';
-    ov.addEventListener('click', function(e){ if(e.target === ov) closeReportPhoto(); });
     document.body.appendChild(ov);
   }
   ov.innerHTML = `<button onclick="closeReportPhoto()" style="position:absolute;top:16px;left:16px;background:#fff;color:#1A1A1A;border:none;border-radius:24px;padding:11px 20px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.45);display:flex;align-items:center;gap:6px;z-index:2">← Back</button>
@@ -6748,11 +6747,14 @@ async function uploadSitePhotos(siteId, input){
 }
 function openSitePhotoViewer(url){
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
-  ov.onclick=function(){ ov.remove(); };
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const back=document.createElement('button');
+  back.textContent='← Back';
+  back.style.cssText='position:absolute;top:16px;left:16px;background:#fff;color:#1A1A1A;border:none;border-radius:24px;padding:11px 20px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.45);z-index:2';
+  back.onclick=function(){ ov.remove(); };
   const img=document.createElement('img');
   img.src=url; img.style.cssText='max-width:100%;max-height:100%;border-radius:8px';
-  ov.appendChild(img); document.body.appendChild(ov);
+  ov.appendChild(back); ov.appendChild(img); document.body.appendChild(ov);
 }
 async function deleteSitePhoto(siteId, idx){
   if(!confirm('Remove this photo from the site record?')) return;
