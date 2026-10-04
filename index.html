@@ -7672,45 +7672,51 @@ function quoteApplyFilter(){
 // Ferdi edits per quote. Wording is PLACEHOLDER for now; we finalise each together. ──
 const QUOTE_AREAS = [
   { key:'int_walls', label:'Interior Walls', lines:[
-      {desc:'Prepare interior walls — fill cracks, sand & spot-prime where needed', product:'', lump:false},
-      {desc:'Apply 2 coats {product} to interior walls', product:'Plascon PVA', lump:false} ] },
+      {desc:'Preparation of all interior wall surfaces - fill cracks & spot prime where needed', product:'', lump:false},
+      {desc:'Preparation & painting of interior walls x 2 coats {product}', product:'Prominent Paint Wall & Ceiling', lump:false} ] },
   { key:'int_ceilings', label:'Interior Ceilings', lines:[
-      {desc:'Prepare ceilings & spot-prime stains', product:'', lump:false},
-      {desc:'Apply 2 coats {product} to ceilings', product:'Plascon PVA', lump:false} ] },
+      {desc:'Prepare ceilings - fill cracks & spot prime stains', product:'', lump:false},
+      {desc:'Preparation & painting of ceilings x 2 coats {product}', product:'Prominent Paint Wall & Ceiling', lump:false} ] },
   { key:'ext_plaster', label:'Exterior Plastered Surfaces', lines:[
-      {desc:'High Pressure Wash all plastered walls & repair damaged plaster to match existing; apply 1 coat {product} where needed', product:'Plaster Primer', lump:false},
-      {desc:'Preparation & painting of plastered surfaces x 2 coats {product}', product:'Prominent Select Sheen', lump:false} ] },
+      {desc:'High Pressure Wash all plastered walls & repair damaged plaster work to match existing', product:'', lump:false},
+      {desc:'Preparation & painting of plastered surfaces x 2 coats {product} (colour of choice)', product:'Prominent Paint Select Sheen', lump:false} ] },
   { key:'ext_steel', label:'Exterior Steel Surfaces', lines:[
-      {desc:'Clean / degrease all steel surfaces & patch prime affected areas with {product}', product:'QD Primer', lump:false},
-      {desc:'Recoat complete — {product}', product:'Gloss Enamel', lump:false} ] },
+      {desc:'Clean / degrease all steel surfaces & patch prime affected areas with {product}', product:'Prominent Paint Rust Primer', lump:false},
+      {desc:'Recoat complete surface - {product} (colour of choice)', product:'Prominent Paint Premium Gloss Enamel', lump:false} ] },
   { key:'ext_ceilings', label:'Exterior Ceiling Surfaces', lines:[
-      {desc:'Prepare exterior ceilings / soffits & spot-prime', product:'', lump:false},
-      {desc:'Apply 2 coats {product}', product:'Prominent Select Sheen', lump:false} ] },
+      {desc:'Prepare exterior ceilings / soffits & spot prime', product:'', lump:false},
+      {desc:'Preparation & painting of exterior ceilings x 2 coats {product}', product:'Prominent Paint Wall & Ceiling', lump:false} ] },
   { key:'roof_corr', label:'Roof Surfaces - Corrugated', lines:[
-      {desc:'High pressure clean & treat rust; prime bare metal with {product}', product:'Galvanised Iron Primer', lump:false},
-      {desc:'Apply 2 coats {product} roof paint', product:'Roof Paint', lump:false} ] },
+      {desc:'High pressure wash & degrease complete roof surface - {product}', product:'Prominent Paint Etch Cleaner', lump:false},
+      {desc:'Application of 1 x complete coat - {product} (bare / rusted metal)', product:'Prominent Paint Rust Primer', lump:false},
+      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ] },
   { key:'roof_chromadek', label:'Roof Surfaces - Chromodek', lines:[
-      {desc:'Clean & degrease Chromadek roof; prime as required', product:'', lump:false},
-      {desc:'Apply 2 coats {product}', product:'Roof Paint', lump:false} ] },
+      {desc:'High pressure wash & degrease complete roof surface - {product}', product:'Prominent Paint Etch Cleaner', lump:false},
+      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ] },
   { key:'roof_tiles', label:'Roof Surfaces - Tiles', lines:[
-      {desc:'High pressure clean tiles & treat; apply bonding / primer coat', product:'', lump:false},
-      {desc:'Apply 2 coats {product} roof coating', product:'Roof Paint', lump:false} ] },
+      {desc:'High pressure wash & treat complete tiled roof surface', product:'', lump:false},
+      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ] },
   { key:'gutters', label:'Gutters & Down Pipes', lines:[
-      {desc:'Clean, prepare & prime gutters & downpipes', product:'', lump:false},
-      {desc:'Apply 2 coats {product}', product:'Gloss Enamel', lump:false} ] },
-  { key:'additional', label:'Additional', lines:[ {desc:'Additional works — as described', product:'', lump:true} ] },
+      {desc:'Apply 1 x coat on complete gutter: {product}', product:'Aquagard Rust & Etch Cleaner (spray)', lump:false},
+      {desc:'Apply 1 x coat on complete gutter - {product}', product:'Aquagard Bitumen Primer', lump:false},
+      {desc:'Apply 2 x coats on complete gutter - {product}', product:'Aquagard Bitumen Emulsion Waterproofing Compound', lump:false},
+      {desc:'Apply 2 x coats on complete gutter - {product} (final coat protection)', product:'Aquagard Bitumen Aluminium', lump:false} ] },
+  { key:'additional', label:'Additional', lines:[ {desc:'Additional works - as described', product:'', lump:true} ] },
   { key:'travel', label:'Traveling & Logistics', lines:[ {desc:'Traveling & logistics', product:'', lump:true} ] },
   { key:'scaffold', label:'Scaffolding rental & erection & dismantle', lines:[ {desc:'Scaffolding rental, erection & dismantle', product:'', lump:true} ] },
   { key:'cherry', label:'Cherry Picker Rental, delivery & collection', lines:[
       {desc:'Cherry picker rental', product:'', lump:true},
       {desc:'Cherry picker delivery & collection', product:'', lump:true} ] },
-  { key:'roadmark', label:'Roadmarking & Parking bays', lines:[ {desc:'Road marking & parking bays', product:'', lump:true} ] },
+  { key:'roadmark', label:'Roadmarking & Parking bays', lines:[
+      {desc:'Parking bays & disabled parking bays', product:'', lump:true},
+      {desc:'100mm wide white lines', product:'', lump:true},
+      {desc:'Directional arrows, paraplegic symbols & stop signs', product:'', lump:true} ] },
   { key:'boundary', label:'Boundary Walls', lines:[
-      {desc:'High pressure wash & repair boundary walls; prime where needed', product:'Plaster Primer', lump:false},
-      {desc:'Apply 2 coats {product}', product:'Prominent Select Sheen', lump:false} ] },
+      {desc:'High Pressure Wash & replaster affected areas to match existing plaster finish; apply 1 x coat {product} where needed', product:'Plaster Primer', lump:false},
+      {desc:'Application of 2 x coats {product} (colour of choice)', product:'Prominent Paint Select Sheen', lump:false} ] },
   { key:'windows', label:'Exterior Window Frames', lines:[
-      {desc:'Prepare & prime window frames', product:'', lump:false},
-      {desc:'Apply 2 coats {product}', product:'Gloss Enamel', lump:false} ] },
+      {desc:'Insert acrylic silicon / sealant around all window frames', product:'', lump:false},
+      {desc:'Apply 2 x coats {product} to window frames (colour of choice)', product:'Prominent Paint Premium Gloss Enamel', lump:false} ] },
   { key:'own', label:'Ad own description', lines:[ {desc:'', product:'', lump:false} ] },
 ];
 function quoteAreaByKey(k){ return QUOTE_AREAS.find(function(a){ return a.key===k; }); }
