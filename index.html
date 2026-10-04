@@ -7722,6 +7722,29 @@ const QUOTE_AREAS = [
 function quoteAreaByKey(k){ return QUOTE_AREAS.find(function(a){ return a.key===k; }); }
 // Merge the product into the fixed description for display/PDF.
 function qeLineText(ln){ const t=String(ln.desc||''); return ln.product ? t.replace('{product}', ln.product) : t.replace('{product}','').replace(/\s{2,}/g,' ').trim(); }
+// Standard blocks that appear on every quote — editable per quote. One bullet per line.
+const QUOTE_SCOPE_DEFAULT = [
+  'Chip open cracks bigger than 3mm and chip off badly damaged / previously plastered areas',
+  'Replaster affected areas with a cement mixture containing: plaster sand, cement, Plasterkey (adhesion) & cement additive (waterproofing)',
+  'Float newly plastered areas to match the current plastered finish',
+  'Fill all open gaps between cement / cladding stones on parapet walls for waterproofing',
+  'Apply Prominent Paint Fibreseal to hairline cracks & horizontal areas for waterproofing',
+  'Apply Prominent Paint Dampcure to all bare plastered & newly plastered areas',
+  'Seal current expansion joints with polyurethane sealer',
+  'Rinse all surfaces with a high pressure washer & clean water before painting'
+].join('\n');
+const QUOTE_TERMS_DEFAULT = [
+  'Prices include all material, labour & paint required',
+  'Prices include all transport & logistical expenses',
+  'Prices include all working-at-heights equipment & machinery',
+  'Prices include refuse skip rental for the removal of all building rubble & refuse',
+  '7 year warranty certificate from Prominent Paint',
+  'A Health & Safety file will be available beforehand and on site',
+  'Weekly on-site quality assurance inspections by an independent third party',
+  'Prices exclude 15% VAT',
+  '50% deposit payable before commencement',
+  'Prices valid for 30 days from the date of this quotation'
+].join('\n');
 
 let QE = null;   // active quote-editor draft { areas:[], photos:[], discount:0 }
 function openQuoteNew(){ renderQuoteEditor(null); openModal('modalSiteDetail'); }
@@ -7784,6 +7807,12 @@ function renderQuoteEditor(editId){
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="q_pv_vat">R 0.00</span></div>
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="q_pv_tot">R 0.00</span></div>
     </div>
+    ${sec('Scope of works & terms (edit if needed)')}
+    <div style="margin-bottom:10px"><label style="${lbl}">Scope of works — detailed method (one line each)</label>
+      <textarea class="f-input" id="q_scope" rows="8" style="margin:0;font-size:12.5px">${esc(existing && existing.scope!=null ? existing.scope : QUOTE_SCOPE_DEFAULT)}</textarea></div>
+    <div style="margin-bottom:14px"><label style="${lbl}">Terms &amp; inclusions (one line each)</label>
+      <textarea class="f-input" id="q_terms" rows="8" style="margin:0;font-size:12.5px">${esc(existing && existing.terms!=null ? existing.terms : QUOTE_TERMS_DEFAULT)}</textarea></div>
+
     <button class="cta-btn" onclick="saveQuote(${existing?`'${existing.id}'`:'null'})">${existing?'Save changes &amp; open PDF':'Save quotation &amp; open PDF'}</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
   $('siteDetailContent').innerHTML=h;
@@ -7899,6 +7928,7 @@ async function saveQuote(editId){
   const fields={ number_str:numStr, number:numN,
     attention:attention, re:(($('q_re')||{}).value||'').trim(), from_name:g('q_from')||'Ferdi Engelbrecht',
     title:title, group_key:gk, notes:(($('q_notes')||{}).value||'').trim(),
+    scope:(($('q_scope')||{}).value||''), terms:(($('q_terms')||{}).value||''),
     photos:(QE.photos||[]).slice(), site_photo:(QE.photos&&QE.photos[0])||'',
     areas: JSON.parse(JSON.stringify(QE.areas||[])),
     client_name:client, project_ref:title, client_group:'',
@@ -8049,7 +8079,15 @@ function quoteInnerHtml(q){
     <h3 style="text-align:center;margin:18px 0 10px">QUOTATION</h3>
     ${cover}
     ${quotePricingTableHtml(q)}
-    <div style="margin-top:18px;font-size:10.5pt;color:#333">This quotation is valid for 30 days from the date above. Prices include materials &amp; labour as described. E&amp;OE.</div>
+    ${(function(){
+      const bul=function(t){ return String(t==null?'':t).split('\n').map(function(x){return x.trim();}).filter(Boolean).map(function(x){return '<div style="display:flex;margin:0 0 4px"><div style="width:16px;flex:0 0 16px">&bull;</div><div style="flex:1">'+e(x)+'</div></div>';}).join(''); };
+      const scope = q.scope!=null ? q.scope : QUOTE_SCOPE_DEFAULT;
+      const terms = q.terms!=null ? q.terms : QUOTE_TERMS_DEFAULT;
+      let o='';
+      if(String(scope).trim()) o+='<div style="margin-top:22px"><div style="font-weight:bold;text-decoration:underline;margin-bottom:7px;font-size:11pt">SCOPE OF WORKS</div><div style="font-size:10pt;line-height:1.45">'+bul(scope)+'</div></div>';
+      if(String(terms).trim()) o+='<div style="margin-top:18px"><div style="font-weight:bold;text-decoration:underline;margin-bottom:7px;font-size:11pt">TERMS &amp; CONDITIONS</div><div style="font-size:10pt;line-height:1.45">'+bul(terms)+'</div></div>';
+      return o;
+    })()}
     <div style="margin-top:16px"><u><b>BANKING DETAILS:</b></u><br/>
       <b>POWER ROCK.paint</b><br/>FNB WATERFALL MALL<br/>CHEQUE ACCOUNT: 62486424072<br/>BRANCH: 258055</div>
   </div>`;
