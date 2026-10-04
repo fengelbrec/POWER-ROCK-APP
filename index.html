@@ -4815,15 +4815,50 @@ function openBankStatement(){
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Upload bank statement</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Export your statement as <b>CSV</b> from online banking, then choose the file here. We list the payments that aren't already in the app so you can tag each one (petrol, wages, tollgates, loan, stationery…). VAT is only claimed on items that carry it.</div>
     <label class="cta-btn ghost" style="height:46px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 0 6px">📄 Choose CSV statement<input id="bankcsv" type="file" accept=".csv,text/csv,text/plain" style="display:none" onchange="handleBankCsv(this)"/></label>
+    <div id="bankUpNote" style="margin:8px 0"></div>
     <div id="bankReview"></div>
+    <div id="bankStmts">${bankStatementsListHtml()}</div>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
   openModal('modalSiteDetail');
 }
+let BANK_FILE=null, BANK_FILENAME='';
 async function handleBankCsv(input){
   const f=input.files&&input.files[0]; if(!f) return;
+  BANK_FILE=f; BANK_FILENAME=f.name||'statement.csv';
   let text=''; try{ text=await f.text(); }catch(e){ showSaveToast('Could not read the file'); return; }
   BANK_ROWS = parseBankCsv(text);
   renderBankReview();
+  storeBankStatement(f);   // save the file to records + show the success notice
+}
+// Keep every uploaded statement: upload the CSV to storage and log it in the holder,
+// so Ferdi has a running list of all statements he's loaded.
+async function storeBankStatement(f){
+  const note=$('bankUpNote');
+  const outCnt=BANK_ROWS.filter(function(r){return r.out;}).length;
+  if(note) note.innerHTML=`<div style="background:#FFF7E6;border:1px solid #E7D9B0;border-radius:10px;padding:10px 12px;font-size:12px;color:#8A6D1A">Saving <b>${esc(BANK_FILENAME)}</b> to your records…</div>`;
+  let url='';
+  try{ const path='statements/'+Date.now()+'_'+BANK_FILENAME.replace(/[^a-zA-Z0-9._-]/g,'_'); url=await sbUploadFile(path, f); }catch(e){}
+  let holder=(OWNER.sites||[]).find(function(s){ return s.id===EXPENSE_STORE_ID || (s.details&&s.details.is_expense_store); });
+  const details=holder?Object.assign({},holder.details||{}):{ is_general:true, is_expense_store:true };
+  if(!Array.isArray(details.statements)) details.statements=[];
+  details.statements.unshift({ id:uid(), name:BANK_FILENAME, url:url||'', uploaded_at:invToday(), tx:BANK_ROWS.length, out:outCnt });
+  const row={ id:EXPENSE_STORE_ID, name:'Expenses (bank)', client:'', team_leader:'', status:'active', quote_value:0, details:details };
+  const ok=await sbUpsert('sites', row);
+  if(ok){ if(holder) holder.details=details; else if(OWNER.sites){ OWNER.sites.push(typeof normSiteEnd==='function'?normSiteEnd(row):row); } }
+  if(note) note.innerHTML = ok
+    ? `<div style="background:#E8F3EC;border:1px solid #BFE0CB;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#2F6B47"><b>✓ ${esc(BANK_FILENAME)} uploaded successfully</b><br><span style="color:#4E8768">${BANK_ROWS.length} transactions read · ${outCnt} payment${outCnt!==1?'s':''} to tag below${url?'':' · (saved, file link needs signal)'}</span></div>`
+    : `<div style="background:#FBEAE8;border:1px solid #E6BDB7;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#B2342A"><b>${esc(BANK_FILENAME)} read, but couldn't save to records</b><br><span>Check your signal and try again — you can still tag &amp; save the expenses below.</span></div>`;
+  const sc=$('bankStmts'); if(sc) sc.innerHTML=bankStatementsListHtml();
+}
+function bankStatementsListHtml(){
+  const holder=(typeof OWNER!=='undefined'&&OWNER.sites||[]).find(function(s){ return s.id===EXPENSE_STORE_ID || (s.details&&s.details.is_expense_store); });
+  const list=(holder&&holder.details&&holder.details.statements)||[];
+  if(!list.length) return '';
+  let h=`<div class="section-lbl" style="margin-top:16px">Uploaded statements — ${list.length}</div><div class="ledger-card" style="padding:4px 14px">`;
+  list.forEach(function(st){
+    h+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12px"><span style="min-width:0;word-break:break-word">📄 ${esc(st.name||'statement.csv')}<span style="color:#A39E8C"> · ${st.uploaded_at?fd(st.uploaded_at):''} · ${st.out||0} payments</span></span>${st.url?`<a href="${esc(st.url)}" target="_blank" rel="noopener" style="color:#B2342A;font-weight:700;white-space:nowrap;text-decoration:none">Open ▸</a>`:''}</div>`;
+  });
+  h+=`</div>`; return h;
 }
 function normBankDate(s){
   s=String(s||'').trim(); if(!s) return ''; let m;
@@ -4832,40 +4867,50 @@ function normBankDate(s){
   if((m=s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/))){ const mo={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12}[m[2].slice(0,3).toLowerCase()]; if(mo) return m[3]+'-'+String(mo).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
   return s;
 }
+// Reads normal CSVs (Date/Amount/Description or Debit/Credit columns) AND the FNB
+// business "Transaction History" CSV, which has a record-type number in column 1,
+// single-quoted fields, a header buried mid-file, and dates with no year ('01 Sep').
 function parseBankCsv(text){
-  const rows=[]; const lines=String(text).split(/\r?\n/).filter(function(l){return l.trim();}); if(!lines.length) return rows;
-  const delim=(lines[0].split(';').length>lines[0].split(',').length)?';':',';
-  const cells=function(l){ const o=[]; let cur='',q=false; for(let i=0;i<l.length;i++){ const c=l[i]; if(c==='"') q=!q; else if(c===delim&&!q){ o.push(cur); cur=''; } else cur+=c; } o.push(cur); return o.map(function(x){return x.trim().replace(/^"|"$/g,'');}); };
+  const rows=[]; const raw=String(text).split(/\r?\n/).filter(function(l){return l.trim();}); if(!raw.length) return rows;
+  const delim=(raw[0].split(';').length>raw[0].split(',').length)?';':',';
+  const cells=function(l){ const o=[]; let cur='',q=false,qc=''; for(let i=0;i<l.length;i++){ const c=l[i]; if(c==='"'||c==="'"){ if(!q){q=true;qc=c;} else if(c===qc){q=false;} else cur+=c; } else if(c===delim&&!q){ o.push(cur); cur=''; } else cur+=c; } o.push(cur); return o.map(function(x){return x.trim().replace(/^['"]|['"]$/g,'');}); };
   let hi=-1, header=null;
-  for(let i=0;i<Math.min(lines.length,10);i++){ const low=lines[i].toLowerCase(); if(low.indexOf('date')>=0 && (low.indexOf('amount')>=0||low.indexOf('description')>=0||low.indexOf('debit')>=0||low.indexOf('detail')>=0)){ hi=i; header=cells(lines[i]).map(function(x){return x.toLowerCase();}); break; } }
+  for(let i=0;i<raw.length;i++){ const low=raw[i].toLowerCase(); if(low.indexOf('date')>=0 && (low.indexOf('amount')>=0||low.indexOf('debit')>=0||((low.indexOf('description')>=0||low.indexOf('detail')>=0||low.indexOf('narrative')>=0)&&low.indexOf('balance')>=0))){ hi=i; header=cells(raw[i]).map(function(x){return x.toLowerCase();}); break; } }
   const find=function(keys){ if(!header) return -1; for(let i=0;i<header.length;i++){ for(let j=0;j<keys.length;j++){ if(header[i].indexOf(keys[j])>=0) return i; } } return -1; };
   const parseAmt=function(s){ if(s==null) return NaN; s=String(s).replace(/[R\s,]/g,''); let neg=false; if(/^\(.*\)$/.test(s)){ neg=true; s=s.replace(/[()]/g,''); } const v=parseFloat(s); return isNaN(v)?NaN:(neg?-v:v); };
-  let dI=-1,desI=-1,amtI=-1,debI=-1,creI=-1;
-  if(header){ dI=find(['date']); desI=find(['description','detail','reference','narrative']); amtI=find(['amount']); debI=find(['debit']); creI=find(['credit']); }
+  let dI=-1,desI=-1,des2I=-1,refI=-1,amtI=-1,debI=-1,creI=-1,recCol=-1,recVal='';
+  if(header){ dI=find(['date']); desI=find(['description1','description','detail','narrative']); des2I=find(['description2']); refI=find(['reference']); amtI=find(['amount']); debI=find(['debit']); creI=find(['credit']);
+    const hc=cells(raw[hi]); if(/^\d+$/.test(hc[0])){ recCol=0; recVal=hc[0]; } }   // FNB record-type prefix
+  let stmtYear=''; { const ym=text.match(/20\d{2}/); if(ym) stmtYear=ym[0]; }        // year for dates like '01 Sep'
   const start=hi>=0?hi+1:0;
-  for(let i=start;i<lines.length;i++){
-    const c=cells(lines[i]); if(c.length<2) continue;
+  for(let i=start;i<raw.length;i++){
+    const c=cells(raw[i]); if(c.length<2) continue;
+    if(recCol>=0 && c[recCol]!==recVal) continue;   // only true transaction rows
     let date='',desc='',amount=NaN;
     if(header){
-      date=dI>=0?c[dI]:''; desc=desI>=0?c[desI]:'';
+      date=dI>=0?c[dI]:'';
+      const parts=[]; if(desI>=0&&c[desI])parts.push(c[desI]); if(des2I>=0&&c[des2I])parts.push(c[des2I]); if(refI>=0&&c[refI])parts.push(c[refI]);
+      desc=parts.join(' ').trim();
       if(amtI>=0) amount=parseAmt(c[amtI]);
       else { const dv=debI>=0?parseAmt(c[debI]):NaN; const cv=creI>=0?parseAmt(c[creI]):NaN; if(!isNaN(dv)&&dv!==0) amount=-Math.abs(dv); else if(!isNaN(cv)&&cv!==0) amount=Math.abs(cv); }
     } else { date=c[0]||''; amount=parseAmt(c[1]); desc=c.slice(2).join(' ')||c[1]||''; }
     if(isNaN(amount)) continue;
-    rows.push({ date:normBankDate(date), desc:desc, amount:amount, out:amount<0 });
+    let nd=normBankDate(date);
+    if(nd===date && stmtYear && !/\d{4}/.test(nd)) nd=normBankDate(date+' '+stmtYear);
+    rows.push({ date:nd, desc:desc, amount:amount, out:amount<0 });
   }
   return rows;
 }
 function bankGuessCat(desc){ const d=String(desc||'').toLowerCase();
-  if(/fuel|petrol|diesel|engen|shell|bp |sasol|total |caltex|garage/.test(d)) return 'petrol';
+  if(/fuel|petrol|diesel|engen|shell|\bbp\b|sasol|total |caltex|garage/.test(d)) return 'petrol';
   if(/toll|sanral|e-toll|bakwena|plaza/.test(d)) return 'tolls';
   if(/salar|wage|loon|payroll/.test(d)) return 'wages';
-  if(/bank charge|service fee|admin fee|monthly fee|cash dep fee/.test(d)) return 'bank';
+  if(/bank charge|service fee|admin fee|monthly fee|cash dep|handling fee|accrued|debit rate/.test(d)) return 'bank';
   if(/insurance|santam|outsurance|hollard|miway/.test(d)) return 'insurance';
   if(/telkom|vodacom|\bmtn\b|cell c|airtime|\bdata\b|fibre|internet|rain /.test(d)) return 'telecoms';
   if(/\brent\b|huur/.test(d)) return 'rent';
   if(/stationer|print/.test(d)) return 'stationery';
-  if(/accounting|ascor|accountant/.test(d)) return 'accounting';
+  if(/accounting|ascor|accountant|consult/.test(d)) return 'accounting';
   if(/ferdi|loan|lening/.test(d)) return 'loan';
   return '';
 }
@@ -4978,6 +5023,7 @@ async function renderVAT(){
       });
       h += `</div>`;
     }
+    h += bankStatementsListHtml();
   } else {
     h += `<div class="ledger-card" style="padding:18px;margin-bottom:12px;font-size:13px;color:#5C5748;line-height:1.7"><strong>Not registered for VAT</strong> — no VAT return to file. You don't charge VAT on invoices and can't claim input VAT.</div>`;
   }
