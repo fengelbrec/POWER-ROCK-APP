@@ -4755,23 +4755,85 @@ function savePayment(){
 // ───────────────────────────────────────────
 // VAT & SARS
 // ───────────────────────────────────────────
-function renderVAT(){
+function saveVatSettings(){
+  if(!DATA.company) DATA.company={};
+  DATA.company.vatRegistered = (($('set_vatreg')||{}).value==='yes');
+  DATA.company.vatNr = (($('set_vatnr')||{}).value||'').trim();
+  saveData('VAT settings saved');
+}
+const VAT_PERIODS=[['01','02','Jan – Feb'],['03','04','Mar – Apr'],['05','06','May – Jun'],['07','08','Jul – Aug'],['09','10','Sep – Oct'],['11','12','Nov – Dec']];
+let VAT_YEAR = new Date().getFullYear();
+let VAT_PERIOD = Math.floor(new Date().getMonth()/2);   // 0..5 (current 2-month period)
+function setVatYear(y){ VAT_YEAR=parseInt(y,10)||VAT_YEAR; renderVAT(); }
+function setVatPeriod(p){ VAT_PERIOD=parseInt(p,10)||0; renderVAT(); }
+// VAT201 report built from REAL invoices: output VAT from sales invoices, input VAT from supplier invoices.
+// Invoice basis (Power Rock is >R2.5m) — VAT counts when invoiced, not when paid.
+async function renderVAT(){
+  $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">VAT &amp; SARS</div><div style="text-align:center;padding:44px;color:#8A8470">Loading VAT figures…</div>`;
+  if(!OWNER.loaded) await loadOwnerFin();
+  let sup=[]; try{ sup=await sbGetRows('invoice_inbox','status=eq.confirmed&order=invoice_date.desc'); }catch(e){}
+  const supList=Array.isArray(sup)?sup:[];
+  const sales=[]; (OWNER.sites||[]).forEach(function(s){ ((s.details&&s.details.invoices)||[]).forEach(function(iv){ sales.push(iv); }); });
+  const vatReg = !(DATA.company && DATA.company.vatRegistered===false);
+  const vatNr = (DATA.company&&DATA.company.vatNr)||'';
+  const yr=VAT_YEAR, pi=Math.max(0,Math.min(5,VAT_PERIOD)), pm=VAT_PERIODS[pi];
+  const inPer=function(dstr){ if(!dstr) return false; const d=String(dstr).slice(0,7); return d===yr+'-'+pm[0] || d===yr+'-'+pm[1]; };
+  // sales / output VAT
+  let outVat=0, outEx=0; const salesIn=[];
+  sales.forEach(function(iv){ if(inPer(iv.date)){ outVat+=parseFloat(iv.vat)|| ((parseFloat(iv.total_incl)||0)*15/115); outEx+=parseFloat(iv.amount_ex)||((parseFloat(iv.total_incl)||0)/1.15); salesIn.push(iv); } });
+  // purchases / input VAT
+  let inVat=0, inEx=0; const purIn=[];
+  supList.forEach(function(s){ if(inPer(s.invoice_date||s.processed_at)){ const t=parseFloat(s.total)||0; inVat+=t*15/115; inEx+=t/1.15; purIn.push(s); } });
+  outVat=Math.round(outVat*100)/100; inVat=Math.round(inVat*100)/100; const net=Math.round((outVat-inVat)*100)/100;
+  // 12-month rolling turnover for the R2.3m threshold watch
+  const mm = (typeof monthlyTurnoverMap==='function') ? monthlyTurnoverMap() : {};
+  const now=new Date(); let turn12=0;
+  for(let k=0;k<12;k++){ const d=new Date(now.getFullYear(),now.getMonth()-k,1); const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); turn12+=parseFloat(mm[key])||0; }
+  const THRESH=2300000;
+
+  // year options
+  const years={}; sales.forEach(function(iv){ if(iv.date) years[String(iv.date).slice(0,4)]=1; }); years[String(yr)]=1;
+  const yrOpts=Object.keys(years).sort().reverse().map(function(y){ return `<option value="${y}"${y==String(yr)?' selected':''}>${y}</option>`; }).join('');
+  const perOpts=VAT_PERIODS.map(function(p,i){ return `<option value="${i}"${i===pi?' selected':''}>${p[2]}</option>`; }).join('');
+
   let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">VAT &amp; SARS</div>`;
+  h += `<div class="snap-meta" style="margin-bottom:12px">${vatReg?('Registered for VAT'+(vatNr?' · '+esc(vatNr):'')+' · invoice basis (VAT counts when invoiced).'):('Not VAT registered.')} <span style="color:#A39E8C">Set this in Settings.</span></div>`;
 
-  const outputVAT = DATA.payments.filter(p=>p.paid).reduce((a,p)=>a + (parseFloat(p.amount)||0)*0.15/1.15, 0);
-  const inputVAT = DATA.sites.reduce((a,s)=>a + siteMaterialActual(s)*0.15/1.15, 0);
-  const payable = outputVAT - inputVAT;
+  if(vatReg){
+    h += `<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <select class="f-input" style="flex:1;min-width:120px;margin:0;height:44px" onchange="setVatPeriod(this.value)">${perOpts}</select>
+      <select class="f-input" style="flex:0 0 auto;width:110px;margin:0;height:44px" onchange="setVatYear(this.value)">${yrOpts}</select>
+    </div>`;
+    h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px">
+      <div class="ledger-card" style="padding:15px 16px"><div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px">OUTPUT VAT (on sales)</div><div class="disp" style="font-size:19px;font-weight:800;margin-top:4px">${R(outVat)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">${salesIn.length} invoice${salesIn.length!==1?'s':''} · ${R(outEx)} ex-VAT</div></div>
+      <div class="ledger-card" style="padding:15px 16px"><div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px">INPUT VAT (on purchases)</div><div class="disp" style="font-size:19px;font-weight:800;margin-top:4px">${R(inVat)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">${purIn.length} supplier invoice${purIn.length!==1?'s':''} · ${R(inEx)} ex-VAT</div></div>
+    </div>`;
+    const payable = net>=0;
+    h += `<div class="headline-num" style="background:${payable?'#B2342A':'#3F5A4C'};border-top-color:#1A1A1A">
+      <div class="headline-label" style="color:rgba(255,255,255,0.75)">${payable?'VAT PAYABLE TO SARS':'VAT REFUND DUE FROM SARS'} · ${pm[2]} ${yr}</div>
+      <div class="headline-figure">${R(Math.abs(net))}</div>
+    </div>`;
+    h += `<div class="section-lbl">VAT201 summary — ${pm[2]} ${yr}</div>
+      <div class="ledger-card" style="padding:4px 16px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12.5px"><span>Sales — output VAT (15%)</span><span class="disp" style="font-weight:800">${R(outVat)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EFECE3;font-size:12.5px"><span>Purchases — input VAT (15%)</span><span class="disp" style="font-weight:800">− ${R(inVat)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:11px 0 6px;font-size:14px;font-weight:800"><span>${payable?'Net VAT payable':'Net VAT refund'}</span><span class="disp" style="color:${payable?'#B2342A':'#3F5A4C'}">${R(Math.abs(net))}</span></div>
+      </div>`;
+  } else {
+    h += `<div class="ledger-card" style="padding:18px;margin-bottom:12px;font-size:13px;color:#5C5748;line-height:1.7"><strong>Not registered for VAT</strong> — no VAT return to file. You don't charge VAT on invoices and can't claim input VAT.</div>`;
+  }
 
-  h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px">
-    <div class="ledger-card" style="padding:16px"><div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:5px">OUTPUT VAT</div><div class="disp" style="font-size:18px;font-weight:800">${R(outputVAT)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">From paid invoices (15%)</div></div>
-    <div class="ledger-card" style="padding:16px"><div style="font-size:11px;color:#8A8470;font-weight:600;margin-bottom:5px">INPUT VAT</div><div class="disp" style="font-size:18px;font-weight:800">${R(inputVAT)}</div><div style="font-size:10px;color:#A39E8C;margin-top:3px">Paid on materials</div></div>
-  </div>
-  <div class="headline-num" style="background:#B2342A;border-top-color:#1A1A1A">
-    <div class="headline-label" style="color:rgba(255,255,255,0.7)">PAYABLE TO SARS THIS MONTH</div>
-    <div class="headline-figure">${R(payable)}</div>
-  </div>`;
+  // threshold watch (both cases)
+  const over=turn12>=THRESH, near=turn12>=THRESH*0.85;
+  const col=over?'#B2342A':(near?'#C08A00':'#3F5A4C');
+  h += `<div class="section-lbl">Turnover watch — R2.3m registration threshold</div>
+    <div class="ledger-card" style="padding:16px 18px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:12px;color:#8A8470;font-weight:700">Last 12 months' turnover</span><span class="disp" style="font-weight:800;color:${col}">${R(turn12)}</span></div>
+      <div style="height:9px;background:#EFECE3;border-radius:5px;margin:10px 0 8px;overflow:hidden"><div style="height:100%;width:${Math.min(100,turn12/THRESH*100).toFixed(0)}%;background:${col}"></div></div>
+      <div style="font-size:11.5px;color:#5C5748;line-height:1.6">${over?'Above R2.3m — VAT registration is compulsory (Power Rock stays registered).':(near?'Approaching R2.3m — register for VAT once you pass it.':'Below R2.3m — VAT registration is not compulsory (voluntary from R120,000).')}</div>
+    </div>`;
   h += `<div class="section-lbl">Note</div>
-  <div class="ledger-card" style="padding:16px 18px;font-size:12px;line-height:1.7;color:#5C5748">Output VAT is calculated on paid invoices only (15% of incl-VAT amount). Input VAT is estimated from material costs logged. Once Supabase and real invoice capture is wired in, this becomes exact and automatic.</div>`;
+    <div class="ledger-card" style="padding:16px 18px;font-size:11.5px;line-height:1.7;color:#5C5748">Figures are built from your real sales invoices (output VAT) and confirmed supplier invoices (input VAT, estimated at 15% of the incl-VAT total) for the selected 2-month period, on the invoice basis. This is a working summary to help you complete your VAT201 — confirm the final numbers and your VAT category with your accountant before filing. SARS is moving to digital VAT / e-invoicing (~2028); because the app already holds invoices as structured data, it's positioned for that.</div>`;
   $('pageBody').innerHTML = h;
 }
 
@@ -5281,6 +5343,20 @@ function renderSettings(){
   <strong>${DATA.company.name}</strong><br/>
   Founded ${DATA.company.founded} · Reg ${DATA.company.regNr} · VAT ${DATA.company.vatNr}<br/>
   ${DATA.company.address}<br/>${DATA.company.phone} · ${DATA.company.email}<br/>${DATA.company.bank}
+  </div>`;
+
+  const vatReg = !(DATA.company && DATA.company.vatRegistered===false);
+  h += `<div class="section-lbl">VAT &amp; SARS settings</div>
+  <div class="ledger-card" style="padding:16px 18px">
+    <label class="f-label">Is this business registered for VAT?</label>
+    <select class="f-input" id="set_vatreg" style="margin-bottom:10px">
+      <option value="yes" ${vatReg?'selected':''}>Yes — registered for VAT (charges &amp; claims VAT)</option>
+      <option value="no" ${!vatReg?'selected':''}>No — not VAT registered</option>
+    </select>
+    <label class="f-label">VAT number</label>
+    <input class="f-input" id="set_vatnr" style="margin-bottom:10px" value="${esc((DATA.company&&DATA.company.vatNr)||'')}" placeholder="4xxxxxxxxx"/>
+    <div style="font-size:11px;color:#8A8470;margin-bottom:12px;line-height:1.6">From 1 Apr 2026 a business must register once its 12-month turnover passes <strong>R2.3 million</strong> (was R1m). Voluntary registration from R120,000. Power Rock is above R2.3m, so it stays registered. Confirm your VAT category/period with your accountant.</div>
+    <button class="cta-btn ghost" onclick="saveVatSettings()">Save VAT settings</button>
   </div>`;
 
   h += `<div class="section-lbl">Payment split percentages</div>
