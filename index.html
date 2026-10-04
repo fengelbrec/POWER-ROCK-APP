@@ -7610,7 +7610,7 @@ async function renderQuotations(){
     $('pageBody').innerHTML = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Quotations</div><div style="text-align:center;padding:44px;color:#8A8470">Loading…</div>`;
     await loadOwnerFin();
   }
-  const rows=quotationRows().sort(function(a,b){ const da=a.date||'', db=b.date||''; if(da!==db) return da<db?1:-1; return (b.amount_ex||0)-(a.amount_ex||0); });
+  const rows=quotationRows().sort(function(a,b){ const pa=(a.project||'').toLowerCase(), pb=(b.project||'').toLowerCase(); if(pa!==pb) return pa<pb?-1:1; return (b.date||'')<(a.date||'')?-1:1; });   // alphabetical by project
   const yr=String(QUOTE_YEAR);
   const MONTHS_L=['January','February','March','April','May','June','July','August','September','October','November','December'];
   let monthOpts=`<option value="all"${QUOTE_MONTH==='all'?' selected':''}>All months</option>`;
@@ -7668,23 +7668,79 @@ function quoteApplyFilter(){
 }
 
 // ── Quote builder (editor) ──
-let QUOTE_PHOTO=null;   // pending site-photo data-URI in the editor
+// ── QUOTE AREA TEMPLATES — the fixed description lines per area type. {product} is the bit
+// Ferdi edits per quote. Wording is PLACEHOLDER for now; we finalise each together. ──
+const QUOTE_AREAS = [
+  { key:'int_walls', label:'Interior Walls', lines:[
+      {desc:'Prepare interior walls — fill cracks, sand & spot-prime where needed', product:'', lump:false},
+      {desc:'Apply 2 coats {product} to interior walls', product:'Plascon PVA', lump:false} ] },
+  { key:'int_ceilings', label:'Interior Ceilings', lines:[
+      {desc:'Prepare ceilings & spot-prime stains', product:'', lump:false},
+      {desc:'Apply 2 coats {product} to ceilings', product:'Plascon PVA', lump:false} ] },
+  { key:'ext_plaster', label:'Exterior Plastered Surfaces', lines:[
+      {desc:'High Pressure Wash all plastered walls & repair damaged plaster to match existing; apply 1 coat {product} where needed', product:'Plaster Primer', lump:false},
+      {desc:'Preparation & painting of plastered surfaces x 2 coats {product}', product:'Prominent Select Sheen', lump:false} ] },
+  { key:'ext_steel', label:'Exterior Steel Surfaces', lines:[
+      {desc:'Clean / degrease all steel surfaces & patch prime affected areas with {product}', product:'QD Primer', lump:false},
+      {desc:'Recoat complete — {product}', product:'Gloss Enamel', lump:false} ] },
+  { key:'ext_ceilings', label:'Exterior Ceiling Surfaces', lines:[
+      {desc:'Prepare exterior ceilings / soffits & spot-prime', product:'', lump:false},
+      {desc:'Apply 2 coats {product}', product:'Prominent Select Sheen', lump:false} ] },
+  { key:'roof_corr', label:'Roof Surfaces - Corrugated', lines:[
+      {desc:'High pressure clean & treat rust; prime bare metal with {product}', product:'Galvanised Iron Primer', lump:false},
+      {desc:'Apply 2 coats {product} roof paint', product:'Roof Paint', lump:false} ] },
+  { key:'roof_chromadek', label:'Roof Surfaces - Chromodek', lines:[
+      {desc:'Clean & degrease Chromadek roof; prime as required', product:'', lump:false},
+      {desc:'Apply 2 coats {product}', product:'Roof Paint', lump:false} ] },
+  { key:'roof_tiles', label:'Roof Surfaces - Tiles', lines:[
+      {desc:'High pressure clean tiles & treat; apply bonding / primer coat', product:'', lump:false},
+      {desc:'Apply 2 coats {product} roof coating', product:'Roof Paint', lump:false} ] },
+  { key:'gutters', label:'Gutters & Down Pipes', lines:[
+      {desc:'Clean, prepare & prime gutters & downpipes', product:'', lump:false},
+      {desc:'Apply 2 coats {product}', product:'Gloss Enamel', lump:false} ] },
+  { key:'additional', label:'Additional', lines:[ {desc:'Additional works — as described', product:'', lump:true} ] },
+  { key:'travel', label:'Traveling & Logistics', lines:[ {desc:'Traveling & logistics', product:'', lump:true} ] },
+  { key:'scaffold', label:'Scaffolding rental & erection & dismantle', lines:[ {desc:'Scaffolding rental, erection & dismantle', product:'', lump:true} ] },
+  { key:'cherry', label:'Cherry Picker Rental, delivery & collection', lines:[
+      {desc:'Cherry picker rental', product:'', lump:true},
+      {desc:'Cherry picker delivery & collection', product:'', lump:true} ] },
+  { key:'roadmark', label:'Roadmarking & Parking bays', lines:[ {desc:'Road marking & parking bays', product:'', lump:true} ] },
+  { key:'boundary', label:'Boundary Walls', lines:[
+      {desc:'High pressure wash & repair boundary walls; prime where needed', product:'Plaster Primer', lump:false},
+      {desc:'Apply 2 coats {product}', product:'Prominent Select Sheen', lump:false} ] },
+  { key:'windows', label:'Exterior Window Frames', lines:[
+      {desc:'Prepare & prime window frames', product:'', lump:false},
+      {desc:'Apply 2 coats {product}', product:'Gloss Enamel', lump:false} ] },
+  { key:'own', label:'Ad own description', lines:[ {desc:'', product:'', lump:false} ] },
+];
+function quoteAreaByKey(k){ return QUOTE_AREAS.find(function(a){ return a.key===k; }); }
+// Merge the product into the fixed description for display/PDF.
+function qeLineText(ln){ const t=String(ln.desc||''); return ln.product ? t.replace('{product}', ln.product) : t.replace('{product}','').replace(/\s{2,}/g,' ').trim(); }
+
+let QE = null;   // active quote-editor draft { areas:[], photos:[], discount:0 }
 function openQuoteNew(){ renderQuoteEditor(null); openModal('modalSiteDetail'); }
 function renderQuoteEditor(editId){
   const existing = editId ? quoteGet(editId) : null;
-  QUOTE_PHOTO = existing && existing.site_photo ? existing.site_photo : null;
+  // Build the working draft (migrate older single-amount quotes into one editable area).
+  if(existing && Array.isArray(existing.areas) && existing.areas.length){
+    QE = { areas: JSON.parse(JSON.stringify(existing.areas)), photos:(existing.photos||(existing.site_photo?[existing.site_photo]:[])).slice(), discount: parseFloat(existing.discount_pct)||0 };
+  } else if(existing){
+    QE = { areas:[{ key:'own', label:'Additional', heading:(existing.heading||'DESCRIPTION'), lines:[{desc:existing.description||'', product:'', area:0, rate:0, amount:parseFloat(existing.amount_ex)||0, lump:true}] }],
+      photos:(existing.photos||(existing.site_photo?[existing.site_photo]:[])).slice(), discount:0 };
+  } else {
+    QE = { areas:[], photos:[], discount:0 };
+  }
   const numStr = existing ? existing.number_str : quoteNumStr(nextQuoteNumber());
-  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : 0;
   const gk = existing ? (existing.group_key||'none') : 'none';
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const sec=function(t){ return `<div style="font-size:11px;font-weight:800;color:#8B1A1A;letter-spacing:.4px;text-transform:uppercase;margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid #EFECE3">${t}</div>`; };
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
   const grpOpts=Object.keys(PROPERTY_GROUPS).map(function(k){ return `<option value="${k}"${gk===k?' selected':''}>${esc(PROPERTY_GROUPS[k].label)}</option>`; }).join('');
-  const havePhoto = !!QUOTE_PHOTO;
+  const areaOpts=QUOTE_AREAS.map(function(a){ return `<option value="${a.key}">${esc(a.label)}</option>`; }).join('');
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit quotation':'New quotation'} · ${esc(numStr)}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:6px">Build the front page — the app makes a branded PDF you can open, copy or share.</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:6px">Build the quote — front page, photos, then choose the areas to quote.</div>
     ${fld('Quote number (you can change it)','q_num',numStr)}
 
     ${sec('Front page — header')}
@@ -7697,57 +7753,132 @@ function renderQuoteEditor(editId){
 
     ${sec('Front page — site block')}
     ${fld('Project title (the big heading on the front page)','q_title',existing?(existing.title||existing.project_ref||''):'','e.g. ABSA BUILDING - TZANEEN')}
-    <div style="margin-bottom:12px">
-      <label style="${lbl}">Site photo (take one, or save a Google image and pick it)</label>
-      <img id="q_photo_prev" src="${havePhoto?QUOTE_PHOTO:''}" style="display:${havePhoto?'block':'none'};max-width:100%;border-radius:8px;border:1px solid #E6E2D8;margin-bottom:8px"/>
-      <div style="display:flex;gap:8px">
-        <label class="cta-btn ghost" style="flex:1;margin:0;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer">📷 ${havePhoto?'Change photo':'Choose photo'}<input id="q_photo_input" type="file" accept="image/*" style="display:none" onchange="handleQuotePhoto(this)"/></label>
-        <button id="q_photo_rm" type="button" class="cta-btn ghost" style="flex:0 0 auto;margin:0;height:44px;padding:0 14px;display:${havePhoto?'inline-block':'none'}" onclick="removeQuotePhoto()">Remove</button>
-      </div>
-    </div>
     <div style="margin-bottom:10px"><label style="${lbl}">Property group (its logo shows under the photo)</label>
       <select class="f-input" id="q_group_pick" style="margin:0">${grpOpts}</select></div>
 
-    ${sec('Pricing')}
-    ${fld('Table heading','q_heading',existing?(existing.heading||'DESCRIPTION'):'DESCRIPTION','e.g. Preparation &amp; paint')}
-    <div style="margin-bottom:10px"><label style="${lbl}">Description (you can edit)</label>
-      <textarea class="f-input" id="q_desc" rows="4" style="margin:0" placeholder="Scope of work…">${esc(existing?existing.description:'Preparation & Paint as per site inspection')}</textarea></div>
-    <div style="margin-bottom:10px"><label style="${lbl}">Amount (ex-VAT, R)</label>
-      <input class="f-input" id="q_amt" type="number" step="0.01" value="${startAmt||''}" oninput="quotePreview()" style="margin:0" placeholder="e.g. 250000"/></div>
+    ${sec('Photos — up to 10 (from your site visit)')}
+    <div id="q_photos"></div>
+    <label class="cta-btn ghost" style="height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 0 4px">📷 Add photos<input id="q_photo_input" type="file" accept="image/*" multiple style="display:none" onchange="qeAddPhotos(this)"/></label>
+    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:4px">The first photo is used on the front page.</div>
+
+    ${sec('Pricing — choose the areas to quote')}
+    <div style="margin-bottom:10px"><label style="${lbl}">Notes above the table (optional)</label>
+      <textarea class="f-input" id="q_notes" rows="2" style="margin:0" placeholder="e.g. Prices based on the paint spec supplied · See scope below">${esc(existing?(existing.notes||''):'')}</textarea></div>
+    <div id="q_pricing"></div>
+    <select class="f-input" id="q_addarea" style="margin:10px 0 4px" onchange="qeAddArea(this.value); this.value='';">
+      <option value="">➕ Add an area to quote…</option>${areaOpts}
+    </select>
+    <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px">
+      <label style="${lbl};margin:0;flex:0 0 auto">Discount %</label>
+      <input class="f-input" id="q_discount" type="number" step="0.1" value="${existing&&existing.discount_pct?existing.discount_pct:''}" placeholder="0" style="margin:0;width:90px;height:40px" oninput="QE.discount=parseFloat(this.value)||0; qeRecalc();"/>
+    </div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp" id="q_pv_sub">${R(startAmt)}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="q_pv_vat">${R(startAmt*0.15)}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="q_pv_tot">${R(startAmt*1.15)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp" id="q_pv_sub">R 0.00</span></div>
+      <div id="q_pv_discrow" style="display:none;justify-content:space-between;font-size:12.5px;padding:3px 0;color:#B2342A"><span id="q_pv_disclbl">Discount</span><span class="disp" id="q_pv_disc">R 0.00</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="q_pv_vat">R 0.00</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="q_pv_tot">R 0.00</span></div>
     </div>
     <button class="cta-btn" onclick="saveQuote(${existing?`'${existing.id}'`:'null'})">${existing?'Save changes &amp; open PDF':'Save quotation &amp; open PDF'}</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
   $('siteDetailContent').innerHTML=h;
+  renderQuotePhotos();
+  renderQuotePricing();
 }
-// Read a chosen site photo, shrink it, keep it as a data-URI (so the PDF always renders it).
-function handleQuotePhoto(input){
-  const f=input.files&&input.files[0]; if(!f) return;
-  const rd=new FileReader();
-  rd.onload=function(e){
-    const img=new Image();
-    img.onload=function(){
-      const maxW=1000; let w=img.width, h=img.height;
-      if(w>maxW){ h=Math.round(h*maxW/w); w=maxW; }
-      const c=document.createElement('canvas'); c.width=w; c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      try{ QUOTE_PHOTO=c.toDataURL('image/jpeg',0.8); }catch(err){ QUOTE_PHOTO=e.target.result; }
-      const prev=$('q_photo_prev'); if(prev){ prev.src=QUOTE_PHOTO; prev.style.display='block'; }
-      const rm=$('q_photo_rm'); if(rm) rm.style.display='inline-block';
-    };
-    img.src=e.target.result;
-  };
-  rd.readAsDataURL(f);
+
+// ── Photos (up to 10) ──
+function qeShrinkPhoto(file){
+  return new Promise(function(resolve){
+    const rd=new FileReader();
+    rd.onload=function(e){ const img=new Image();
+      img.onload=function(){ let w=img.width,h=img.height; const s=Math.min(1,1000/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+        const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h);
+        try{ resolve(c.toDataURL('image/jpeg',0.78)); }catch(err){ resolve(e.target.result); } };
+      img.onerror=function(){ resolve(e.target.result); }; img.src=e.target.result; };
+    rd.onerror=function(){ resolve(''); }; rd.readAsDataURL(file);
+  });
 }
-function removeQuotePhoto(){ QUOTE_PHOTO=null; const p=$('q_photo_prev'); if(p){ p.src=''; p.style.display='none'; } const rm=$('q_photo_rm'); if(rm) rm.style.display='none'; const inp=$('q_photo_input'); if(inp) inp.value=''; }
-function quotePreview(){ const amt=parseFloat(($('q_amt')||{}).value)||0; if($('q_pv_sub'))$('q_pv_sub').textContent=R(amt); if($('q_pv_vat'))$('q_pv_vat').textContent=R(amt*0.15); if($('q_pv_tot'))$('q_pv_tot').textContent=R(amt*1.15); }
+async function qeAddPhotos(input){
+  const files=input.files?Array.from(input.files):[]; input.value='';
+  for(let i=0;i<files.length;i++){ if(QE.photos.length>=10){ showSaveToast('Max 10 photos'); break; } const u=await qeShrinkPhoto(files[i]); if(u) QE.photos.push(u); }
+  renderQuotePhotos();
+}
+function qeRemovePhoto(i){ QE.photos.splice(i,1); renderQuotePhotos(); }
+function renderQuotePhotos(){
+  const box=$('q_photos'); if(!box) return;
+  if(!QE.photos.length){ box.innerHTML=`<div style="font-size:12px;color:#A39E8C;padding:2px 0 8px">No photos yet.</div>`; return; }
+  box.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">`+QE.photos.map(function(u,i){
+    return `<div style="position:relative;width:76px"><img src="${u}" style="width:76px;height:76px;object-fit:cover;border-radius:7px;border:1px solid #E6E2D8;display:block"/>
+      ${i===0?'<div style="position:absolute;left:0;bottom:0;right:0;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;text-align:center;font-weight:800;border-radius:0 0 7px 7px">COVER</div>':''}
+      <button onclick="qeRemovePhoto(${i})" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:#8B1A1A;color:#fff;font-size:12px;font-weight:800;line-height:20px;padding:0;cursor:pointer">×</button></div>`;
+  }).join('')+`</div>`;
+}
+
+// ── Pricing areas & lines ──
+function qeAddArea(key){ const t=quoteAreaByKey(key); if(!t) return;
+  QE.areas.push({ key:t.key, label:t.label, heading:t.label.toUpperCase(),
+    lines:t.lines.map(function(l){ return { desc:l.desc, product:l.product||'', area:0, rate:0, amount:0, lump:!!l.lump }; }) });
+  renderQuotePricing();
+}
+function qeRemoveArea(ai){ QE.areas.splice(ai,1); renderQuotePricing(); }
+function qeAddLine(ai){ QE.areas[ai].lines.push({desc:'',product:'',area:0,rate:0,amount:0,lump:false}); renderQuotePricing(); }
+function qeRemoveLine(ai,li){ QE.areas[ai].lines.splice(li,1); renderQuotePricing(); }
+function qeHeadingSet(ai,v){ QE.areas[ai].heading=v; }
+function qeLineSet(ai,li,field,v){ const ln=QE.areas[ai].lines[li]; if(!ln) return;
+  if(field==='area'||field==='rate'){ ln[field]=parseFloat(v)||0; if(!ln.lump){ ln.amount=Math.round(ln.area*ln.rate*100)/100; const c=$('qe_amt_'+ai+'_'+li); if(c) c.textContent=R(ln.amount); } }
+  else if(field==='amount'){ ln.amount=parseFloat(v)||0; }
+  else { ln[field]=v; }
+  qeRecalc();
+}
+function qeLumpToggle(ai,li,on){ const ln=QE.areas[ai].lines[li]; ln.lump=!!on; if(ln.lump){ /* keep amount */ } else { ln.amount=Math.round((ln.area||0)*(ln.rate||0)*100)/100; } renderQuotePricing(); }
+function qeRecalc(){
+  let sub=0; QE.areas.forEach(function(a){ a.lines.forEach(function(l){ sub+=parseFloat(l.amount)||0; }); });
+  const disc = Math.round(sub*(parseFloat(QE.discount)||0))/100;
+  const after = sub - disc; const vat=Math.round(after*15)/100; const tot=Math.round(after*115)/100;
+  if($('q_pv_sub')) $('q_pv_sub').textContent=R(sub);
+  const dr=$('q_pv_discrow'); if(dr){ if(disc>0){ dr.style.display='flex'; $('q_pv_disclbl').textContent=(parseFloat(QE.discount)||0)+'% discount'; $('q_pv_disc').textContent='− '+R(disc); } else dr.style.display='none'; }
+  if($('q_pv_vat')) $('q_pv_vat').textContent=R(vat);
+  if($('q_pv_tot')) $('q_pv_tot').textContent=R(tot);
+}
+function renderQuotePricing(){
+  const box=$('q_pricing'); if(!box) return;
+  if(!QE.areas.length){ box.innerHTML=`<div style="font-size:12px;color:#A39E8C;padding:2px 0 6px">No areas yet — pick one below to start.</div>`; qeRecalc(); return; }
+  const lbl='font-size:10px;font-weight:700;color:#8A8470;display:block;margin-bottom:2px';
+  box.innerHTML=QE.areas.map(function(a,ai){
+    const lines=a.lines.map(function(ln,li){
+      const perM2 = !ln.lump ? `<div style="display:flex;gap:8px;margin-top:6px">
+          <div style="flex:1"><label style="${lbl}">Area (m²)</label><input class="f-input" type="number" step="0.01" value="${ln.area||''}" placeholder="0" style="margin:0;height:38px" oninput="qeLineSet(${ai},${li},'area',this.value)"/></div>
+          <div style="flex:1"><label style="${lbl}">R / m²</label><input class="f-input" type="number" step="0.01" value="${ln.rate||''}" placeholder="0" style="margin:0;height:38px" oninput="qeLineSet(${ai},${li},'rate',this.value)"/></div>
+          <div style="flex:1"><label style="${lbl}">Amount</label><div class="disp" id="qe_amt_${ai}_${li}" style="font-weight:800;padding:9px 0;font-size:12.5px">${R(ln.amount||0)}</div></div>
+        </div>`
+      : `<div style="margin-top:6px"><label style="${lbl}">Amount (R)</label><input class="f-input" type="number" step="0.01" value="${ln.amount||''}" placeholder="0" style="margin:0;height:38px" oninput="qeLineSet(${ai},${li},'amount',this.value)"/></div>`;
+      return `<div style="border-top:1px solid #EFECE3;padding:9px 0 4px">
+        <textarea class="f-input" rows="2" style="margin:0 0 6px;font-size:12.5px" placeholder="Description (use {product} where the paint name goes)" oninput="qeLineSet(${ai},${li},'desc',this.value)">${esc(ln.desc||'')}</textarea>
+        <input class="f-input" value="${esc(ln.product||'')}" placeholder="Product (fills {product}) — edit the paint here" style="margin:0 0 4px;height:38px;font-size:12.5px" oninput="qeLineSet(${ai},${li},'product',this.value)"/>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <label style="font-size:11px;color:#8A8470;display:flex;align-items:center;gap:5px"><input type="checkbox" ${ln.lump?'checked':''} onchange="qeLumpToggle(${ai},${li},this.checked)"/> lump sum (no m²)</label>
+          <button onclick="qeRemoveLine(${ai},${li})" style="background:none;border:none;color:#B2342A;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">🗑 remove line</button>
+        </div>
+        ${perM2}</div>`;
+    }).join('');
+    return `<div class="ledger-card" style="padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <input class="f-input" value="${esc(a.heading||'')}" style="margin:0;height:38px;font-weight:800;font-size:12.5px;flex:1" oninput="qeHeadingSet(${ai},this.value)"/>
+        <button onclick="qeRemoveArea(${ai})" style="background:none;border:none;color:#B2342A;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🗑 area</button>
+      </div>
+      ${lines}
+      <button class="cta-btn ghost" style="height:36px;font-size:11.5px;margin:8px 0 0" onclick="qeAddLine(${ai})">＋ Add line</button>
+    </div>`;
+  }).join('');
+  qeRecalc();
+}
 async function saveQuote(editId){
   const g=function(id){ return (($(id)||{}).value||'').trim(); };
-  const amt=parseFloat(($('q_amt')||{}).value)||0;
-  if(amt<=0){ alert('Please enter the quote amount (ex-VAT).'); return; }
+  // Totals from the draft areas/lines.
+  let sub=0; (QE.areas||[]).forEach(function(a){ a.lines.forEach(function(l){ sub+=parseFloat(l.amount)||0; }); });
+  if(sub<=0){ alert('Add at least one area with an amount.'); return; }
+  const discPct=parseFloat(QE.discount)||0;
+  const discAmt=Math.round(sub*discPct)/100;
+  const afterEx=Math.round((sub-discAmt)*100)/100;   // ex-VAT value AFTER discount (the quoted value)
   const store=quoteStoreSite();
   if(!store){ alert('Quote store not found — please reload the page.'); return; }
   const numN=parseInt(g('q_num').replace(/\D/g,''))||nextQuoteNumber();
@@ -7761,10 +7892,12 @@ async function saveQuote(editId){
   const client = grpLabel || (attention.split('\n').slice(-1)[0]||'').trim() || (attention.split('\n')[0]||'');
   const fields={ number_str:numStr, number:numN,
     attention:attention, re:(($('q_re')||{}).value||'').trim(), from_name:g('q_from')||'Ferdi Engelbrecht',
-    title:title, group_key:gk, site_photo:QUOTE_PHOTO||'',
+    title:title, group_key:gk, notes:(($('q_notes')||{}).value||'').trim(),
+    photos:(QE.photos||[]).slice(), site_photo:(QE.photos&&QE.photos[0])||'',
+    areas: JSON.parse(JSON.stringify(QE.areas||[])),
     client_name:client, project_ref:title, client_group:'',
-    heading:g('q_heading'), description:g('q_desc'),
-    amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:g('q_date')||invToday() };
+    subtotal:sub, discount_pct:discPct, discount_amt:discAmt,
+    amount_ex:afterEx, vat:Math.round(afterEx*15)/100, total_incl:Math.round(afterEx*115)/100, date:g('q_date')||invToday() };
   let rec;
   if(editId){ rec=d.quotations.find(function(x){ return x.id===editId; }); if(!rec){ showSaveToast('Quotation not found'); return; } Object.assign(rec, fields); }
   else { rec=Object.assign({ id:uid(), status:'open', created:invToday() }, fields); d.quotations.push(rec); }
@@ -7788,11 +7921,12 @@ function openQuoteDetail(id){
       ${row('Property group', (q.group_key&&PROPERTY_GROUPS[q.group_key])?esc(PROPERTY_GROUPS[q.group_key].label):none)}
       ${row('From', esc(q.from_name||'Ferdi Engelbrecht'))}
       ${row('Quote date', q.date?fd(q.date):'')}
-      ${row('Site photo', q.site_photo?('<img src="'+q.site_photo+'" style="max-width:100%;border-radius:6px;border:1px solid #E6E2D8"/>'):none)}
-      ${row('Description', esc(q.description))}
+      ${row('Areas', (Array.isArray(q.areas)&&q.areas.length)?esc(q.areas.map(function(a){return a.heading||a.label;}).join(' · ')):none)}
+      ${row('Photos', (q.photos&&q.photos.length)?('<div style="display:flex;flex-wrap:wrap;gap:6px">'+q.photos.map(function(u){return '<img src="'+u+'" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #E6E2D8"/>';}).join('')+'</div>'):(q.site_photo?('<img src="'+q.site_photo+'" style="max-width:100%;border-radius:6px;border:1px solid #E6E2D8"/>'):none))}
     </div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp">${R(q.amount_ex||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp">${R(parseFloat(q.subtotal)|| ((parseFloat(q.amount_ex)||0)+(parseFloat(q.discount_amt)||0)))}</span></div>
+      ${(parseFloat(q.discount_amt)||0)>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;color:#B2342A"><span>${parseFloat(q.discount_pct)||0}% discount</span><span class="disp">− ${R(q.discount_amt)}</span></div>`:''}
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp">${R(q.vat||0)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp">${R(q.total_incl||0)}</span></div>
     </div>
@@ -7830,6 +7964,50 @@ async function quoteDelete(id){
 
 // ── Quote PDF / Word (branded, mirrors the invoice look) ──
 function quoteFileBase(q){ return (q.number_str||'quotation')+' '+String(q.client_name||'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+// Pricing table: area sections (heading + lines with AREA / R/m² / AMOUNT) + totals.
+// Handles new area-based quotes and older single-amount ones.
+function quotePricingTableHtml(q){
+  const e=function(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  const m=function(n){ return 'R ' + (Math.round((n||0)*100)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const td='padding:7px 10px;vertical-align:top;font-size:10.5pt';
+  const areas = Array.isArray(q.areas)&&q.areas.length ? q.areas : null;
+  let rows='', n=0;
+  if(areas){
+    if(q.notes){ String(q.notes).split('\n').filter(function(x){return x.trim();}).forEach(function(nt){ rows+=`<tr><td style="${td}"></td><td colspan="4" style="${td};font-style:italic;font-size:10pt">* ${e(nt)}</td></tr>`; }); }
+    areas.forEach(function(a){ n++;
+      rows+=`<tr><td style="${td};text-align:center;font-weight:bold">${n}.</td><td colspan="4" style="${td};font-weight:bold;text-decoration:underline">${e(a.heading||a.label||'')}</td></tr>`;
+      (a.lines||[]).forEach(function(ln){
+        const area=(!ln.lump && (parseFloat(ln.area)||0)) ? '± '+Number(ln.area).toLocaleString('en-ZA')+' m²' : '';
+        const rate=(!ln.lump && (parseFloat(ln.rate)||0)) ? m(ln.rate) : '';
+        rows+=`<tr><td style="${td}"></td><td style="${td}">${e(qeLineText(ln))}</td>
+          <td style="${td};text-align:right;white-space:nowrap">${area}</td>
+          <td style="${td};text-align:right;white-space:nowrap">${rate}</td>
+          <td style="${td};text-align:right;white-space:nowrap;font-weight:bold">${m(ln.amount)}</td></tr>`;
+      });
+    });
+  } else {
+    rows=`<tr><td style="${td};text-align:center">1</td><td style="${td}">${e(q.description||'')}</td><td style="${td}"></td><td style="${td}"></td><td style="${td};text-align:right;font-weight:bold">${m(q.amount_ex)}</td></tr>`;
+  }
+  const afterEx=parseFloat(q.amount_ex)||0;
+  const discAmt=parseFloat(q.discount_amt)||0, discPct=parseFloat(q.discount_pct)||0;
+  const sub=parseFloat(q.subtotal)|| (afterEx+discAmt);
+  const vat=parseFloat(q.vat)||Math.round(afterEx*15)/100;
+  const tot=parseFloat(q.total_incl)||Math.round(afterEx*115)/100;
+  let h=`<table style="width:100%;border-collapse:collapse;margin-top:18px" border="1">
+    <tr><td style="width:28px"></td>
+      <td style="text-align:center;font-weight:bold;padding:9px 10px">DESCRIPTION</td>
+      <td style="text-align:center;font-weight:bold;width:92px;padding:9px 6px">AREA</td>
+      <td style="text-align:center;font-weight:bold;width:66px;padding:9px 6px">R/m²</td>
+      <td style="text-align:center;font-weight:bold;width:118px;padding:9px 6px">AMOUNT</td></tr>
+    ${rows}</table>`;
+  let tr=`<tr><td style="text-align:right;padding:6px 10px">SUB TOTAL (Excl 15% VAT)</td><td style="text-align:right;width:150px;padding:6px 10px">${m(sub)}</td></tr>`;
+  if(discAmt>0){ tr+=`<tr><td style="text-align:right;padding:6px 10px">${discPct}% DISCOUNT</td><td style="text-align:right;padding:6px 10px">− ${m(discAmt)}</td></tr>`;
+    tr+=`<tr><td style="text-align:right;padding:6px 10px">SUB TOTAL</td><td style="text-align:right;padding:6px 10px">${m(afterEx)}</td></tr>`; }
+  tr+=`<tr><td style="text-align:right;padding:6px 10px">15% VAT</td><td style="text-align:right;padding:6px 10px">${m(vat)}</td></tr>`;
+  tr+=`<tr><td style="text-align:right;padding:9px 10px;font-weight:bold">TOTAL PROJECT COST</td><td style="text-align:right;padding:9px 10px;font-weight:bold;border-top:1.5px solid #1A1A1A;border-bottom:4px double #1A1A1A">${m(tot)}</td></tr>`;
+  h+=`<table style="width:100%;border-collapse:collapse;margin-top:10px">${tr}</table>`;
+  return h;
+}
 function quoteInnerHtml(q){
   const e=function(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
   const m=function(n){ return 'R ' + (Math.round((n||0)*100)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2}); };
@@ -7864,23 +8042,7 @@ function quoteInnerHtml(q){
     </table>
     <h3 style="text-align:center;margin:18px 0 10px">QUOTATION</h3>
     ${cover}
-    <table style="width:100%;border-collapse:collapse;${hasCover?'margin-top:22px':''}" border="1">
-      <tr>
-        <td style="width:34px"></td>
-        <td style="text-align:center;vertical-align:middle;font-weight:bold;padding:12px 10px">${title}</td>
-        <td style="text-align:center;vertical-align:middle;font-weight:bold;width:150px;padding:12px 10px">AMOUNT</td>
-      </tr>
-      <tr>
-        <td style="width:34px;text-align:center;vertical-align:middle">1</td>
-        <td style="height:110px;vertical-align:middle;padding:12px 12px;white-space:pre-line">${e(q.description)}</td>
-        <td style="text-align:right;vertical-align:middle;font-weight:bold;padding:12px 12px">${m(q.amount_ex)}</td>
-      </tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;margin-top:10px">
-      <tr><td style="text-align:right;padding:7px 10px">SUB TOTAL</td><td style="text-align:right;width:150px;padding:7px 10px">${m(q.amount_ex)}</td></tr>
-      <tr><td style="text-align:right;padding:7px 10px">VAT 15%</td><td style="text-align:right;padding:7px 10px">${m(q.vat)}</td></tr>
-      <tr><td style="text-align:right;padding:10px 10px;font-weight:bold">TOTAL</td><td style="text-align:right;padding:10px 10px;font-weight:bold;border-top:1.5px solid #1A1A1A;border-bottom:4px double #1A1A1A">${m(q.total_incl)}</td></tr>
-    </table>
+    ${quotePricingTableHtml(q)}
     <div style="margin-top:18px;font-size:10.5pt;color:#333">This quotation is valid for 30 days from the date above. Prices include materials &amp; labour as described. E&amp;OE.</div>
     <div style="margin-top:16px"><u><b>BANKING DETAILS:</b></u><br/>
       <b>POWER ROCK.paint</b><br/>FNB WATERFALL MALL<br/>CHEQUE ACCOUNT: 62486424072<br/>BRANCH: 258055</div>
