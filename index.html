@@ -1137,6 +1137,7 @@ function fd(d){ return new Date(d).toLocaleDateString('en-ZA',{day:'numeric',mon
 const DOOR_PINS = {
   '0000': { door: 1 },                       // Ferdi — legacy code, now blocked by the lock
   '1010': { door: 1 },                       // Ferdi — private access code (opens the locked door)
+  '1020': { door: 1 },                       // Michelle — full owner access (Ferdi's right hand)
   '5555': { door: 2 },                       // Henk — ops manager
   '1111': { door: 3, leader: 'joe'    },     // Joe
   '2222': { door: 3, leader: 'costa'  },     // Costa
@@ -1151,10 +1152,13 @@ const DOOR_PINS = {
 const LOCKED_DOORS = {
   1: true,     // Ferdi's door — locked so Henk only tests his own side
 };
-// A locked door opens only when this exact code is entered. Ferdi's door needs 1010.
+// A locked door opens only when one of these codes is entered. Ferdi's door (1)
+// opens for Ferdi (1010) and Michelle (1020). Add more codes to the array to grant access.
 const DOOR_UNLOCK = {
-  1: '1010',
+  1: ['1010','1020'],
 };
+function doorUnlockCodes(door){ const u=DOOR_UNLOCK[door]; return u==null?[]:(Array.isArray(u)?u:[u]); }
+function doorUnlockOk(door,p){ const codes=doorUnlockCodes(door); return codes.length ? codes.indexOf(p)>=0 : true; }
 
 // Door 1 and Door 2 share the same shell. The role decides which sections
 // appear and which numbers are shown — Henk runs operations, so he sees
@@ -1184,19 +1188,19 @@ function testOpen(){
   const te = $('testErr');
   const codeRow = $('testCodeRow');
   if(route && LOCKED_DOORS[route.door]){
-    const unlock = DOOR_UNLOCK[route.door];
-    if(!unlock){ if(te) te.textContent = '🔒 This door is locked for now.'; return; }
-    // Locked door with a private code: reveal the code box and require the code.
+    const codes = doorUnlockCodes(route.door);
+    if(!codes.length){ if(te) te.textContent = '🔒 This door is locked for now.'; return; }
+    // Locked door with a private code: reveal the code box and require one of the codes.
     const code = String(($('testCode')||{}).value||'').trim();
-    if(code !== unlock){
+    if(codes.indexOf(code) < 0){
       if(codeRow) codeRow.style.display = 'block';
       if(te) te.textContent = code ? 'That code is not right.' : '🔒 Locked — enter your access code to open your door.';
       return;
     }
-    // Correct code — open by handing the unlock code to doLogin (which lets it past the lock).
+    // Correct code — open by handing the entered code to doLogin (which lets it past the lock).
     if(te) te.textContent = '';
     if(codeRow) codeRow.style.display = 'none';
-    $('lPin').value = unlock;
+    $('lPin').value = code;
     doLogin();
     return;
   }
@@ -1217,7 +1221,7 @@ function doLogin(){
   const p = $('lPin').value;
   const e = $('lErr');
   const route = DOOR_PINS[p];
-  if(route && LOCKED_DOORS[route.door] && p !== DOOR_UNLOCK[route.door]){
+  if(route && LOCKED_DOORS[route.door] && !doorUnlockOk(route.door, p)){
     $('lPin').value='';
     e.textContent = '🔒 This door is locked for now.';
     return;
