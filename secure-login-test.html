@@ -202,6 +202,13 @@ input[type=password]{letter-spacing:5px}
 .snap-table .alt{background:#F4F6F7}
 .snap-table .mini{font-size:8px;color:#9AA2AA;font-weight:700;letter-spacing:.3px;margin-right:4px}
 .snap-table .muted{color:#98A0A8}
+.mkt-table{min-width:780px;border-collapse:collapse;font-size:12px;width:100%}
+.mkt-table th{text-align:left;padding:8px 10px;border-bottom:2px solid #1A1A1A;font-size:10px;letter-spacing:.3px;color:#1A1A1A;white-space:nowrap}
+.mkt-table td{text-align:left;padding:8px 10px;border-bottom:1px solid #EFECE3;white-space:nowrap;color:#4A4636;vertical-align:top}
+.mkt-table tr:hover td{background:#FAF9F5}
+.mkt-table .mkc-centre{position:sticky;left:0;z-index:1;background:#fff;font-weight:700;color:#1A1A1A;min-width:150px;max-width:200px;white-space:normal;line-height:1.25}
+.mkt-table th.mkc-centre{z-index:3}
+.mkt-table .mkc-stage{text-align:right}
 .snap2 .p-top td{border-bottom:none}
 .snap2 .p-bot td{border-bottom:2px solid #E6E2D8}
 .snap2 td{padding-top:6px;padding-bottom:6px}
@@ -5783,30 +5790,31 @@ async function renderMarketing(){
   else h+=mktListTableHtml(shown);
   $('pageBody').innerHTML=h;
 }
-// Compact spreadsheet-style list (same font/feel as the Income tab) so many centres fit on one screen.
+// Spreadsheet-style list — separate columns (Group, Contact, Email, Tel), scrolls
+// sideways on a phone with the Centre column pinned on the left (like the Income tab).
 function mktListTableHtml(list){
   const rowHtml=list.map(function(c){
     const st=c.stage||'New'; const email=c.manager_email||c.ops_email||'';
-    const sub=[c.manager||'', c.group||''].filter(Boolean).join(' · ')||'—';
+    const tel=c.manager_phone||'';
     const dot=email?'<span style="color:#3F5A4C">✉</span> ':'<span style="color:#C79A2E">✎</span> ';
     const due=c.next_action&&c.stage!=='Won'&&c.stage!=='Lost';
     return `<tr style="cursor:pointer" onclick="mktOpenDetail('${c.id}')">
-      <td style="padding:7px 8px;border-bottom:1px solid #EFECE3;font-weight:700;color:#1A1A1A;line-height:1.3">${dot}${esc(c.centre||'(unnamed)')}${due?`<div style="font-size:9px;font-weight:700;color:${c.next_action<=invToday()?'#B2342A':'#A39E8C'};margin-top:1px">↻ ${fd(c.next_action)}</div>`:''}</td>
-      <td style="padding:7px 8px;border-bottom:1px solid #EFECE3;color:#6B6657;font-size:11px;line-height:1.3">${esc(sub)}</td>
-      <td style="padding:7px 8px;border-bottom:1px solid #EFECE3;text-align:right;white-space:nowrap"><span style="font-size:9px;font-weight:800;color:#fff;background:${MKT_STCOL[st]||'#8A8470'};border-radius:20px;padding:2px 8px">${esc(st)}</span></td>
+      <td class="mkc-centre">${dot}${esc(c.centre||'(unnamed)')}${due?`<div style="font-size:9px;font-weight:700;color:${c.next_action<=invToday()?'#B2342A':'#A39E8C'};margin-top:1px">↻ ${fd(c.next_action)}</div>`:''}</td>
+      <td>${esc(c.group||'—')}</td>
+      <td>${esc(c.manager||'—')}</td>
+      <td>${email?esc(email):'<span style="color:#C79A2E">needs email</span>'}</td>
+      <td>${tel?esc(tel):'—'}</td>
+      <td class="mkc-stage"><span style="font-size:9px;font-weight:800;color:#fff;background:${MKT_STCOL[st]||'#8A8470'};border-radius:20px;padding:2px 8px;white-space:nowrap">${esc(st)}</span></td>
     </tr>`;
   }).join('');
-  return `<div class="ledger-card" style="padding:2px 10px 6px">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed">
-      <colgroup><col style="width:46%"/><col style="width:36%"/><col style="width:18%"/></colgroup>
+  return `<div class="ledger-card" style="padding:2px 0 6px">
+    <div class="snap-scroll"><table class="mkt-table">
       <thead><tr>
-        <th style="text-align:left;padding:7px 8px;border-bottom:2px solid #1A1A1A;font-size:10px;color:#1A1A1A">CENTRE</th>
-        <th style="text-align:left;padding:7px 8px;border-bottom:2px solid #1A1A1A;font-size:10px;color:#1A1A1A">MANAGER · GROUP</th>
-        <th style="text-align:right;padding:7px 8px;border-bottom:2px solid #1A1A1A;font-size:10px;color:#1A1A1A">STAGE</th>
+        <th class="mkc-centre">CENTRE</th><th>PROPERTY GROUP</th><th>CONTACT PERSON</th><th>EMAIL</th><th>TEL</th><th class="mkc-stage">STAGE</th>
       </tr></thead>
       <tbody>${rowHtml}</tbody>
-    </table></div>
-    <div style="font-size:9.5px;color:#A39E8C;margin:6px 2px 0"><span style="color:#3F5A4C">✉</span> has an email · <span style="color:#C79A2E">✎</span> needs an email · tap a row to open</div>`;
+    </table></div></div>
+    <div style="font-size:9.5px;color:#A39E8C;margin:6px 2px 0">Swipe sideways for email &amp; tel · <span style="color:#3F5A4C">✉</span> has an email, <span style="color:#C79A2E">✎</span> needs one · tap a row to open</div>`;
 }
 function mktSetView(v){ MKT_VIEW=v; renderMarketing(); }
 function mktStageFilter(s){ MKT_STAGE=(MKT_STAGE===s?'all':s); if(MKT_STAGE!=='all') MKT_VIEW='all'; renderMarketing(); }
