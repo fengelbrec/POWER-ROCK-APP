@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PowerRock — Concept</title>
+<meta name="description" content="PowerRock Coatings — commercial painting, waterproofing & road marking across South Africa. Website design concept."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Manrope:wght@400;500;600;700&display=swap"/>
+<style>
+/* Layout concept: dark "ink" and warm "bone" sections alternate; one bold red accent, one amber pop for road-marking; oversized Archivo headlines, Manrope body. Fixed single-theme brand look. */
+:root{
+  --ink:#131110;          /* near-black, warm */
+  --ink-2:#1d1a18;        /* raised dark panel */
+  --bone:#F5F1EA;         /* warm off-white */
+  --bone-2:#ECE6DB;       /* slightly deeper bone */
+  --red:#D22D23;          /* PowerRock red */
+  --red-deep:#8B1A1A;     /* deep brand red */
+  --amber:#F0A835;        /* road-marking pop, used sparingly */
+  --muted:#8A8276;        /* warm grey text */
+  --line:#2a2622;         /* hairline on dark */
+  --line-l:#DBD3C6;       /* hairline on bone */
+  --disp:'Archivo',-apple-system,BlinkMacSystemFont,sans-serif;
+  --body:'Manrope',-apple-system,BlinkMacSystemFont,sans-serif;
+  --wrap:1180px;
+  color-scheme:light;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+html.js .reveal{opacity:0;transform:translateY(22px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+@media (prefers-reduced-motion:reduce){html.js .reveal{opacity:1!important;transform:none!important}}
+body{font-family:var(--body);background:var(--ink);color:var(--bone);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+.wrap{width:100%;max-width:var(--wrap);margin-inline:auto;padding-inline:22px}
+.eyebrow{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--red)}
+h1,h2,h3{font-family:var(--disp);font-weight:900;line-height:1.02;letter-spacing:-.02em;text-wrap:balance}
+.btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--disp);font-weight:800;font-size:15px;letter-spacing:-.01em;padding:15px 26px;border-radius:999px;cursor:pointer;border:2px solid transparent;transition:transform .15s ease,background .2s ease,color .2s ease;white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:#b8251c}
+.btn-ghost{background:transparent;border-color:rgba(245,241,234,.3);color:var(--bone)}
+.btn-ghost:hover{border-color:var(--bone);background:rgba(245,241,234,.06)}
+.btn-dark{background:var(--ink);color:var(--bone)}
+.btn-dark:hover{background:#2a2521}
+
+/* NAV */
+.nav{position:fixed;top:0;left:0;right:0;z-index:50;background:rgba(19,17,16,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:68px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand svg{width:30px;height:30px;flex:0 0 auto}
+.brand b{font-family:var(--disp);font-weight:900;font-size:19px;letter-spacing:-.01em}
+.brand span{color:var(--red)}
+.nav-links{display:flex;align-items:center;gap:30px}
+.nav-links a{font-weight:600;font-size:14.5px;color:#cfc7ba;transition:color .2s}
+.nav-links a:hover{color:var(--bone)}
+.nav .btn{padding:11px 20px;font-size:13.5px}
+.burger{display:none;background:none;border:0;cursor:pointer;flex-direction:column;gap:5px;padding:8px}
+.burger span{width:24px;height:2px;background:var(--bone);display:block;border-radius:2px}
+.mobile{display:none;border-top:1px solid var(--line);background:var(--ink)}
+.mobile a{display:block;padding:15px 22px;font-family:var(--disp);font-weight:700;border-bottom:1px solid var(--line);color:var(--bone)}
+
+/* HERO */
+.hero{position:relative;padding:150px 0 70px;overflow:hidden}
+.hero-bg{position:absolute;inset:0;z-index:0;background:
+  radial-gradient(1100px 520px at 78% -10%, rgba(210,45,35,.30), transparent 60%),
+  radial-gradient(760px 520px at 8% 115%, rgba(139,26,26,.26), transparent 60%),
+  linear-gradient(180deg,#171413,#131110)}
+.hero-bg::after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(245,241,234,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(245,241,234,.04) 1px,transparent 1px);background-size:46px 46px;mask-image:radial-gradient(900px 500px at 70% 10%,#000,transparent 75%)}
+.hero-in{position:relative;z-index:1}
+.hero h1{font-size:clamp(44px,8.4vw,92px)}
+.hero h1 em{font-style:normal;color:var(--red)}
+.hero p.lead{margin-top:24px;max-width:600px;font-size:clamp(16px,2.4vw,20px);color:#d8d0c4}
+.hero .cta{margin-top:34px;display:flex;flex-wrap:wrap;gap:14px}
+.hero .since{margin-bottom:20px;display:inline-flex;align-items:center;gap:10px;font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#bdb4a7}
+.hero .since i{width:8px;height:8px;border-radius:50%;background:var(--amber);display:inline-block}
+
+/* STAT STRIP */
+.stats{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#100e0d}
+.stats-in{display:grid;grid-template-columns:repeat(4,1fr)}
+.stat{padding:26px 20px;border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat b{font-family:var(--disp);font-weight:900;font-size:clamp(24px,4vw,38px);display:block;letter-spacing:-.02em}
+.stat span{font-size:12.5px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+
+/* SECTION SHELL */
+section{position:relative}
+.bone{background:var(--bone);color:var(--ink)}
+.bone .eyebrow{color:var(--red-deep)}
+.pad{padding:84px 0}
+.sec-head{max-width:720px}
+.sec-head h2{font-size:clamp(30px,5vw,52px)}
+.sec-head p{margin-top:16px;font-size:17px;color:#5c5346}
+
+/* SERVICES */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+.card{background:#fff;border:1px solid var(--line-l);border-radius:20px;padding:30px 26px 26px;display:flex;flex-direction:column;min-height:260px;transition:transform .2s ease,box-shadow .2s ease}
+.card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(19,17,16,.10)}
+.card .num{font-family:var(--disp);font-weight:800;font-size:13px;color:var(--red);letter-spacing:.1em}
+.card h3{font-size:25px;margin-top:14px;color:var(--ink)}
+.card p{margin-top:12px;color:#5c5346;font-size:14.5px;flex:1}
+.card .go{margin-top:18px;font-family:var(--disp);font-weight:800;font-size:14px;color:var(--ink);display:inline-flex;gap:7px;align-items:center}
+.card.amber .num{color:#b07a12}
+.card.amber:hover{box-shadow:0 18px 40px rgba(240,168,53,.18)}
+
+/* ADVANTAGE (dark) */
+.adv{background:var(--ink-2)}
+.adv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:46px;background:var(--line);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.adv-item{background:var(--ink-2);padding:30px 26px}
+.adv-item .ic{width:40px;height:40px;border-radius:11px;background:rgba(210,45,35,.14);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.adv-item .ic svg{width:20px;height:20px;stroke:var(--red);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.adv-item h3{font-size:19px;color:var(--bone)}
+.adv-item p{margin-top:9px;font-size:14px;color:#b4ab9e}
+
+/* WORK marquee */
+.work-head{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:40px}
+.chip{border:1px solid var(--line-l);background:#fff;border-radius:999px;padding:13px 22px;font-family:var(--disp);font-weight:700;font-size:15px;color:var(--ink)}
+.chip em{font-style:normal;color:var(--muted);font-weight:600;font-size:13px}
+
+/* PARTNERS */
+.partners{background:var(--ink);border-top:1px solid var(--line)}
+.partners-in{display:flex;align-items:center;gap:14px 40px;flex-wrap:wrap;justify-content:center;padding:34px 0}
+.partners .lbl{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);font-weight:700;font-family:var(--disp)}
+.partners .p{font-family:var(--disp);font-weight:800;font-size:20px;color:#cfc7ba;letter-spacing:-.01em}
+
+/* CTA band */
+.band{background:linear-gradient(120deg,var(--red-deep),var(--red));color:#fff}
+.band-in{padding:70px 0;display:grid;grid-template-columns:1.3fr 1fr;gap:40px;align-items:center}
+.band h2{font-size:clamp(28px,4.4vw,46px);color:#fff}
+.band p{margin-top:14px;font-size:17px;color:rgba(255,255,255,.9);max-width:460px}
+.band .contact{background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.22);border-radius:18px;padding:26px}
+.band .contact .row{display:flex;flex-direction:column;gap:3px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.16)}
+.band .contact .row:last-child{border-bottom:0}
+.band .contact small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;font-weight:700;font-family:var(--disp)}
+.band .contact b{font-family:var(--disp);font-size:18px;font-weight:800}
+.band .btn{margin-top:22px}
+
+/* FOOTER */
+footer{background:#0d0b0a;border-top:1px solid var(--line);padding:56px 0 30px}
+.foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:34px}
+.foot-grid h4{font-family:var(--disp);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.foot-grid a,.foot-grid p{display:block;color:#bdb4a7;font-size:14px;margin-bottom:9px}
+.foot-grid a:hover{color:var(--bone)}
+.foot-brand b{font-family:var(--disp);font-weight:900;font-size:22px}
+.foot-brand span{color:var(--red)}
+.foot-brand p{margin-top:12px;max-width:300px;color:#8f877b}
+.foot-bottom{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:40px;padding-top:22px;border-top:1px solid var(--line);color:#7c746a;font-size:12.5px}
+.tag{display:inline-block;background:rgba(240,168,53,.14);color:var(--amber);font-family:var(--disp);font-weight:800;font-size:11px;letter-spacing:.08em;padding:5px 11px;border-radius:999px}
+
+@media(max-width:880px){
+  .nav-links{display:none}
+  .burger{display:flex}
+  .nav.open .mobile{display:block}
+  .stats-in{grid-template-columns:repeat(2,1fr)}
+  .stat:nth-child(2){border-right:0}
+  .stat:nth-child(1),.stat:nth-child(2){border-bottom:1px solid var(--line)}
+  .cards{grid-template-columns:1fr}
+  .adv-grid{grid-template-columns:1fr}
+  .band-in{grid-template-columns:1fr;padding:54px 0}
+  .foot-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:520px){
+  .pad{padding:64px 0}
+  .hero{padding:124px 0 56px}
+  .foot-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" aria-label="PowerRock home">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><path d="M62,12 C40,10 22,26 18,45 C14,64 26,82 45,88" fill="none" stroke="#D22D23" stroke-width="11" stroke-linecap="round"/></svg>
+      <b>POWER<span>ROCK</span></b>
+    </a>
+    <div class="nav-links">
+      <a href="#services">Services</a>
+      <a href="#why">Why us</a>
+      <a href="#work">Our work</a>
+      <a href="#contact">Contact</a>
+    </div>
+    <a class="btn btn-red" href="#contact" style="display:none" id="navCta">Free assessment</a>
+    <button class="burger" id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+  <div class="mobile" id="mobile">
+    <a href="#services">Services</a>
+    <a href="#why">Why us</a>
+    <a href="#work">Our work</a>
+    <a href="#contact">Contact</a>
+  </div>
+</nav>
+
+<span id="top"></span>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="wrap hero-in">
+    <div class="since reveal"><i></i>Commercial painting · Waterproofing · Road marking</div>
+    <h1 class="reveal">We make big buildings<br/><em>look brand-new.</em></h1>
+    <p class="lead reveal">PowerRock recoats and waterproofs malls, complexes and office buildings across South&nbsp;Africa — scheduled around your trading hours, finished to spec, and backed by a 7-year warranty.</p>
+    <div class="cta reveal">
+      <a class="btn btn-red" href="#contact">Get a free assessment →</a>
+      <a class="btn btn-ghost" href="#work">See our work</a>
+    </div>
+  </div>
+</header>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="wrap stats-in">
+    <div class="stat"><b>Since 2010</b><span>15 years on site</span></div>
+    <div class="stat"><b>7-year</b><span>written warranty</span></div>
+    <div class="stat"><b>Nationwide</b><span>teams across SA</span></div>
+    <div class="stat"><b>Level 2</b><span>B-BBEE contributor</span></div>
+  </div>
+</div>
+
+<!-- SERVICES -->
+<section id="services" class="bone pad">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">What we do</div>
+      <h2>One team for the whole exterior.</h2>
+      <p>Preparation, waterproofing, painting and road marking for medium to large-scale commercial and residential property — handled end to end by our own skilled teams.</p>
+    </div>
+    <div class="cards">
+      <div class="card reveal">
+        <div class="num">01</div>
+        <h3>Painting &amp; Waterproofing</h3>
+        <p>Full surface preparation, waterproofing and high-performance coatings using top-tier products from Plascon, Dulux, Prominent and Top Paints — applied strictly to supplier spec.</p>
+        <span class="go">Learn more →</span>
+      </div>
+      <div class="card reveal">
+        <div class="num">02</div>
+        <h3>Malls &amp; Complexes</h3>
+        <p>Dedicated teams for large retail and office sites, with a site-specific plan built around high-traffic zones and peak shopping hours, so trade keeps moving while we work.</p>
+        <span class="go">Learn more →</span>
+      </div>
+      <div class="card amber reveal">
+        <div class="num">03</div>
+        <h3>Road Marking</h3>
+        <p>Professional line marking for parking areas and access roads nationwide — crisp, durable and compliant, delivered with minimal downtime for your tenants and customers.</p>
+        <span class="go">Learn more →</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ADVANTAGE -->
+<section id="why" class="adv pad">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">The PowerRock advantage</div>
+      <h2>Peace of mind, built in.</h2>
+    </div>
+    <div class="adv-grid">
+      <div class="adv-item reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+        <h3>Free property assessment</h3>
+        <p>A no-obligation condition report on your coatings and waterproofing, with corrective pricing — at no cost.</p>
+      </div>
+      <div class="adv-item reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg></div>
+        <h3>Weekly QA reports</h3>
+        <p>Independent third-party inspections every week — film thickness, adhesion and prep, verified and reported to you.</p>
+      </div>
+      <div class="adv-item reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg></div>
+        <h3>Minimal disruption</h3>
+        <p>Work is scheduled around your trading hours so shoppers and tenants barely notice we're there.</p>
+      </div>
+      <div class="adv-item reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <h3>7-year warranty</h3>
+        <p>A written guarantee from us as the applicator and from the paint supplier — protection that lasts.</p>
+      </div>
+      <div class="adv-item reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5M17 3l3 3-3 3M7 21l-3-3 3-3"/></svg></div>
+        <h3>Top-tier products only</h3>
+        <p>15 years of partnership with the country's leading paint manufacturers, applied exactly to specification.</p>
+      </div>
+      <div class="adv-item reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11"/></svg></div>
+        <h3>Our own skilled teams</h3>
+        <p>Vetted, in-house crews on above-industry packages — consistent quality and accountability on every site.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WORK -->
+<section id="work" class="bone pad">
+  <div class="wrap">
+    <div class="work-head reveal">
+      <div class="sec-head">
+        <div class="eyebrow">Our work</div>
+        <h2>Trusted by South Africa's property groups.</h2>
+      </div>
+      <a class="btn btn-dark" href="#contact">Start your project</a>
+    </div>
+    <div class="chips">
+      <div class="chip reveal">Waterfall Mall <em>· Rustenburg</em></div>
+      <div class="chip reveal">Platinum Square <em>· Rustenburg</em></div>
+      <div class="chip reveal">Newcastle Mall</div>
+      <div class="chip reveal">Fleurdal Mall <em>· Bloemfontein</em></div>
+      <div class="chip reveal">Middelburg Mall</div>
+      <div class="chip reveal">Lephalale Mall</div>
+      <div class="chip reveal">Kriel Mall</div>
+      <div class="chip reveal">Sasolburg Mall</div>
+      <div class="chip reveal">Woodmead Office Park <em>· Sandton</em></div>
+      <div class="chip reveal">Magaliesview Centre</div>
+      <div class="chip reveal">Kaalfontein Centre</div>
+      <div class="chip reveal">Madalief Centre <em>· Pretoria</em></div>
+    </div>
+  </div>
+</section>
+
+<!-- PARTNERS -->
+<div class="partners">
+  <div class="wrap partners-in">
+    <span class="lbl">Approved applicators for</span>
+    <span class="p">Plascon</span>
+    <span class="p">Dulux</span>
+    <span class="p">Prominent&nbsp;Paints</span>
+    <span class="p">Top&nbsp;Paints</span>
+  </div>
+</div>
+
+<!-- CTA BAND -->
+<section id="contact" class="band">
+  <div class="wrap band-in">
+    <div class="reveal">
+      <h2>Get a free assessment of your building.</h2>
+      <p>We'll inspect your exterior coatings and waterproofing and send you a written report with corrective pricing — no cost, no commitment.</p>
+      <a class="btn btn-dark" href="#contact">Book my free assessment →</a>
+    </div>
+    <div class="contact reveal">
+      <div class="row"><small>Call</small><b>073 378 0415</b></div>
+      <div class="row"><small>Email</small><b>john@powerrock.co.za</b></div>
+      <div class="row"><small>Online</small><b>www.powerrock.co.za</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <b>POWER<span>ROCK</span></b>
+        <p>Commercial painting, waterproofing and road marking across South Africa. A proud member of the PowerRock Group, est. 2010.</p>
+      </div>
+      <div>
+        <h4>Services</h4>
+        <a href="#services">Painting &amp; waterproofing</a>
+        <a href="#services">Malls &amp; complexes</a>
+        <a href="#services">Road marking</a>
+        <a href="#services">Paint tenders</a>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <a href="#why">Why PowerRock</a>
+        <a href="#work">Our work</a>
+        <a href="#why">Warranty &amp; QA</a>
+        <a href="#contact">Contact</a>
+      </div>
+      <div>
+        <h4>Get in touch</h4>
+        <p>073 378 0415</p>
+        <p>john@powerrock.co.za</p>
+        <p>Nationwide · South Africa</p>
+        <p>B-BBEE Level 2</p>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 PowerRock Group. All rights reserved.</span>
+      <span class="tag">Design concept v1</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.documentElement.classList.add('js');
+// mobile menu
+var nav=document.getElementById('nav'), burger=document.getElementById('burger');
+burger.addEventListener('click',function(){ nav.classList.toggle('open'); });
+document.querySelectorAll('#mobile a').forEach(function(a){ a.addEventListener('click',function(){ nav.classList.remove('open'); }); });
+// show nav CTA after hero
+var navCta=document.getElementById('navCta');
+window.addEventListener('scroll',function(){ navCta.style.display = window.scrollY>520 ? 'inline-flex' : 'none'; },{passive:true});
+// reveal on scroll
+var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } }); },{threshold:.12,rootMargin:'0px 0px -40px 0px'});
+document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+</script>
+</body>
+</html>
