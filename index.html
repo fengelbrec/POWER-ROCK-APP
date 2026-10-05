@@ -5550,10 +5550,247 @@ function renderFoundation(){
 // ───────────────────────────────────────────
 // MARKETING
 // ───────────────────────────────────────────
-function renderMarketing(){
-  let h = `<div class="page-eyebrow">Door 5 · Marketing &amp; Sales</div><div class="page-title">Pipeline</div>`;
-  h += `<div class="empty-state ledger-card" style="padding:40px 20px"><div class="empty-state-ico">◎</div><div class="empty-state-txt">Quote builder and client pipeline — coming once Sites and Financials are populated with real June data.</div></div>`;
-  $('pageBody').innerHTML = h;
+// ── PROPERTY OUTREACH CRM — reach landlords, property groups & centre/ops managers ──
+const MKT_STORE_ID='site_general_outreach';
+const MKT_STAGES=['New','Contacted','Profile sent','Assessment','Quoted','Won','Lost'];
+const MKT_STCOL={'New':'#8A8470','Contacted':'#2A6DB0','Profile sent':'#7A5AA8','Assessment':'#C08A00','Quoted':'#D4772A','Won':'#3F5A4C','Lost':'#B2342A'};
+const MKT_CO={name:'John Mathuhle', email:'john@powerrock.co.za', phone:'073 378 0415', web:'www.powerrock.co.za'};
+let MKT={loaded:false, contacts:[], settings:{weekly_target:25}, holderExists:false};
+let MKT_SEARCH='', MKT_STAGE='all', MKT_VIEW='week';   // week | all
+
+async function mktLoad(force){
+  if(MKT.loaded && !force) return;
+  try{
+    const rows=await sbGetRows('sites','id=eq.'+MKT_STORE_ID);
+    if(Array.isArray(rows)&&rows[0]&&rows[0].details){
+      MKT.contacts=Array.isArray(rows[0].details.contacts)?rows[0].details.contacts:[];
+      MKT.settings=rows[0].details.settings||{weekly_target:25};
+      MKT.holderExists=true;
+    }
+  }catch(e){}
+  MKT.loaded=true;
+}
+async function mktSave(msg){
+  const details={is_general:true, is_outreach_store:true, contacts:MKT.contacts, settings:MKT.settings};
+  const row={ id:MKT_STORE_ID, name:'Property outreach', client:'', team_leader:'', status:'active', quote_value:0, details:details };
+  const ok=await sbUpsert('sites', row);
+  if(ok) MKT.holderExists=true;
+  if(msg) showSaveToast(ok?msg:'Could not save — check your signal');
+  return ok;
+}
+function mktById(id){ return MKT.contacts.find(function(c){return c.id===id;}); }
+function mktFirstName(c){ const m=(c.manager||'').trim(); if(!m) return 'there'; const w=m.split(/\s+/)[0]; return /^[A-Za-z]{2,}$/.test(w)?w:'there'; }
+function mktDue(c){ // in this week's queue?
+  if(c.stage==='Won'||c.stage==='Lost') return false;
+  if(c.next_action) return c.next_action<=invToday();
+  return c.stage==='New';
+}
+function mktStats(){ const s={total:MKT.contacts.length}; MKT_STAGES.forEach(function(st){ s[st]=0; }); MKT.contacts.forEach(function(c){ const st=MKT_STAGES.indexOf(c.stage)>=0?c.stage:'New'; s[st]++; }); return s; }
+
+async function renderMarketing(){
+  $('pageBody').innerHTML=`<div class="page-eyebrow">Door 5 · Marketing &amp; Sales</div><div class="page-title">Property outreach</div><div style="text-align:center;padding:44px;color:#8A8470">Loading your centres…</div>`;
+  await mktLoad();
+  const st=mktStats();
+  const contacted=st.total-st['New'];
+  let h=`<div class="page-eyebrow">Door 5 · Marketing &amp; Sales</div><div class="page-title">Property outreach</div>`;
+  h+=`<div class="snap-meta" style="margin-bottom:12px">${st.total} centres &amp; property groups. Work the weekly queue → offer a free assessment → win the recoat.</div>`;
+  // top buttons
+  h+=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="cta-btn" style="flex:1;min-width:130px;margin:0;height:44px" onclick="mktOpenPlaybook()">📖 Playbook</button>
+    <button class="cta-btn ghost" style="flex:1;min-width:130px;margin:0;height:44px" onclick="mktAddContact()">+ Add centre</button>
+  </div>`;
+  // funnel
+  h+=`<div class="ledger-card" style="padding:12px 14px;margin-bottom:12px">
+    <div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px;margin-bottom:8px">PIPELINE</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">`;
+  MKT_STAGES.forEach(function(stage){ h+=`<div onclick="mktStageFilter('${stage}')" style="flex:1;min-width:66px;background:${MKT_STAGE===stage?MKT_STCOL[stage]:'#F4F2EC'};color:${MKT_STAGE===stage?'#fff':'#1A1A1A'};border-radius:8px;padding:7px 4px;text-align:center;cursor:pointer"><div style="font-size:16px;font-weight:800">${st[stage]}</div><div style="font-size:8.5px;font-weight:700;letter-spacing:.2px;${MKT_STAGE===stage?'':'color:#8A8470'}">${stage.toUpperCase()}</div></div>`; });
+  h+=`</div>`;
+  if(contacted>0){ const winRate=st.total?Math.round(st['Won']/contacted*100):0; h+=`<div style="font-size:11px;color:#8A8470;margin-top:9px">${contacted} contacted · ${st['Assessment']} assessments · ${st['Quoted']} quoted · <b style="color:#3F5A4C">${st['Won']} won</b></div>`; }
+  h+=`</div>`;
+  // view toggle
+  h+=`<div style="display:flex;gap:6px;margin-bottom:10px">
+    <button onclick="mktSetView('week')" style="flex:1;background:${MKT_VIEW==='week'?'#1A1A1A':'#EFECE3'};color:${MKT_VIEW==='week'?'#fff':'#1A1A1A'};border:none;border-radius:9px;padding:9px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📌 This week</button>
+    <button onclick="mktSetView('all')" style="flex:1;background:${MKT_VIEW==='all'?'#1A1A1A':'#EFECE3'};color:${MKT_VIEW==='all'?'#fff':'#1A1A1A'};border:none;border-radius:9px;padding:9px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">All centres</button>
+  </div>`;
+  // search
+  h+=`<input class="f-input" id="mktSearch" style="margin:0 0 12px" placeholder="🔍 Search centre, manager or group…" value="${esc(MKT_SEARCH)}" oninput="mktSearchInput(this.value)"/>`;
+
+  let pool=MKT.contacts.slice();
+  if(MKT_SEARCH){ const q=MKT_SEARCH.toLowerCase(); pool=pool.filter(function(c){ return (c.centre||'').toLowerCase().indexOf(q)>=0 || (c.manager||'').toLowerCase().indexOf(q)>=0 || (c.group||'').toLowerCase().indexOf(q)>=0 || (c.manager_email||'').toLowerCase().indexOf(q)>=0; }); }
+  if(MKT_STAGE!=='all'){ pool=pool.filter(function(c){ return (c.stage||'New')===MKT_STAGE; }); }
+
+  let listTitle='', shown=[];
+  if(MKT_VIEW==='week' && !MKT_SEARCH && MKT_STAGE==='all'){
+    const due=MKT.contacts.filter(mktDue);
+    // follow-ups first (those with a next_action), then new ones, cap at weekly target
+    due.sort(function(a,b){ const an=a.next_action?0:1, bn=b.next_action?0:1; if(an!==bn) return an-bn; return (a.next_action||'')<(b.next_action||'')?-1:1; });
+    const tgt=MKT.settings.weekly_target||25;
+    shown=due.slice(0,tgt);
+    listTitle=`This week — ${shown.length} to contact${due.length>tgt?' (of '+due.length+' due)':''}`;
+    if(!shown.length) listTitle='This week — all caught up 🎉';
+  } else {
+    shown=pool.slice(0,80);
+    listTitle=(MKT_SEARCH||MKT_STAGE!=='all'?pool.length+' match'+(pool.length!==1?'es':''):'All centres — '+pool.length)+(pool.length>80?' (showing first 80 — search to narrow)':'');
+  }
+  h+=`<div class="section-lbl">${esc(listTitle)}</div>`;
+  if(!shown.length){ h+=`<div style="text-align:center;padding:26px;color:#A39E8C">Nothing here.</div>`; }
+  h+=shown.map(mktCard).join('');
+  $('pageBody').innerHTML=h;
+}
+function mktCard(c){
+  const st=c.stage||'New'; const email=c.manager_email||c.ops_email||'';
+  return `<div class="ledger-card" style="padding:11px 13px;margin-bottom:8px;cursor:pointer" onclick="mktOpenDetail('${c.id}')">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+      <div style="min-width:0"><div style="font-size:13px;font-weight:800;color:#1A1A1A;word-break:break-word">${esc(c.centre||'(unnamed)')}</div>
+      <div style="font-size:11px;color:#8A8470;margin-top:2px">${esc(c.manager||'—')}${c.group?' · '+esc(c.group):''}</div>
+      ${email?`<div style="font-size:10.5px;color:#A39E8C;margin-top:2px;word-break:break-all">✉ ${esc(email)}</div>`:`<div style="font-size:10.5px;color:#C08A00;margin-top:2px">no email yet</div>`}</div>
+      <span style="font-size:9.5px;font-weight:800;color:#fff;background:${MKT_STCOL[st]||'#8A8470'};border-radius:20px;padding:3px 9px;white-space:nowrap">${esc(st)}</span>
+    </div>
+    ${c.next_action?`<div style="font-size:10px;color:${c.next_action<=invToday()?'#B2342A':'#8A8470'};margin-top:6px">↻ follow up ${fd(c.next_action)}</div>`:''}
+  </div>`;
+}
+function mktSetView(v){ MKT_VIEW=v; renderMarketing(); }
+function mktStageFilter(s){ MKT_STAGE=(MKT_STAGE===s?'all':s); if(MKT_STAGE!=='all') MKT_VIEW='all'; renderMarketing(); }
+let MKT_SEARCH_T=null;
+function mktSearchInput(v){ MKT_SEARCH=v; if(v) MKT_VIEW='all'; clearTimeout(MKT_SEARCH_T); MKT_SEARCH_T=setTimeout(renderMarketing,250); }
+
+function mktOpenDetail(id){
+  const c=mktById(id); if(!c) return;
+  const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:2px">${esc(c.centre||'Centre')}</div>
+    <div style="font-size:11px;color:#8A8470;margin-bottom:14px">${esc(c.group||'Independent / unknown group')}</div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Centre / building</label><input class="f-input" id="mk_centre" style="margin:0" value="${esc(c.centre||'')}"/></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label style="${lbl}">Manager</label><input class="f-input" id="mk_manager" style="margin:0" value="${esc(c.manager||'')}"/></div><div style="flex:1"><label style="${lbl}">Phone</label><input class="f-input" id="mk_phone" style="margin:0" value="${esc(c.manager_phone||'')}"/></div></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Manager email</label><input class="f-input" id="mk_memail" style="margin:0" value="${esc(c.manager_email||'')}"/></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label style="${lbl}">Ops manager</label><input class="f-input" id="mk_ops" style="margin:0" value="${esc(c.ops||'')}"/></div><div style="flex:1"><label style="${lbl}">Ops email</label><input class="f-input" id="mk_oemail" style="margin:0" value="${esc(c.ops_email||'')}"/></div></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Property group</label><input class="f-input" id="mk_group" style="margin:0" value="${esc(c.group||'')}"/></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label style="${lbl}">Stage</label><select class="f-input" id="mk_stage" style="margin:0">${MKT_STAGES.map(function(s){return `<option${(c.stage||'New')===s?' selected':''}>${s}</option>`;}).join('')}</select></div><div style="flex:1"><label style="${lbl}">Follow up on</label><input type="date" class="f-input" id="mk_next" style="margin:0" value="${esc(c.next_action||'')}"/></div></div>
+    <div style="margin-bottom:14px"><label style="${lbl}">Notes</label><textarea class="f-input" id="mk_notes" rows="2" style="margin:0" placeholder="e.g. north façade chalking; call after month-end">${esc(c.notes||'')}</textarea></div>`;
+  // email actions
+  const em=c.manager_email||c.ops_email||'';
+  h+=`<div style="font-size:11px;font-weight:800;color:#8B1A1A;letter-spacing:.4px;text-transform:uppercase;margin:4px 0 8px;padding-bottom:5px;border-bottom:1px solid #EFECE3">Send an email</div>`;
+  if(em){
+    h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <button class="cta-btn" style="flex:1;min-width:150px;margin:0" onclick="mktEmail('${c.id}','intro')">✉ Free-assessment offer</button>
+      <button class="cta-btn ghost" style="flex:1;min-width:130px;margin:0" onclick="mktEmail('${c.id}','follow1')">↻ Follow-up</button>
+    </div>
+    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:12px">Opens your email app with the message ready — you review and press send.</div>`;
+  } else {
+    h+=`<div style="font-size:11.5px;color:#C08A00;margin-bottom:12px">Add a manager or ops email above to send the offer. Tip: check the centre's website “Centre Management” page or LinkedIn.</div>`;
+  }
+  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="mktMarkContacted('${c.id}')">✓ Mark contacted today (follow-up in 7 days)</button>`;
+  h+=`<button class="cta-btn" onclick="mktSaveDetail('${c.id}')">Save changes</button>`;
+  h+=`<button class="cta-btn ghost" style="margin-top:8px;color:#B2342A" onclick="mktDelete('${c.id}')">🗑 Delete</button>`;
+  h+=`<button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML=h;
+  openModal('modalSiteDetail');
+}
+function mktCollect(c){
+  c.centre=($('mk_centre')||{}).value||c.centre; c.manager=($('mk_manager')||{}).value||'';
+  c.manager_phone=($('mk_phone')||{}).value||''; c.manager_email=($('mk_memail')||{}).value||'';
+  c.ops=($('mk_ops')||{}).value||''; c.ops_email=($('mk_oemail')||{}).value||'';
+  c.group=($('mk_group')||{}).value||''; c.stage=($('mk_stage')||{}).value||'New';
+  c.next_action=($('mk_next')||{}).value||''; c.notes=($('mk_notes')||{}).value||'';
+}
+async function mktSaveDetail(id){ const c=mktById(id); if(!c) return; mktCollect(c); const ok=await mktSave('Saved'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
+async function mktMarkContacted(id){ const c=mktById(id); if(!c) return; mktCollect(c); c.last_contacted=invToday(); if(c.stage==='New') c.stage='Contacted'; const d=new Date(); d.setDate(d.getDate()+7); c.next_action=d.toISOString().slice(0,10); (c.activity=c.activity||[]).unshift({at:invToday(),what:'Contacted'}); const ok=await mktSave('Marked contacted'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
+async function mktDelete(id){ if(!confirm('Delete this centre from your outreach list?')) return; MKT.contacts=MKT.contacts.filter(function(c){return c.id!==id;}); const ok=await mktSave('Deleted'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
+async function mktAddContact(){
+  const c={ id:uid(), centre:'', manager:'', manager_email:'', manager_phone:'', ops:'', ops_email:'', group:'', stage:'New', last_contacted:'', next_action:'', notes:'', created:invToday(), activity:[] };
+  MKT.contacts.unshift(c); mktOpenDetail(c.id);
+}
+function mktTemplate(kind,c){
+  const fn=mktFirstName(c); const centre=c.centre||'your centre';
+  if(kind==='follow1'){
+    return { subject:'Following up — free assessment for '+centre,
+      body:'Good day '+fn+',\n\nI\'m following up on my note about a free, no-obligation condition assessment of the exterior coatings and waterproofing at '+centre+'.\n\nIt comes with a written report and corrective pricing, at no cost. Many centres find it useful simply to know the condition and budget, even if the work is planned for later.\n\nWould a quick site visit suit you in the next week or two?\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
+  }
+  return { subject:'Free coatings & waterproofing assessment — '+centre,
+    body:'Good day '+fn+',\n\nMy name is '+MKT_CO.name+' from PowerRock Coatings. We prepare, waterproof and repaint shopping centres and commercial buildings across South Africa — recent sites include Waterfall Mall, Platinum Square and Newcastle Mall.\n\nI\'d like to offer '+centre+' a FREE, no-obligation condition assessment of your exterior coatings and waterproofing — a written report with corrective pricing, at no cost or commitment.\n\nWhat sets us apart:\n• 7-year written warranty (us as applicator + the paint supplier)\n• Weekly independent third-party QA reports during the project\n• Work scheduled around your trading hours — minimal disruption to shoppers\n• B-BBEE Level 2\n\nMay I arrange a short assessment visit? Our company profile is available at '+MKT_CO.web+'.\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
+}
+function mktEmail(id,kind){
+  const c=mktById(id); if(!c) return; mktCollect(c);
+  const to=c.manager_email||c.ops_email||''; if(!to){ showSaveToast('No email for this centre'); return; }
+  const t=mktTemplate(kind,c);
+  // record the touch
+  c.last_contacted=invToday(); if(c.stage==='New') c.stage='Contacted'; const d=new Date(); d.setDate(d.getDate()+7); c.next_action=d.toISOString().slice(0,10);
+  (c.activity=c.activity||[]).unshift({at:invToday(),what:'Emailed: '+kind});
+  mktSave();
+  window.location.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(t.subject)+'&body='+encodeURIComponent(t.body);
+}
+
+// ── THE OUTREACH PLAYBOOK (readable in-app + download as PDF) ──
+function mktPlaybookInner(){
+  const hd='color:#8B1A1A;font-size:15px;font-weight:800;margin:18px 0 7px;letter-spacing:.2px';
+  const p='font-size:12.5px;line-height:1.65;color:#2A2A2A;margin:0 0 8px';
+  const li='font-size:12.5px;line-height:1.6;color:#2A2A2A;margin:0 0 5px';
+  return `<div style="font-family:Georgia,serif;max-width:720px;margin:0 auto;color:#1A1A1A">
+    <div style="border-bottom:3px solid #8B1A1A;padding-bottom:10px;margin-bottom:6px">
+      <div style="font-size:20px;font-weight:800;color:#8B1A1A">PowerRock Coatings</div>
+      <div style="font-size:14px;font-weight:700;color:#1A1A1A">Weekly Property-Outreach Playbook</div>
+    </div>
+    <p style="${p}">A simple weekly habit to win shopping-centre &amp; commercial recoat work. Run it with Michelle — ~4 hours a week. Your edge: a <b>free condition assessment</b>, a <b>7-year warranty</b> (you + supplier), <b>weekly independent QA reports</b>, work <b>around trading hours</b>, and <b>B-BBEE Level 2</b>.</p>
+
+    <div style="${hd}">1 · Who you sell to</div>
+    <div style="${li}"><b>Centre / Ops / Facilities Managers</b> — on the ground, spot the problem, shortlist contractors. Fastest yes.</div>
+    <div style="${li}"><b>Asset / Property Managers</b> at the landlords (Growthpoint, Redefine, Vukile, Hyprop, Resilient, Fortress, Emira, Dipula, Attacq, Moolman, Flanagan&nbsp;&amp;&nbsp;Gerard). They hold the CAPEX budget.</div>
+    <div style="${li}"><b>Managing agents</b> (Broll, Excellerate/JHI, Trafalgar, Spire, Eris). You already deal with some — a door already open.</div>
+
+    <div style="${hd}">2 · Where to find them</div>
+    <div style="${li}">• <b>SACSC</b> (shopping-centre council) — directory + events. #1 source.</div>
+    <div style="${li}">• <b>SAPOA</b> — landlords &amp; asset managers; regional breakfasts.</div>
+    <div style="${li}">• Each mall's <b>“Centre Management”</b> web page — name, email, phone.</div>
+    <div style="${li}">• <b>LinkedIn</b> — search the job titles + company name.</div>
+    <div style="${li}">• Landlord <b>portfolio pages</b> — every centre they own.</div>
+    <div style="${li}">• Your <b>paint reps</b> (Plascon/Dulux/Prominent/Top) — they know which centres are due. Ask monthly.</div>
+    <div style="${li}">• Your <b>happy clients</b> — ask for referrals to the landlord's other centres.</div>
+
+    <div style="${hd}">3 · The weekly rhythm</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">
+      <tr style="background:#F4F2EC"><td style="padding:6px 8px;font-weight:800;width:70px">Mon</td><td style="padding:6px 8px">Add 20–25 new centres to the list (App → Marketing → + Add centre)</td></tr>
+      <tr><td style="padding:6px 8px;font-weight:800">Tue</td><td style="padding:6px 8px">Send the free-assessment email to this week's batch (tap ✉ on each)</td></tr>
+      <tr style="background:#F4F2EC"><td style="padding:6px 8px;font-weight:800">Wed</td><td style="padding:6px 8px">LinkedIn connect with each, short note</td></tr>
+      <tr><td style="padding:6px 8px;font-weight:800">Thu</td><td style="padding:6px 8px">Phone follow-up on last week's emails — the call wins the deal</td></tr>
+      <tr style="background:#F4F2EC"><td style="padding:6px 8px;font-weight:800">Fri</td><td style="padding:6px 8px">Log replies, book assessments, move each one a stage forward</td></tr>
+    </table>
+    <p style="${p}">The app's <b>“This week”</b> queue tells you exactly who to contact each day and reminds you to follow up after 7 days.</p>
+
+    <div style="${hd}">4 · What wins (strike-rate)</div>
+    <div style="${li}">• <b>Lead with the free assessment</b>, never “we paint buildings.”</div>
+    <div style="${li}">• <b>Name their building:</b> “the north façade at [Centre] is chalking.” One real observation beats any pitch.</div>
+    <div style="${li}">• <b>Drop a nearby reference</b> (Waterfall Mall, Platinum Square…).</div>
+    <div style="${li}">• <b>Reverse the risk:</b> 7-year warranty, weekly QA, minimal disruption.</div>
+    <div style="${li}">• <b>Time it</b> to their budget / financial year.</div>
+
+    <div style="${hd}">5 · The numbers</div>
+    <p style="${p}">25 centres/week → ~1,000/year. Expect ~<b>8–12%</b> to book a free assessment, and a strong share of those convert because you've already shown the problem and the price.</p>
+
+    <div style="${hd}">Email 1 — Free-assessment offer</div>
+    <pre style="white-space:pre-wrap;font-family:inherit;background:#F7F6F1;border:1px solid #E6E2D8;border-radius:8px;padding:11px;font-size:11.5px;line-height:1.55;margin:0 0 10px">${esc(mktTemplate('intro',{centre:'[Centre]',manager:'[Name]'}).body)}</pre>
+    <div style="${hd}">Email 2 — Follow-up (7 days later)</div>
+    <pre style="white-space:pre-wrap;font-family:inherit;background:#F7F6F1;border:1px solid #E6E2D8;border-radius:8px;padding:11px;font-size:11.5px;line-height:1.55;margin:0 0 6px">${esc(mktTemplate('follow1',{centre:'[Centre]',manager:'[Name]'}).body)}</pre>
+    <div style="font-size:10.5px;color:#8A8470;margin-top:12px;border-top:1px solid #E6E2D8;padding-top:8px">PowerRock Coatings · ${MKT_CO.name} · ${MKT_CO.phone} · ${MKT_CO.email} · ${MKT_CO.web}</div>
+  </div>`;
+}
+function mktOpenPlaybook(){
+  let ov=document.getElementById('mktPlaybook');
+  if(ov) ov.remove();
+  ov=document.createElement('div');
+  ov.id='mktPlaybook';
+  ov.style.cssText='position:fixed;inset:0;z-index:1200;background:#F2EFE8;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  ov.innerHTML=`<div style="position:sticky;top:0;background:#1A1A1A;display:flex;gap:8px;padding:10px 12px;z-index:2">
+      <button onclick="document.getElementById('mktPlaybook').remove()" style="background:#fff;color:#1A1A1A;border:none;border-radius:22px;padding:9px 16px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer">← Back</button>
+      <button onclick="mktDownloadPlaybook(this)" style="background:#8B1A1A;color:#fff;border:none;border-radius:22px;padding:9px 16px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer">⬇ Download PDF</button>
+    </div>
+    <div style="padding:16px">${mktPlaybookInner()}</div>`;
+  document.body.appendChild(ov);
+}
+async function mktDownloadPlaybook(btn){
+  const old=btn.textContent; btn.textContent='Preparing…'; btn.disabled=true;
+  try{ const r=await htmlToPdfBlob(mktPlaybookInner(),'PowerRock-Outreach-Playbook'); saveBlobFile(r.blob,r.name); showSaveToast('Playbook saved'); }
+  catch(e){ showSaveToast('Could not make the PDF'); }
+  finally{ btn.textContent=old; btn.disabled=false; }
 }
 
 // ───────────────────────────────────────────
