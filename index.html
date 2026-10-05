@@ -5586,6 +5586,21 @@ function mktDue(c){ // in this week's queue?
   return c.stage==='New';
 }
 function mktStats(){ const s={total:MKT.contacts.length}; MKT_STAGES.forEach(function(st){ s[st]=0; }); MKT.contacts.forEach(function(c){ const st=MKT_STAGES.indexOf(c.stage)>=0?c.stage:'New'; s[st]++; }); return s; }
+// Count DISTINCT centres with each kind of activity in the current calendar month.
+function mktMonthSummary(){
+  const ym=invToday().slice(0,7); const r={emailed:0,replies:0,assess:0,quotes:0,won:0};
+  MKT.contacts.forEach(function(c){
+    const acts=(c.activity||[]).filter(function(a){ return String(a.at||'').slice(0,7)===ym; });
+    if(!acts.length) return;
+    const has=function(re){ return acts.some(function(a){ return re.test(String(a.what||'').toLowerCase()); }); };
+    if(has(/email|contacted/)) r.emailed++;
+    if(has(/reply/)) r.replies++;
+    if(has(/assessment/)) r.assess++;
+    if(has(/quoted/)) r.quotes++;
+    if(has(/won/)) r.won++;
+  });
+  return r;
+}
 
 async function renderMarketing(){
   $('pageBody').innerHTML=`<div class="page-eyebrow">Door 5 · Marketing &amp; Sales</div><div class="page-title">Property outreach</div><div style="text-align:center;padding:44px;color:#8A8470">Loading your centres…</div>`;
@@ -5607,6 +5622,14 @@ async function renderMarketing(){
   h+=`</div>`;
   if(contacted>0){ const winRate=st.total?Math.round(st['Won']/contacted*100):0; h+=`<div style="font-size:11px;color:#8A8470;margin-top:9px">${contacted} contacted · ${st['Assessment']} assessments · ${st['Quoted']} quoted · <b style="color:#3F5A4C">${st['Won']} won</b></div>`; }
   h+=`</div>`;
+  // this-month activity summary
+  const ms=mktMonthSummary(); const MONTHS_L=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monName=MONTHS_L[parseInt(invToday().slice(5,7),10)-1];
+  const tile=function(lbl,val,c){ return `<div style="flex:1;min-width:0;text-align:center"><div class="disp" style="font-size:18px;font-weight:800;color:${c}">${val}</div><div style="font-size:8.5px;font-weight:700;color:#8A8470;text-transform:uppercase;letter-spacing:.2px;margin-top:1px">${lbl}</div></div>`; };
+  h+=`<div class="ledger-card" style="padding:12px 14px;margin-bottom:12px">
+    <div style="font-size:10.5px;color:#8A8470;font-weight:700;letter-spacing:.3px;margin-bottom:9px">THIS MONTH · ${monName.toUpperCase()}</div>
+    <div style="display:flex;gap:4px">${tile('Contacted',ms.emailed,'#2A6DB0')}${tile('Replies',ms.replies,'#7A5AA8')}${tile('Assessments',ms.assess,'#C08A00')}${tile('Quotes',ms.quotes,'#D4772A')}${tile('Won',ms.won,'#3F5A4C')}</div>
+  </div>`;
   // view toggle
   h+=`<div style="display:flex;gap:6px;margin-bottom:10px">
     <button onclick="mktSetView('week')" style="flex:1;background:${MKT_VIEW==='week'?'#1A1A1A':'#EFECE3'};color:${MKT_VIEW==='week'?'#fff':'#1A1A1A'};border:none;border-radius:9px;padding:9px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📌 This week</button>
@@ -5634,20 +5657,33 @@ async function renderMarketing(){
   }
   h+=`<div class="section-lbl">${esc(listTitle)}</div>`;
   if(!shown.length){ h+=`<div style="text-align:center;padding:26px;color:#A39E8C">Nothing here.</div>`; }
-  h+=shown.map(mktCard).join('');
+  else h+=mktListTableHtml(shown);
   $('pageBody').innerHTML=h;
 }
-function mktCard(c){
-  const st=c.stage||'New'; const email=c.manager_email||c.ops_email||'';
-  return `<div class="ledger-card" style="padding:11px 13px;margin-bottom:8px;cursor:pointer" onclick="mktOpenDetail('${c.id}')">
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-      <div style="min-width:0"><div style="font-size:13px;font-weight:800;color:#1A1A1A;word-break:break-word">${esc(c.centre||'(unnamed)')}</div>
-      <div style="font-size:11px;color:#8A8470;margin-top:2px">${esc(c.manager||'—')}${c.group?' · '+esc(c.group):''}</div>
-      ${email?`<div style="font-size:10.5px;color:#A39E8C;margin-top:2px;word-break:break-all">✉ ${esc(email)}</div>`:`<div style="font-size:10.5px;color:#C08A00;margin-top:2px">no email yet</div>`}</div>
-      <span style="font-size:9.5px;font-weight:800;color:#fff;background:${MKT_STCOL[st]||'#8A8470'};border-radius:20px;padding:3px 9px;white-space:nowrap">${esc(st)}</span>
-    </div>
-    ${c.next_action?`<div style="font-size:10px;color:${c.next_action<=invToday()?'#B2342A':'#8A8470'};margin-top:6px">↻ follow up ${fd(c.next_action)}</div>`:''}
-  </div>`;
+// Compact spreadsheet-style list (same font/feel as the Income tab) so many centres fit on one screen.
+function mktListTableHtml(list){
+  const rowHtml=list.map(function(c){
+    const st=c.stage||'New'; const email=c.manager_email||c.ops_email||'';
+    const sub=[c.manager||'', c.group||''].filter(Boolean).join(' · ')||'—';
+    const dot=email?'<span style="color:#3F5A4C">✉</span> ':'<span style="color:#C79A2E">✎</span> ';
+    const due=c.next_action&&c.stage!=='Won'&&c.stage!=='Lost';
+    return `<tr style="cursor:pointer" onclick="mktOpenDetail('${c.id}')">
+      <td style="padding:7px 8px;border-bottom:1px solid #EFECE3;font-weight:700;color:#1A1A1A;line-height:1.3">${dot}${esc(c.centre||'(unnamed)')}${due?`<div style="font-size:9px;font-weight:700;color:${c.next_action<=invToday()?'#B2342A':'#A39E8C'};margin-top:1px">↻ ${fd(c.next_action)}</div>`:''}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid #EFECE3;color:#6B6657;font-size:11px;line-height:1.3">${esc(sub)}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid #EFECE3;text-align:right;white-space:nowrap"><span style="font-size:9px;font-weight:800;color:#fff;background:${MKT_STCOL[st]||'#8A8470'};border-radius:20px;padding:2px 8px">${esc(st)}</span></td>
+    </tr>`;
+  }).join('');
+  return `<div class="ledger-card" style="padding:2px 10px 6px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed">
+      <colgroup><col style="width:46%"/><col style="width:36%"/><col style="width:18%"/></colgroup>
+      <thead><tr>
+        <th style="text-align:left;padding:7px 8px;border-bottom:2px solid #1A1A1A;font-size:10px;color:#1A1A1A">CENTRE</th>
+        <th style="text-align:left;padding:7px 8px;border-bottom:2px solid #1A1A1A;font-size:10px;color:#1A1A1A">MANAGER · GROUP</th>
+        <th style="text-align:right;padding:7px 8px;border-bottom:2px solid #1A1A1A;font-size:10px;color:#1A1A1A">STAGE</th>
+      </tr></thead>
+      <tbody>${rowHtml}</tbody>
+    </table></div>
+    <div style="font-size:9.5px;color:#A39E8C;margin:6px 2px 0"><span style="color:#3F5A4C">✉</span> has an email · <span style="color:#C79A2E">✎</span> needs an email · tap a row to open</div>`;
 }
 function mktSetView(v){ MKT_VIEW=v; renderMarketing(); }
 function mktStageFilter(s){ MKT_STAGE=(MKT_STAGE===s?'all':s); if(MKT_STAGE!=='all') MKT_VIEW='all'; renderMarketing(); }
@@ -5679,7 +5715,10 @@ function mktOpenDetail(id){
   } else {
     h+=`<div style="font-size:11.5px;color:#C08A00;margin-bottom:12px">Add a manager or ops email above to send the offer. Tip: check the centre's website “Centre Management” page or LinkedIn.</div>`;
   }
-  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="mktMarkContacted('${c.id}')">✓ Mark contacted today (follow-up in 7 days)</button>`;
+  h+=`<div style="display:flex;gap:8px;margin-bottom:8px">
+    <button class="cta-btn ghost" style="flex:1;margin:0" onclick="mktMarkContacted('${c.id}')">✓ Contacted</button>
+    <button class="cta-btn ghost" style="flex:1;margin:0" onclick="mktGotReply('${c.id}')">💬 Got a reply</button>
+  </div>`;
   h+=`<button class="cta-btn" onclick="mktSaveDetail('${c.id}')">Save changes</button>`;
   h+=`<button class="cta-btn ghost" style="margin-top:8px;color:#B2342A" onclick="mktDelete('${c.id}')">🗑 Delete</button>`;
   h+=`<button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
@@ -5693,7 +5732,8 @@ function mktCollect(c){
   c.group=($('mk_group')||{}).value||''; c.stage=($('mk_stage')||{}).value||'New';
   c.next_action=($('mk_next')||{}).value||''; c.notes=($('mk_notes')||{}).value||'';
 }
-async function mktSaveDetail(id){ const c=mktById(id); if(!c) return; mktCollect(c); const ok=await mktSave('Saved'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
+async function mktSaveDetail(id){ const c=mktById(id); if(!c) return; const old=c.stage; mktCollect(c); if(c.stage!==old){ (c.activity=c.activity||[]).unshift({at:invToday(),what:'→ '+c.stage}); } const ok=await mktSave('Saved'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
+async function mktGotReply(id){ const c=mktById(id); if(!c) return; mktCollect(c); (c.activity=c.activity||[]).unshift({at:invToday(),what:'Reply received'}); if(c.stage==='New'||c.stage==='Contacted') c.stage='Profile sent'; const ok=await mktSave('Reply logged'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
 async function mktMarkContacted(id){ const c=mktById(id); if(!c) return; mktCollect(c); c.last_contacted=invToday(); if(c.stage==='New') c.stage='Contacted'; const d=new Date(); d.setDate(d.getDate()+7); c.next_action=d.toISOString().slice(0,10); (c.activity=c.activity||[]).unshift({at:invToday(),what:'Contacted'}); const ok=await mktSave('Marked contacted'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
 async function mktDelete(id){ if(!confirm('Delete this centre from your outreach list?')) return; MKT.contacts=MKT.contacts.filter(function(c){return c.id!==id;}); const ok=await mktSave('Deleted'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); } }
 async function mktAddContact(){
@@ -5706,8 +5746,8 @@ function mktTemplate(kind,c){
     return { subject:'Following up — free assessment for '+centre,
       body:'Good day '+fn+',\n\nI\'m following up on my note about a free, no-obligation condition assessment of the exterior coatings and waterproofing at '+centre+'.\n\nIt comes with a written report and corrective pricing, at no cost. Many centres find it useful simply to know the condition and budget, even if the work is planned for later.\n\nWould a quick site visit suit you in the next week or two?\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
   }
-  return { subject:'Free coatings & waterproofing assessment — '+centre,
-    body:'Good day '+fn+',\n\nMy name is '+MKT_CO.name+' from PowerRock Coatings. We prepare, waterproof and repaint shopping centres and commercial buildings across South Africa — recent sites include Waterfall Mall, Platinum Square and Newcastle Mall.\n\nI\'d like to offer '+centre+' a FREE, no-obligation condition assessment of your exterior coatings and waterproofing — a written report with corrective pricing, at no cost or commitment.\n\nWhat sets us apart:\n• 7-year written warranty (us as applicator + the paint supplier)\n• Weekly independent third-party QA reports during the project\n• Work scheduled around your trading hours — minimal disruption to shoppers\n• B-BBEE Level 2\n\nMay I arrange a short assessment visit? Our company profile is available at '+MKT_CO.web+'.\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
+  return { subject:'Free exterior condition report — '+centre,
+    body:'Good day '+fn+',\n\nPowerRock Coatings prepares, waterproofs and repaints shopping centres and commercial buildings across South Africa (recent sites: Waterfall Mall, Platinum Square, Newcastle Mall).\n\nWe would like to offer '+centre+' a free, no-obligation exterior condition report — our findings on the coatings and waterproofing, with corrective pricing. No cost, no commitment.\n\n• 7-year written warranty (applicator + supplier)\n• Weekly independent QA reports during the work\n• Scheduled around your trading hours · B-BBEE Level 2\n\nMay I arrange a short assessment? Company profile: '+MKT_CO.web+'\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
 }
 function mktEmail(id,kind){
   const c=mktById(id); if(!c) return; mktCollect(c);
@@ -5765,6 +5805,17 @@ function mktPlaybookInner(){
 
     <div style="${hd}">5 · The numbers</div>
     <p style="${p}">25 centres/week → ~1,000/year. Expect ~<b>8–12%</b> to book a free assessment, and a strong share of those convert because you've already shown the problem and the price.</p>
+
+    <div style="${hd}">6 · Growing the list — real names, not info@</div>
+    <p style="${p}">A named person always beats a generic inbox. To turn an <i>info@</i> into a real decision-maker:</p>
+    <div style="${li}">• <b>LinkedIn (free):</b> search “[Landlord] centre manager”, “facilities manager”, “asset manager”. The name + company is right there.</div>
+    <div style="${li}">• <b>Guess the email from the pattern</b> you already see in your list — e.g. Growthpoint uses first-initial + surname (gparker@growthpoint.co.za). Match that pattern for the new name.</div>
+    <div style="${li}">• <b>Email finders:</b> Hunter.io, Apollo.io, RocketReach, Lusha — type name + company, get the verified work email (free tiers give a few a month; a cheap plan unlocks hundreds).</div>
+    <div style="${li}">• <b>Each mall's “Centre Management / Contact” page</b> and the landlord's “Our team / Management” page often name the person.</div>
+    <div style="${li}">• <b>SACSC &amp; SAPOA</b> member directories + event attendee lists.</div>
+    <div style="${li}">• <b>Ask your paint reps &amp; current clients</b> for the right person by name.</div>
+    <div style="${li}">• <b>When you only have info@</b> — call or reply and ask “who looks after building maintenance / CAPEX for the centre?”, then get their direct email.</div>
+    <p style="${p}"><b>Goal:</b> replace every generic address with a named person + direct email, and add other provinces (Western Cape, KZN, Eastern Cape, Limpopo/Mpumalanga) the same way.</p>
 
     <div style="${hd}">Email 1 — Free-assessment offer</div>
     <pre style="white-space:pre-wrap;font-family:inherit;background:#F7F6F1;border:1px solid #E6E2D8;border-radius:8px;padding:11px;font-size:11.5px;line-height:1.55;margin:0 0 10px">${esc(mktTemplate('intro',{centre:'[Centre]',manager:'[Name]'}).body)}</pre>
