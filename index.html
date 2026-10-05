@@ -5611,8 +5611,9 @@ async function renderMarketing(){
   h+=`<div class="snap-meta" style="margin-bottom:12px">${st.total} centres &amp; property groups. Work the weekly queue → offer a free assessment → win the recoat.</div>`;
   // top buttons
   h+=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <button class="cta-btn" style="flex:1;min-width:130px;margin:0;height:44px" onclick="mktOpenPlaybook()">📖 Playbook</button>
-    <button class="cta-btn ghost" style="flex:1;min-width:130px;margin:0;height:44px" onclick="mktAddContact()">+ Add centre</button>
+    <button class="cta-btn" style="flex:1;min-width:120px;margin:0;height:44px" onclick="mktOpenPlaybook()">📖 Playbook</button>
+    <button class="cta-btn ghost" style="flex:1;min-width:120px;margin:0;height:44px" onclick="mktAddContact()">+ Add centre</button>
+    <button class="cta-btn ghost" style="flex:0 0 auto;margin:0;height:44px;width:52px" onclick="mktOpenSettings()" title="Settings">⚙</button>
   </div>`;
   // funnel
   h+=`<div class="ledger-card" style="padding:12px 14px;margin-bottom:12px">
@@ -5711,7 +5712,8 @@ function mktOpenDetail(id){
       <button class="cta-btn" style="flex:1;min-width:150px;margin:0" onclick="mktEmail('${c.id}','intro')">✉ Free-assessment offer</button>
       <button class="cta-btn ghost" style="flex:1;min-width:130px;margin:0" onclick="mktEmail('${c.id}','follow1')">↻ Follow-up</button>
     </div>
-    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:12px">Opens your email app with the message ready — you review and press send.</div>`;
+    <button class="cta-btn ghost" style="margin-bottom:6px" onclick="mktShareProfile('${c.id}')">📎 Share with profile attached (phone)</button>
+    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:12px">✉ opens your email with the message + profile link ready — you review and send. 📎 (on a phone) attaches the actual profile PDF via your share sheet.</div>`;
   } else {
     h+=`<div style="font-size:11.5px;color:#C08A00;margin-bottom:12px">Add a manager or ops email above to send the offer. Tip: check the centre's website “Centre Management” page or LinkedIn.</div>`;
   }
@@ -5740,24 +5742,90 @@ async function mktAddContact(){
   const c={ id:uid(), centre:'', manager:'', manager_email:'', manager_phone:'', ops:'', ops_email:'', group:'', stage:'New', last_contacted:'', next_action:'', notes:'', created:invToday(), activity:[] };
   MKT.contacts.unshift(c); mktOpenDetail(c.id);
 }
+function mktCfg(){ const s=MKT.settings||{}; return {
+  name:s.sender_name||MKT_CO.name, email:s.sender_email||MKT_CO.email, phone:s.sender_phone||'',
+  web:MKT_CO.web, method:s.mail_method||'outlook', profile:s.profile_url||'', weekly_target:s.weekly_target||25 }; }
+function mktSignature(){ const g=mktCfg(); return 'Kind regards,\n'+g.name+'\nPowerRock Coatings\n'+(g.phone?g.phone+' · ':'')+g.email; }
+function mktProfileLine(){ const g=mktCfg(); return 'Company profile: '+(g.profile||g.web); }
 function mktTemplate(kind,c){
   const fn=mktFirstName(c); const centre=c.centre||'your centre';
   if(kind==='follow1'){
     return { subject:'Following up — free assessment for '+centre,
-      body:'Good day '+fn+',\n\nI\'m following up on my note about a free, no-obligation condition assessment of the exterior coatings and waterproofing at '+centre+'.\n\nIt comes with a written report and corrective pricing, at no cost. Many centres find it useful simply to know the condition and budget, even if the work is planned for later.\n\nWould a quick site visit suit you in the next week or two?\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
+      body:'Good day '+fn+',\n\nI\'m following up on my note about a free, no-obligation condition assessment of the exterior coatings and waterproofing at '+centre+'.\n\nIt comes with a written report and corrective pricing, at no cost. Many centres find it useful simply to know the condition and budget, even if the work is planned for later.\n\nWould a quick site visit suit you in the next week or two?\n\n'+mktProfileLine()+'\n\n'+mktSignature() };
   }
   return { subject:'Free exterior condition report — '+centre,
-    body:'Good day '+fn+',\n\nPowerRock Coatings prepares, waterproofs and repaints shopping centres and commercial buildings across South Africa (recent sites: Waterfall Mall, Platinum Square, Newcastle Mall).\n\nWe would like to offer '+centre+' a free, no-obligation exterior condition report — our findings on the coatings and waterproofing, with corrective pricing. No cost, no commitment.\n\n• 7-year written warranty (applicator + supplier)\n• Weekly independent QA reports during the work\n• Scheduled around your trading hours · B-BBEE Level 2\n\nMay I arrange a short assessment? Company profile: '+MKT_CO.web+'\n\nKind regards,\n'+MKT_CO.name+'\nPowerRock Coatings\n'+MKT_CO.phone+' · '+MKT_CO.email };
+    body:'Good day '+fn+',\n\nPowerRock Coatings prepares, waterproofs and repaints shopping centres and commercial buildings across South Africa (recent sites: Waterfall Mall, Platinum Square, Newcastle Mall).\n\nWe would like to offer '+centre+' a free, no-obligation exterior condition report — our findings on the coatings and waterproofing, with corrective pricing. No cost, no commitment.\n\n• 7-year written warranty (applicator + supplier)\n• Weekly independent QA reports during the work\n• Scheduled around your trading hours · B-BBEE Level 2\n\nMay I arrange a short assessment?\n\n'+mktProfileLine()+'\n\n'+mktSignature() };
+}
+function mktComposeUrl(to,subject,body,method){
+  const eT=encodeURIComponent(to), eS=encodeURIComponent(subject), eB=encodeURIComponent(body);
+  if(method==='gmail') return 'https://mail.google.com/mail/?view=cm&fs=1&to='+eT+'&su='+eS+'&body='+eB;
+  if(method==='outlook') return 'https://outlook.office.com/mail/deeplink/compose?to='+eT+'&subject='+eS+'&body='+eB;
+  return 'mailto:'+eT+'?subject='+eS+'&body='+eB;
 }
 function mktEmail(id,kind){
   const c=mktById(id); if(!c) return; mktCollect(c);
   const to=c.manager_email||c.ops_email||''; if(!to){ showSaveToast('No email for this centre'); return; }
-  const t=mktTemplate(kind,c);
-  // record the touch
+  const t=mktTemplate(kind,c); const g=mktCfg();
   c.last_contacted=invToday(); if(c.stage==='New') c.stage='Contacted'; const d=new Date(); d.setDate(d.getDate()+7); c.next_action=d.toISOString().slice(0,10);
   (c.activity=c.activity||[]).unshift({at:invToday(),what:'Emailed: '+kind});
   mktSave();
-  window.location.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(t.subject)+'&body='+encodeURIComponent(t.body);
+  const url=mktComposeUrl(to,t.subject,t.body,g.method);
+  if(g.method==='default') window.location.href=url; else { const w=window.open(url,'_blank'); if(!w) window.location.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(t.subject)+'&body='+encodeURIComponent(t.body); }
+}
+// Mobile: open the phone share sheet with the real profile PDF attached + the message text.
+async function mktShareProfile(id){
+  const c=mktById(id); if(!c) return; mktCollect(c);
+  const g=mktCfg(); if(!g.profile){ showSaveToast('Upload the profile in ⚙ Settings first'); return; }
+  const t=mktTemplate('intro',c);
+  showSaveToast('Preparing…');
+  try{
+    const resp=await fetch(g.profile); const blob=await resp.blob();
+    const file=new File([blob],'PowerRock-Coatings-Profile.pdf',{type:'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:t.subject, text:t.body});
+      (c.activity=c.activity||[]).unshift({at:invToday(),what:'Shared profile'}); c.last_contacted=invToday(); mktSave();
+    } else { showSaveToast('Sharing files isn’t supported here — use ✉ email (profile link is in the message)'); }
+  }catch(e){ if(e&&e.name==='AbortError') return; showSaveToast('Could not share — use ✉ email instead'); }
+}
+function mktOpenSettings(){
+  const g=mktCfg(); const s=MKT.settings||{};
+  const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  const meth=g.method;
+  let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:12px">Outreach settings</div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Your name (signature)</label><input class="f-input" id="mks_name" style="margin:0" value="${esc(s.sender_name||g.name)}"/></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label style="${lbl}">Phone (on signature)</label><input class="f-input" id="mks_phone" style="margin:0" placeholder="e.g. 082 …" value="${esc(s.sender_phone||'')}"/></div><div style="flex:1"><label style="${lbl}">Weekly target</label><input type="number" class="f-input" id="mks_target" style="margin:0" value="${g.weekly_target}"/></div></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Your email (signature)</label><input class="f-input" id="mks_email" style="margin:0" value="${esc(s.sender_email||g.email)}"/></div>
+    <div style="margin-bottom:12px"><label style="${lbl}">Send emails with</label>
+      <select class="f-input" id="mks_method" style="margin:0">
+        <option value="outlook"${meth==='outlook'?' selected':''}>Outlook on the web (office.com) — recommended</option>
+        <option value="gmail"${meth==='gmail'?' selected':''}>Gmail (web)</option>
+        <option value="default"${meth==='default'?' selected':''}>This device's default mail app</option>
+      </select>
+      <div style="font-size:10.5px;color:#A39E8C;margin-top:4px">Outlook/Gmail web use whichever account you're logged into in the browser — log in as <b>ferdi@powerrock.co.za</b> once and every email sends from there.</div></div>
+    <div style="font-size:11px;font-weight:800;color:#8B1A1A;letter-spacing:.4px;text-transform:uppercase;margin:4px 0 8px;padding-bottom:5px;border-bottom:1px solid #EFECE3">Corporate profile</div>
+    ${g.profile?`<div style="font-size:11.5px;color:#2F6B47;margin-bottom:6px">✓ Profile loaded — <a href="${esc(g.profile)}" target="_blank" rel="noopener" style="color:#B2342A;font-weight:700">view</a>. Its link is added to every email.</div>`:`<div style="font-size:11.5px;color:#C08A00;margin-bottom:6px">No profile yet.</div>`}
+    <label class="cta-btn ghost" style="height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 0 14px">📄 ${g.profile?'Replace':'Upload'} profile PDF<input id="mks_profile" type="file" accept="application/pdf,.pdf" style="display:none" onchange="mktUploadProfile(this)"/></label>
+    <div id="mks_profstatus" style="margin:-8px 0 12px"></div>
+    <button class="cta-btn" onclick="mktSaveSettings()">Save settings</button>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+async function mktUploadProfile(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const st=$('mks_profstatus'); if(st) st.innerHTML=`<div style="font-size:11.5px;color:#8A6D1A">Uploading…</div>`;
+  const url=await sbUploadFile('profile/PowerRock-Coatings-Company-Profile-'+Date.now()+'.pdf', f);
+  if(url){ MKT.settings=MKT.settings||{}; MKT.settings.profile_url=url; await mktSave(); if(st) st.innerHTML=`<div style="font-size:11.5px;color:#2F6B47">✓ Profile uploaded & saved</div>`; }
+  else if(st) st.innerHTML=`<div style="font-size:11.5px;color:#B2342A">Upload failed — check signal</div>`;
+}
+async function mktSaveSettings(){
+  MKT.settings=MKT.settings||{};
+  MKT.settings.sender_name=($('mks_name')||{}).value||'';
+  MKT.settings.sender_phone=($('mks_phone')||{}).value||'';
+  MKT.settings.sender_email=($('mks_email')||{}).value||'';
+  MKT.settings.mail_method=($('mks_method')||{}).value||'outlook';
+  MKT.settings.weekly_target=parseInt(($('mks_target')||{}).value,10)||25;
+  const ok=await mktSave('Settings saved'); if(ok){ closeModal('modalSiteDetail'); renderMarketing(); }
 }
 
 // ── THE OUTREACH PLAYBOOK (readable in-app + download as PDF) ──
