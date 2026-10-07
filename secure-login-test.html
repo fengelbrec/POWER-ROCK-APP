@@ -933,6 +933,54 @@ async function sbUpdatePassword(newPass){
 let SB_REFRESH_TIMER=null;
 function sbStartRefreshTimer(){ if(SB_REFRESH_TIMER) clearInterval(SB_REFRESH_TIMER); SB_REFRESH_TIMER=setInterval(function(){ if(SB_REFRESH) sbRefresh(); }, 30*60*1000); }
 
+// ── QUICK UNLOCK ──
+// Like a banking app: you sign in properly once (email + password), then set a
+// short PIN (and optionally your fingerprint/Face ID) that unlocks the SAVED
+// login on this device next time — so you don't retype email + password daily.
+// The PIN only guards the login already stored on this phone; the real security
+// is still the Supabase session + RLS.
+async function quHash(pin){
+  try{ const b=new TextEncoder().encode('prq:'+pin); const h=await crypto.subtle.digest('SHA-256',b); return Array.from(new Uint8Array(h)).map(function(x){return x.toString(16).padStart(2,'0');}).join(''); }
+  catch(e){ return 'plain:'+pin; }
+}
+function quGet(){ try{ return JSON.parse(localStorage.getItem('pr_quick')||'null'); }catch(e){ return null; } }
+function quSet(o){ try{ localStorage.setItem('pr_quick', JSON.stringify(o)); }catch(e){} }
+function quClear(){ try{ localStorage.removeItem('pr_quick'); }catch(e){} }
+function quIsSet(){ const q=quGet(); return !!(q && (q.hash || q.bioId)); }
+function quHasPin(){ const q=quGet(); return !!(q && q.hash); }
+async function quSavePin(pin){ const hash=await quHash(pin); const q=quGet()||{}; q.hash=hash; q.email=(SB_USER&&SB_USER.email)||''; quSet(q); }
+async function quCheckPin(pin){ const q=quGet(); if(!q||!q.hash) return false; return (await quHash(pin))===q.hash; }
+// Fingerprint / Face ID via the device's built-in authenticator (best-effort; PIN is always the fallback).
+function quBioSupported(){ return !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext); }
+function quBioOn(){ const q=quGet(); return !!(q && q.bioId); }
+async function quBioRegister(){
+  if(!quBioSupported()) return false;
+  try{
+    const cred=await navigator.credentials.create({publicKey:{
+      challenge:crypto.getRandomValues(new Uint8Array(32)),
+      rp:{name:'Power Rock', id:location.hostname},
+      user:{id:crypto.getRandomValues(new Uint8Array(16)), name:(SB_USER&&SB_USER.email)||'owner', displayName:'Power Rock'},
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+      authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required'},
+      timeout:60000, attestation:'none'
+    }});
+    if(cred && cred.rawId){ const q=quGet()||{}; q.bioId=btoa(String.fromCharCode.apply(null,new Uint8Array(cred.rawId))); quSet(q); return true; }
+  }catch(e){}
+  return false;
+}
+async function quBioVerify(){
+  const q=quGet(); if(!q||!q.bioId||!quBioSupported()) return false;
+  try{
+    const idBytes=Uint8Array.from(atob(q.bioId), function(c){return c.charCodeAt(0);});
+    const a=await navigator.credentials.get({publicKey:{
+      challenge:crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials:[{type:'public-key', id:idBytes}],
+      userVerification:'required', timeout:60000, rpId:location.hostname
+    }});
+    return !!a;
+  }catch(e){ return false; }
+}
+
 // A stalled connection to Supabase (opens but never answers) would otherwise
 // hang a fetch forever, freezing the screen on "Loading…". This aborts after a
 // cutoff and retries once, so a slow link recovers instead of hanging.
@@ -1330,7 +1378,7 @@ async function doEmailLogin(){
   if(r.ok){
     if(e) e.textContent=''; if($('lPass')) $('lPass').value='';
     sbStartRefreshTimer();
-    enterOwnerApp();
+    if(quIsSet()) enterOwnerApp(); else offerQuickSetup();
   } else { if(e){ e.style.color='#B2342A'; e.textContent = r.msg || 'Could not sign in.'; } }
 }
 function enterOwnerApp(){
@@ -1361,11 +1409,64 @@ async function doSetPassword(){
   if(np.length<8){ if(e){ e.style.color='#B2342A'; e.textContent='Use at least 8 characters.'; } return; }
   if(e){ e.style.color='#8A8470'; e.textContent='Saving…'; }
   const ok=await sbUpdatePassword(np);
-  if(ok){ sbSetSession({ access_token:SB_JWT, refresh_token:SB_REFRESH, expires_in:3600, user:SB_USER }); sbStartRefreshTimer(); enterOwnerApp(); }
+  if(ok){ sbSetSession({ access_token:SB_JWT, refresh_token:SB_REFRESH, expires_in:3600, user:SB_USER }); sbStartRefreshTimer(); if(quIsSet()) enterOwnerApp(); else offerQuickSetup(); }
   else if(e){ e.style.color='#B2342A'; e.textContent='Could not save — the link may have expired. Ask for a new one.'; }
 }
+// After the first proper login on a device, offer a quick PIN / fingerprint.
+function offerQuickSetup(){
+  show('sLogin');
+  const bio=quBioSupported();
+  const box=$('loginBox');
+  if(box) box.innerHTML=`<div style="font-size:12.5px;color:#8A8470;margin-bottom:12px;line-height:1.55">Set a quick PIN so you can open the app fast next time${bio?' — or use your fingerprint / Face ID':''}. You'll only type your email &amp; password again on a new device.</div>
+    <label class="login-lbl">Choose a PIN (4–8 digits)</label>
+    <input type="password" class="login-input" id="quNew" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="off" onkeydown="if(event.key==='Enter')doQuickSetup()"/>
+    <button class="cta-btn dark" style="margin-top:12px" onclick="doQuickSetup()">Save PIN &amp; enter</button>
+    ${bio?`<button type="button" class="cta-btn" style="margin-top:10px;background:#3F5A4C" onclick="doQuickSetupBio()">Also enable fingerprint / Face ID</button>`:''}
+    <div class="login-err" id="lErr"></div>
+    <button type="button" onclick="enterOwnerApp()" style="background:none;border:none;color:#8A8470;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px;font-size:12px">Skip for now</button>`;
+  const foot=$('loginFoot'); if(foot) foot.textContent='One quick setup';
+  const tp=$('testPicker'); if(tp) tp.style.display='none';
+}
+async function doQuickSetup(){
+  const pin=($('quNew')||{}).value||''; const e=$('lErr');
+  if(pin.length<4){ if(e){ e.style.color='#B2342A'; e.textContent='Use at least 4 digits.'; } return; }
+  await quSavePin(pin); showSaveToast('Quick PIN set'); enterOwnerApp();
+}
+async function doQuickSetupBio(){
+  const e=$('lErr'); const ok=await quBioRegister();
+  if(e){ e.style.color=ok?'#3F5A4C':'#B2342A'; e.textContent=ok?'Fingerprint enabled — also set a PIN above as a backup.':'Couldn’t enable fingerprint on this device — a PIN still works.'; }
+}
+// On re-open, when a saved login + quick unlock exist, ask for PIN / fingerprint.
+function showQuickUnlock(){
+  show('sLogin');
+  const bio=quBioOn()&&quBioSupported();
+  const box=$('loginBox');
+  if(box) box.innerHTML=`<label class="login-lbl">Enter your PIN</label>
+    <input type="password" class="login-input" id="quPin" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="off" onkeydown="if(event.key==='Enter')doQuickUnlock()"/>
+    <button class="cta-btn dark" style="margin-top:12px" onclick="doQuickUnlock()">Open</button>
+    ${bio?`<button type="button" class="cta-btn" style="margin-top:10px;background:#3F5A4C" onclick="doQuickUnlockBio()">Use fingerprint / Face ID</button>`:''}
+    <div class="login-err" id="lErr"></div>
+    <button type="button" onclick="quFullLogin()" style="background:none;border:none;color:#8A8470;font-weight:700;font-family:inherit;cursor:pointer;margin-top:12px;font-size:12px">Use email &amp; password instead</button>`;
+  const foot=$('loginFoot'); if(foot) foot.textContent='Welcome back'+((SB_USER&&SB_USER.email)?' · '+SB_USER.email:'');
+  const tp=$('testPicker'); if(tp) tp.style.display='none';
+  setTimeout(function(){ const p=$('quPin'); if(p) p.focus(); },60);
+}
+async function doQuickUnlock(){
+  const pin=($('quPin')||{}).value||''; const e=$('lErr');
+  if(!pin){ if(e){ e.style.color='#B2342A'; e.textContent='Enter your PIN.'; } return; }
+  if(await quCheckPin(pin)){ if(e) e.textContent=''; sbStartRefreshTimer(); sbRefresh(); enterOwnerApp(); }
+  else { if(e){ e.style.color='#B2342A'; e.textContent='Wrong PIN. Try again, or use email &amp; password.'; } if($('quPin')) $('quPin').value=''; }
+}
+async function doQuickUnlockBio(){
+  const e=$('lErr'); if(e) e.textContent='';
+  const ok=await quBioVerify();
+  if(ok){ sbStartRefreshTimer(); sbRefresh(); enterOwnerApp(); }
+  else if(e){ e.style.color='#B2342A'; e.textContent='Fingerprint didn’t match — enter your PIN.'; }
+}
+function quFullLogin(){ sbClearSession(); quClear(); try{ location.reload(); }catch(e){ paintView({kind:'login'}); } }
 function logout(){
   sbClearSession();
+  quClear();
   pushView({ kind: 'login' });
   paintView({ kind: 'login' });
 }
@@ -9187,9 +9288,14 @@ replaceView({ kind: 'login' });
     showSetPassword();
     return;
   }
-  // 2) A saved session on this device → go straight in, and renew the token in the background.
+  // 2) A saved session on this device → quick unlock (PIN/fingerprint) if set, else straight in.
   const sess = sbRestoreSession();
-  if(sess && SB_JWT){ sbStartRefreshTimer(); sbRefresh(); enterOwnerApp(); return; }
+  if(sess && SB_JWT){
+    sbStartRefreshTimer();
+    if(quIsSet()){ showQuickUnlock(); }
+    else { sbRefresh(); enterOwnerApp(); }
+    return;
+  }
   // 3) Otherwise show the login (or the test picker on localhost).
   applyTestMode();
 })();
