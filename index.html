@@ -1099,6 +1099,7 @@ function paintView(v){
     CURRENT_VIEW = { kind: 'door', role: role, section: section, du: v.du || null, site: v.site || null };
     show('sMain');
     paintDoor(section);
+    if(typeof maybePromptSharedPhotos==='function') maybePromptSharedPhotos();
   }
   updateBackBtn();
 }
@@ -9062,6 +9063,90 @@ async function spotCloudPull(){
 
 function renderEmpty(){
   $('pageBody').innerHTML = `<div class="empty-state"><div class="empty-state-ico">◆</div><div class="empty-state-txt">Section under construction.</div></div>`;
+}
+
+// ── SHARE TO POWER ROCK (Android) ──
+// Photos shared from WhatsApp (or any app) land here via the service worker,
+// then you pick which site to add them to → saved under that site's Site Photos.
+let SHARED_PHOTOS = [];
+let SHARED_PROMPTED = false;
+let SHARE_SITES = [];
+(function(){
+  if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){} }
+  try{
+    const r = indexedDB.open('pr_share', 1);
+    r.onupgradeneeded = function(){ try{ r.result.createObjectStore('files'); }catch(e){} };
+    r.onsuccess = function(){
+      try{
+        const tx = r.result.transaction('files','readonly');
+        const g = tx.objectStore('files').get('pending');
+        g.onsuccess = function(){ const f = g.result; if(f && f.length){ SHARED_PHOTOS = Array.from(f); maybePromptSharedPhotos(); } };
+      }catch(e){}
+    };
+  }catch(e){}
+})();
+function clearSharedPhotos(){
+  SHARED_PHOTOS = [];
+  try{ const r = indexedDB.open('pr_share',1); r.onsuccess = function(){ try{ r.result.transaction('files','readwrite').objectStore('files').delete('pending'); }catch(e){} }; }catch(e){}
+}
+function maybePromptSharedPhotos(){
+  if(SHARED_PROMPTED || !SHARED_PHOTOS.length) return;
+  if(typeof CURRENT_VIEW==='undefined' || !CURRENT_VIEW || CURRENT_VIEW.kind!=='door' || CURRENT_ROLE==='henk') return;
+  SHARED_PROMPTED = true;
+  setTimeout(sharedPhotosPrompt, 500);
+}
+async function sharedPhotosPrompt(){
+  const files = SHARED_PHOTOS; if(!files || !files.length) return;
+  $('siteDetailContent').innerHTML = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${files.length} photo${files.length!==1?'s':''} from WhatsApp</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">Pick the site to add ${files.length!==1?'them':'it'} to — they'll be saved under that site's Site Photos.</div>
+    <input class="f-input" id="shareSiteSearch" style="margin:0 0 10px" placeholder="🔍 Search site…" oninput="shareFilterSites(this.value)"/>
+    <div id="shareSiteList" style="max-height:50vh;overflow:auto">Loading sites…</div>
+    <button class="cta-btn ghost" style="margin-top:10px" onclick="closeModal('modalSiteDetail')">Not now</button>`;
+  openModal('modalSiteDetail');
+  try{ const sites = await sbGetRows('sites','select=id,name,status&order=name.asc'); SHARE_SITES = (sites||[]).filter(function(x){ return x.id && x.id.indexOf('site_general')!==0 && x.name; }); }
+  catch(e){ SHARE_SITES = []; }
+  shareFilterSites('');
+}
+function shareFilterSites(q){
+  q = (q||'').toLowerCase();
+  const list = SHARE_SITES.filter(function(s){ return !q || (s.name||'').toLowerCase().indexOf(q)>=0; });
+  const box = $('shareSiteList'); if(!box) return;
+  if(!list.length){ box.innerHTML = '<div style="padding:14px;color:#A39E8C;font-size:12px">No sites found.</div>'; return; }
+  box.innerHTML = list.map(function(s){
+    return `<button onclick="shareToSite('${s.id}')" style="display:block;width:100%;text-align:left;background:#F0EEE6;border:none;border-radius:8px;padding:12px 14px;margin-bottom:7px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;color:#1A1A1A">${esc(s.name)}${s.status==='done'?' · <span style="color:#8A8470;font-weight:600">done</span>':''}</button>`;
+  }).join('');
+}
+async function shareToSite(siteId){
+  const files = SHARED_PHOTOS.slice();
+  closeModal('modalSiteDetail');
+  const ok = await addSharedPhotosToSite(siteId, files);
+  if(ok) clearSharedPhotos();
+}
+async function addSharedPhotosToSite(siteId, files){
+  if(!files || !files.length) return false;
+  showSaveToast('Uploading '+files.length+' photo'+(files.length!==1?'s':'')+'…');
+  let rows=[]; try{ rows = await sbGetRows('sites','id=eq.'+encodeURIComponent(siteId)+'&select=details'); }catch(e){}
+  const d = (rows && rows[0] && rows[0].details) ? Object.assign({}, rows[0].details) : {};
+  if(!Array.isArray(d.site_photos)) d.site_photos = [];
+  const who = (CURRENT_ROLE==='henk') ? 'Henk' : 'Ferdi'; let added=0;
+  for(let i=0;i<files.length;i++){
+    try{
+      const blob = await shrinkImageFile(files[i], 1600, 0.8);
+      const safe = (files[i].name||'photo.jpg').replace(/[^A-Za-z0-9._-]/g,'_');
+      const url = await sbUploadFile(siteId + '/photos/' + Date.now() + '-' + i + '-' + safe, blob);
+      if(url){ d.site_photos.push({ url:url, name:files[i].name||'', by:who, at:invToday() }); added++; }
+    }catch(e){}
+  }
+  if(!added){ showSaveToast('Upload failed — check your signal'); return false; }
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{ details:d });
+  if(ok){
+    if(typeof OWNER!=='undefined' && OWNER.sites){ const os=OWNER.sites.find(function(x){return x.id===siteId;}); if(os) os.details=d; }
+    if(typeof SUMMARY!=='undefined' && SUMMARY && SUMMARY.site && SUMMARY.site.id===siteId){ SUMMARY.site.details=d; if(typeof paintSiteSummaryBody==='function') paintSiteSummaryBody(); }
+    showSaveToast(added+' photo'+(added!==1?'s':'')+' added to the site');
+    return true;
+  }
+  showSaveToast('Could not save — check your signal'); return false;
 }
 
 // ── START ──
