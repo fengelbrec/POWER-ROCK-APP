@@ -2584,16 +2584,19 @@ function wkArchiveHtml(s, withCreate){
         <div style="font-size:11px;color:#8A8470;margin-top:3px">From daily updates${w.created?' · saved '+fd(w.created):''}</div>
       </div>`;
     }
-    const nb = (w.bullets||[]).filter(function(b){ return String(b).trim(); }).length, np = (w.photos||[]).length;
+    const bullets = (w.bullets||[]).filter(function(b){ return String(b).trim(); }), np = (w.photos||[]).length;
     return `<div class="ledger-card" style="padding:12px 14px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;cursor:pointer" onclick="wkArchiveAct('${s.id}','${w.id}','open')">
-        <div style="font-weight:800;font-size:14px;color:#1A1A1A">Weekly Report ${esc(w.number)}</div>
-        <div style="font-size:12px;font-weight:700;color:#5C5748;white-space:nowrap">${wkFmtDate(w.date)}</div>
+      <div style="cursor:pointer" onclick="wkArchiveAct('${s.id}','${w.id}','view')">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:800;font-size:14px;color:#1A1A1A">Weekly Report ${esc(w.number)}</div>
+          <div style="font-size:12px;font-weight:700;color:#5C5748;white-space:nowrap">${wkFmtDate(w.date)}</div>
+        </div>
+        ${bullets.length?`<ul style="margin:7px 0 6px;padding-left:18px">${bullets.map(function(b){ return `<li style="font-size:12px;color:#3F3A2E;line-height:1.5;margin-bottom:2px">${esc(b)}</li>`; }).join('')}</ul>`:''}
+        <div style="font-size:10.5px;color:#A39E8C;margin:2px 0 10px"><span style="color:#8B1A1A;font-weight:700">📄 Tap to open the PDF</span> · ${np} photo${np!==1?'s':''}${w.by?' · by '+esc(w.by):''}</div>
       </div>
-      <div style="font-size:11px;color:#8A8470;margin:3px 0 10px">${nb} bullet${nb!==1?'s':''} · ${np} photo${np!==1?'s':''}${w.by?' · by '+esc(w.by):''}${w.updated?' · saved '+fd(w.updated):''}</div>
       <div style="display:flex;gap:6px">
-        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','open')">✎ Open</button>
-        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','pdf')">⬇ PDF</button>
+        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','open')">✎ Edit</button>
+        <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','pdf')">⬇ Download</button>
         <button style="${btn}" onclick="wkArchiveAct('${s.id}','${w.id}','share')">📤 Share</button>
       </div>
     </div>`;
@@ -2615,6 +2618,12 @@ async function wkArchiveAct(siteId, id, act){
   try{
     const r = await wkSavedPdf(siteId, rec);
     if(act === 'share') await wkShareBlob(r, rec);
+    else if(act === 'view'){
+      const url = URL.createObjectURL(r.blob);
+      const win = window.open(url, '_blank');
+      if(!win){ saveBlobFile(r.blob, r.name); showSaveToast('Pop-up blocked — saved the PDF instead'); }
+      setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 60000);
+    }
     else { saveBlobFile(r.blob, r.name); showSaveToast('PDF downloaded'); }
   }catch(e){ showSaveToast('Could not make the PDF — check your signal'); }
   finally{ WK_BUSY = false; }
