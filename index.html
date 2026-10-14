@@ -6319,17 +6319,23 @@ function henkLiveSitesHtml(){
       return;
     }
     const s = mine[0];
-    shown.push(s.id);
-    const extra = mine.length > 1 ? ` · +${mine.length-1} more` : '';
+    mine.forEach(function(o){ shown.push(o.id); });   // all of this leader's live sites belong to this card
     const p = siteBlockProfit(s);
     const ppdCol = p.dailyProfit >= 0 ? '#fff' : '#FFC9C4';
+    const moreChips = mine.length > 1
+      ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+          <span style="font-size:9.5px;color:rgba(255,255,255,0.72);font-weight:700;margin-right:2px">Also live:</span>
+          ${mine.slice(1).map(function(o){ return `<span onclick="event.stopPropagation();openSiteSummary('${o.id}')" style="display:inline-block;background:rgba(255,255,255,0.20);color:#fff;border-radius:6px;padding:3px 8px;font-size:10.5px;font-weight:700;cursor:pointer">${esc(o.name)}</span>`; }).join('')}
+        </div>`
+      : '';
     h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteSummary('${s.id}')">
       <div class="leader-tag">${lm.name}</div>
       <div class="sb-name" style="color:#fff">${s.name}</div>
-      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Day ${p.days} on site${extra}</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Day ${p.days} on site</div>
       <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Profit / day</div>
       <div class="sb-ppd disp" style="color:${ppdCol}">${R(p.dailyProfit)}</div>
       <div class="sb-days" style="color:rgba(255,255,255,0.6)">Net ${R(p.net)} · ${p.margin.toFixed(0)}%</div>
+      ${moreChips}
     </div>`;
   });
   h += `</div>`;
