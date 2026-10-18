@@ -6468,7 +6468,9 @@ function summaryDays(s){
 // A site whose start date is still in the future — registered early (e.g. to send a
 // deposit invoice) but the team hasn't started, so no days/costs are counted yet.
 function siteNotStarted(s){
-  if(!s || !s.started || s.status === 'done') return false;
+  if(!s || s.status === 'done') return false;
+  if(s.details && s.details.upcoming) return true;   // owner marked it registered-but-not-started
+  if(!s.started) return false;
   const st = new Date(s.started); st.setHours(0,0,0,0);
   const t = new Date(); t.setHours(0,0,0,0);
   return st.getTime() > t.getTime();
@@ -6477,6 +6479,26 @@ function daysUntilStart(s){
   const st = new Date(s.started); st.setHours(0,0,0,0);
   const t = new Date(); t.setHours(0,0,0,0);
   return Math.max(0, Math.round((st - t) / 86400000));
+}
+// Owner switch: register a site for a deposit invoice but keep it "upcoming" (no
+// days/costs counted) until the team actually starts; "Start now" sets Day 1 = today.
+async function siteToggleUpcoming(siteId, makeUpcoming){
+  makeUpcoming = (makeUpcoming === true || makeUpcoming === 'true');
+  const s = (typeof SUMMARY!=='undefined' && SUMMARY && SUMMARY.site && SUMMARY.site.id===siteId) ? SUMMARY.site : null;
+  if(!s) return;
+  const d = Object.assign({}, s.details||{});
+  const patch = {};
+  if(makeUpcoming){ d.upcoming = true; }
+  else { delete d.upcoming; patch.started = invToday(); }   // "Start now" → Day 1 is today
+  patch.details = d;
+  showSaveToast(makeUpcoming ? 'Marked as not started — moved to Upcoming' : 'Site started — Day 1 is today');
+  const ok = await sbPatch('sites','id=eq.'+encodeURIComponent(siteId), patch);
+  if(ok){
+    s.details = d; if(patch.started) s.started = patch.started;
+    if(typeof OWNER!=='undefined' && OWNER.sites){ const os=OWNER.sites.find(function(x){return x.id===siteId;}); if(os){ os.details=d; if(patch.started) os.started=patch.started; } }
+    if(typeof DU_SITELIST!=='undefined' && DU_SITELIST){ const ds=DU_SITELIST.find(function(x){return x.id===siteId;}); if(ds){ ds.details=d; if(patch.started) ds.started=patch.started; } }
+    if(typeof paintSiteSummaryBody==='function') paintSiteSummaryBody();
+  } else showSaveToast('Could not save — check your signal');
 }
 function sumMaterialActual(){ return (SUMMARY.invoices||[]).reduce(function(a,iv){ return a + (parseFloat(iv.total)||0); }, 0); }
 
@@ -6952,11 +6974,12 @@ function paintSiteSummaryBody(){
 
   // ── HEADER ──
   const startTxt = s.started ? fd(s.started) : '—';
+  const futureStart = !!(s.started && daysUntilStart(s) > 0);
   const untilStart = notStarted ? daysUntilStart(s) : 0;
   const datesLine = s.status === 'done'
     ? `Started ${startTxt} → Completed ${s.end_date ? fd(s.end_date) : '—'} · ${days} days`
     : (notStarted
-        ? `Starts ${startTxt} · in ${untilStart} day${untilStart!==1?'s':''} — not started yet`
+        ? (futureStart ? `Starts ${startTxt} · in ${untilStart} day${untilStart!==1?'s':''} — not started yet` : `Registered — not started yet (upcoming)`)
         : `Started ${startTxt} · active · Day ${days}`);
   h += `<div style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
@@ -6965,6 +6988,7 @@ function paintSiteSummaryBody(){
     </div>
     <div style="font-size:12px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${leaderName}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-top:2px">${datesLine}</div>
+    ${s.status!=='done' ? `<button onclick="siteToggleUpcoming('${s.id}',${notStarted?'false':'true'})" style="margin-top:8px;background:${notStarted?'#1FA24C':'#F0EEE6'};color:${notStarted?'#fff':'#5C5748'};border:none;border-radius:8px;padding:7px 13px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer">${notStarted?'▶ Start this site now':'⏸ Mark as not started (upcoming)'}</button>` : ''}
     ${(function(){ const dd=s.details||{}; const poN=(dd.purchase_orders||[]).length, invN=(dd.invoices||[]).length;
       const bits=[]; if(dd.quote_url) bits.push('quotation ✓'); if(poN) bits.push(poN+' purchase order'+(poN!==1?'s':'')); if(invN) bits.push(invN+' invoice'+(invN!==1?'s':''));
       return bits.length ? `<div style="font-size:11px;color:#1A7A4A;font-weight:800;margin-top:5px">🧾 On file for invoicing: ${bits.join(' · ')} — tap “💵 Invoice client”</div>` : ''; })()}
@@ -6984,8 +7008,11 @@ function paintSiteSummaryBody(){
       </div>
     </div>
     ${notStarted
-      ? `<div class="disp" style="font-size:23px;font-weight:800;color:#E5B96B;line-height:1.15">Starts ${startTxt}</div>
-         <div style="font-size:11.5px;color:rgba(255,255,255,0.6);margin-top:5px">Team starts in ${untilStart} day${untilStart!==1?'s':''} — no days or costs are counted until then.</div>`
+      ? (futureStart
+          ? `<div class="disp" style="font-size:23px;font-weight:800;color:#E5B96B;line-height:1.15">Starts ${startTxt}</div>
+             <div style="font-size:11.5px;color:rgba(255,255,255,0.6);margin-top:5px">Team starts in ${untilStart} day${untilStart!==1?'s':''} — no days or costs are counted until then.</div>`
+          : `<div class="disp" style="font-size:23px;font-weight:800;color:#E5B96B;line-height:1.15">Upcoming — not started</div>
+             <div style="font-size:11.5px;color:rgba(255,255,255,0.6);margin-top:5px">Registered for invoicing. No days or costs are counted until you tap “Start this site now”.</div>`)
       : `<div class="disp" style="font-size:34px;font-weight:800;color:${pos?'#8FBF9F':'#E58C82'};line-height:1">${R(dailyProfit)}</div>`}
     <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.12);margin-top:14px;padding-top:12px">
       <div><div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">${notStarted?'Projected net profit':'Net profit to date'}</div>
