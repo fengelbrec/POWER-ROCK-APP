@@ -5146,10 +5146,22 @@ const INBOX_LATE_DAYS = 30;
 function inboxSelectableSites(){
   const cutoff = Date.now() - INBOX_LATE_DAYS*24*60*60*1000;
   return (INBOX_SITES||[]).filter(function(s){
+    if(s.id && s.id.indexOf('site_general')===0) return false;   // hide holders (outreach, expenses, quotes…)
+    if(s.details && s.details.is_general) return false;
     if(s.status !== 'done') return true;
     const end = s.end_date ? new Date(s.end_date).getTime() : 0;
     return end && end >= cutoff;
   });
+}
+
+// Guess what KIND of cost an invoice is, from its words — so a boom-lift rental
+// defaults to cherry/scaffold (additional), not paint material.
+function inboxKindGuess(inv){
+  const t = ((inv.raw_summary||'')+' '+(inv.supplier||'')+' '+(inv.reference||'')+' '+(Array.isArray(inv.line_items)?inv.line_items.map(function(x){return (x.product||'');}).join(' '):'')).toLowerCase();
+  if(/boom ?lift|cherry ?picker|scaffold|scissor ?lift|man ?lift|access platform|\bhoist\b|\bcrane\b|plant hire|aerial/.test(t)) return 'additional';
+  if(/accommodation|guest ?house|\blodge\b|\bb&b\b|\bhotel\b/.test(t)) return 'accommodation';
+  if(/\bpetrol\b|\bdiesel\b|\bfuel\b/.test(t)) return 'petrol';
+  return 'material';
 }
 
 // Which supplier tab an invoice belongs to (matches on the supplier name).
@@ -5264,8 +5276,16 @@ async function renderInvoiceInbox(){
         <select class="f-select" id="inbsite_${idx}">
           ${inboxSelectableSites().map(s=>`<option value="${s.id}" ${s.id===guessId?'selected':''}>${s.name}${s.status==='done'?' — completed '+fd(s.end_date):''}</option>`).join('')}
         </select>
+        ${(function(){ const kg=inboxKindGuess(inv); const opt=function(v,l){ return `<option value="${v}"${kg===v?' selected':''}>${l}</option>`; }; return `
+        <label class="f-label" style="margin-top:10px">What kind of cost is this?</label>
+        <select class="f-select" id="inbkind_${idx}" style="margin-bottom:12px">
+          ${opt('material','Materials / paint — updates stock')}
+          ${opt('additional','Cherry picker / scaffold (additional)')}
+          ${opt('accommodation','Team accommodation')}
+          ${opt('petrol','Petrol / diesel')}
+        </select>`; })()}
         <div style="display:flex;gap:8px">
-          <button class="cta-btn" style="flex:1" onclick="confirmInboxInvoice(${idx})">✓ Confirm — update cost &amp; stock</button>
+          <button class="cta-btn" style="flex:1" onclick="confirmInboxInvoice(${idx})">✓ Confirm</button>
           <button class="cta-btn ghost" style="flex:0 0 120px" onclick="rejectInboxInvoice(${idx})">🗑 Delete</button>
         </div>
       </div>`;
@@ -5497,6 +5517,22 @@ async function confirmInboxInvoice(idx){
   const siteId = $('inbsite_'+idx) ? $('inbsite_'+idx).value : '';
   const siteMeta = inboxSiteById(siteId);
   if(!siteId || !siteMeta){ alert('Please choose a site first.'); return; }
+
+  // Cost category — a cherry-picker/scaffold, accommodation or fuel invoice is booked to
+  // the Site Profit Sheet's cost section, NOT to material, and never touches paint stock.
+  const kind = ($('inbkind_'+idx) ? $('inbkind_'+idx).value : 'material') || 'material';
+  if(kind !== 'material'){
+    const labelMap = { additional:'Cherry picker / scaffold', accommodation:'Accommodation', petrol:'Petrol / diesel' };
+    const note = ((labelMap[kind]||'Site cost') + ' — ' + (inv.supplier||'') + (inv.invoice_number?(' #'+inv.invoice_number):'')).trim();
+    const okc = await sbInsert('site_costs', { id:uid(), site_id:siteId, kind:kind, amount:parseFloat(inv.total)||0, paid_date: inv.invoice_date || new Date().toISOString().split('T')[0], note:note });
+    if(okc){
+      await sbPatch('invoice_inbox', `id=eq.${encodeURIComponent(inv.id)}`, { status:'cost', site_guess:siteId, processed_at:new Date().toISOString() });
+      showSaveToast('Booked to ' + (labelMap[kind]||'site costs') + ' — not counted as material or stock');
+      renderInvoiceInbox();
+    } else { showSaveToast('Could not save — check your signal'); }
+    return;
+  }
+
   const s = siteById(siteId);   // owner's local copy (may be absent on Henk's device)
 
   // 1. Material cost onto the owner's local record (only if this device has the site).
