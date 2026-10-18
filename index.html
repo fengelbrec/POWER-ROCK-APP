@@ -7565,12 +7565,18 @@ function sitePOsHtml(){
   const pos = sitePOs(s).slice().sort(function(a,b){ return String(b.po_date||'').localeCompare(String(a.po_date||'')); });
   const invs = siteInvoices(s).slice().sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); });
   const d = s.details || {};
+  const actBtn = 'background:#F4F2EC;border:1px solid #E2DCCF;border-radius:8px;padding:9px 4px;font-size:11px;font-weight:800;color:#1A1A1A;font-family:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center';
+  const startBlock = function(onclick, icon, title, sub, accent){ return `<button onclick="${onclick}" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;background:#fff;border:1.5px solid ${accent};border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font-family:inherit">
+      <span style="font-size:22px;flex:0 0 auto">${icon}</span>
+      <span style="min-width:0"><span style="display:block;font-size:13.5px;font-weight:800;color:#1A1A1A">${title}</span><span style="display:block;font-size:11px;color:#8A8470;margin-top:2px">${sub}</span></span>
+    </button>`; };
   let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Create an invoice</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${s.name||''} · choose how you're invoicing this client.</div>
-    <button class="cta-btn" style="margin-bottom:9px;background:#1A7A4A" onclick="renderInvoiceEditor('${s.id}')">🧾 No PO — invoice from the Quotation</button>
-    <div style="font-size:10.5px;color:#A39E8C;margin:-4px 0 12px;padding-left:2px">Fills in the client &amp; quote total automatically.${d.quote_url?' Quotation is on file ✓':' (You can upload the quotation on the next screen.)'}</div>
-    <button class="cta-btn ghost" style="margin-bottom:16px" onclick="renderPOEditor('${s.id}')">📎 I have a Purchase Order — capture it</button>`;
+    ${startBlock(`renderPOEditor('${s.id}')`, '📎', 'Upload Purchase Order &amp; create tax invoice', 'Capture a PO (with its file) and invoice a % of it', '#8B1A1A')}
+    ${startBlock(`renderInvoiceEditor('${s.id}')`, '📄', 'Upload Quotation &amp; create tax invoice', 'Invoice from the quotation / contract total'+(d.quote_url?' · on file ✓':''), '#1A7A4A')}
+    ${startBlock(`createManualInvoice('${s.id}')`, '✎', 'Create tax invoice manually', 'Type the client, description and amount yourself', '#2c5f8a')}
+    <div style="height:6px"></div>`;
   if(pos.length){
     h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:2px 0 8px">PURCHASE ORDERS</div>`;
     pos.forEach(function(po){
@@ -7601,15 +7607,15 @@ function sitePOsHtml(){
           <div class="disp" style="font-weight:800;font-size:14px;white-space:nowrap">${R(iv.total_incl||0)} <span style="font-size:10px;font-weight:600;color:#A39E8C">incl</span></div>
         </div>
         <div style="font-size:11.5px;color:#8A8470;margin-top:3px">${esc(recClient(iv)||'')}${iv.pct?' · '+Math.round(iv.pct)+'%':''}${iv.date?' · '+fd(iv.date):''}</div>
-        <div style="display:flex;gap:14px;margin-top:9px;flex-wrap:wrap">
-          <button onclick="renderInvoiceEditor('${s.id}',${iv.po_id?`'${iv.po_id}'`:'null'},'${iv.id}')" style="background:none;border:none;color:#1A1A1A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">✎ Edit</button>
-          <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:${iv.paid?'#C08A00':'#1A7A4A'};font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
-          <button onclick="viewInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">👁 Open</button>
-          <button onclick="copyInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📋 Copy</button>
-          <button onclick="shareInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#1A7A4A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📤 Share</button>
-          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">⬇ Save PDF</button>
-          <button onclick="redownloadInvoiceWord('${s.id}','${iv.id}')" style="background:none;border:none;color:#2c5f8a;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📄 Word</button>
-          <button onclick="deleteInvoice('${s.id}','${iv.id}')" style="background:none;border:none;color:#B2342A;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">🗑 Remove</button>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:11px">
+          <button onclick="renderInvoiceEditor('${s.id}',${iv.po_id?`'${iv.po_id}'`:'null'},'${iv.id}')" style="${actBtn}">✎ Edit</button>
+          <button onclick="togglePaidInvoice('${s.id}','${iv.id}')" style="${actBtn};color:${iv.paid?'#C08A00':'#1A7A4A'}">${iv.paid?'↺ Unpaid':'✓ Paid'}</button>
+          <button onclick="viewInvoice('${s.id}','${iv.id}')" style="${actBtn}">👁 Open</button>
+          <button onclick="copyInvoice('${s.id}','${iv.id}')" style="${actBtn}">📋 Copy</button>
+          <button onclick="shareInvoice('${s.id}','${iv.id}')" style="${actBtn}">📤 Share</button>
+          <button onclick="redownloadInvoice('${s.id}','${iv.id}')" style="${actBtn}">⬇ PDF</button>
+          <button onclick="redownloadInvoiceWord('${s.id}','${iv.id}')" style="${actBtn}">📄 Word</button>
+          <button onclick="deleteInvoice('${s.id}','${iv.id}')" style="${actBtn};color:#B2342A">🗑 Remove</button>
         </div>
       </div>`;
     });
@@ -7812,7 +7818,9 @@ function nextInvoiceNumber(){
 let INV_PO=null;
 // poId optional. With a PO → fields pre-filled from it & its invoiced% is tracked.
 // Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
-function renderInvoiceEditor(siteId, poId, invId){
+function createManualInvoice(siteId){ renderInvoiceEditor(siteId, null, null, true); }
+function renderInvoiceEditor(siteId, poId, invId, manual){
+  manual = !!manual;
   const s=(SUMMARY && SUMMARY.site)||{};
   const d=s.details||{};
   const existing = invId ? siteInvoices(s).find(function(x){ return x.id===invId; }) : null;
@@ -7850,29 +7858,32 @@ function renderInvoiceEditor(siteId, poId, invId){
   // The project value the % works off: the PO total, but if the PO never captured it,
   // work it back from the last invoice (amount ÷ its %), then the site quote.
   const lastInvBasis = (lastInv && parseFloat(lastInv.pct)>0) ? Math.round(parseFloat(lastInv.amount_ex)/(parseFloat(lastInv.pct)/100)*100)/100 : 0;
-  const basis = existing
+  let basis = existing
       ? (parseFloat(existing.pct)>0 ? Math.round(existing.amount_ex/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
       : (po ? ((parseFloat(po.po_total)||0) || lastInvBasis || (siteQuoteValue(s)||parseFloat(s.quote_value)||0))
             : ((siteQuoteValue(s)||parseFloat(s.quote_value)||0) || lastInvBasis));
+  if(manual && !existing) basis = 0;   // manual invoice: no % basis — type the amount directly
   const done=po?Math.round(parseFloat(po.invoiced_pct)||0):0;
   const remaining=Math.max(0,100-done);
   const numStr = existing ? existing.number_str : ('PR'+String(nextInvoiceNumber()).padStart(6,'0'));
   const defDesc = existing ? (existing.description||'')
                 : (po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
                       : 'Preparation & Paint as per quotation');
-  const startPct = existing ? (parseFloat(existing.pct)||0) : (po ? (remaining>0?remaining:100) : 100);
-  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : Math.round(basis*startPct)/100;
+  const startPct = existing ? (parseFloat(existing.pct)||0) : (manual ? '' : (po ? (remaining>0?remaining:100) : 100));
+  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : (manual ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100);
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
   const isGen = !!(d && d.is_general);
   // Quotation strip (no-PO path): open the quote on file, or upload it right here.
-  const quoteStrip = (po || isGen) ? '' : (d.quote_url
+  const quoteStrip = manual
+    ? `<div style="background:#EAF1F7;border:1px solid #BBD2E6;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2c5f8a">✎ Manual invoice — type the client, description and amount below. (The client is pre-filled from this site; edit anything.)</div>`
+    : (po || isGen) ? '' : (d.quote_url
       ? `<div style="background:#EEF4EE;border:1px solid #CFE3CF;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2b5a2b">📄 Quotation on file${d.quote_name?' · '+esc(d.quote_name):''} — <a href="${d.quote_url}" target="_blank" style="color:#1A7A4A;font-weight:800">Open</a>. Details below were filled in from the site quote — edit if needed.</div>`
       : `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">No quotation on file for this site yet. <label style="color:#8B1A1A;font-weight:800;cursor:pointer;text-decoration:underline">Upload the quotation<input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadQuoteThenInvoice('${siteId}',this)"/></label> (optional — you can still invoice below).</div>`);
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit invoice':'New invoice'} · ${numStr}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation'))}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(manual?'Manual tax invoice — fill in the details yourself.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation')))}</div>
     ${quoteStrip}
     ${fld('Invoice number (you can change it to match your records)','inv_num',numStr)}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
