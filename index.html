@@ -8360,6 +8360,29 @@ let QUOTE_SEARCH = '';
 function quoteStoreSite(){ return (OWNER.sites||[]).find(function(s){ return s.id===QUOTE_STORE_ID || (s.details&&s.details.is_quote_store); }); }
 function allQuotes(){ const s=quoteStoreSite(); return (s&&s.details&&Array.isArray(s.details.quotations))?s.details.quotations:[]; }
 function quoteGet(id){ return allQuotes().find(function(x){ return x.id===id; }); }
+// Distinct past clients (newest first) for the "repeat client" picker on a new quote.
+function qeClientOptions(){
+  const seen={}, out=[];
+  allQuotes().slice().sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')) || String(b.number_str||'').localeCompare(String(a.number_str||'')); }).forEach(function(q){
+    const att=(q.attention||'').trim();
+    const parts=att.split('\n').map(function(l){return l.trim();}).filter(Boolean);
+    const label=(parts.slice(0,2).join(' · ') || q.title || q.number_str || '').trim();
+    const key=att.toLowerCase();
+    if(!label || !att || seen[key]) return; seen[key]=1;
+    out.push({ id:q.id, label:label });
+  });
+  return out;
+}
+// Copy a previous quote's client identity into the new quote (not the job-specific bits).
+function qeRepeatClient(id){
+  if(!id) return;
+  const q=quoteGet(id); if(!q) return;
+  const set=function(elId,val){ const el=$(elId); if(el && val!=null) el.value=val; };
+  set('q_attention', q.attention||'');
+  set('q_from', q.from_name||'Ferdi Engelbrecht');
+  const gp=$('q_group_pick'); if(gp && q.group_key) gp.value=q.group_key;
+  showSaveToast('Client details copied — add the new project & pricing');
+}
 function quoteNumStr(n){ return 'Q'+String(n).padStart(4,'0'); }
 function nextQuoteNumber(){ let mx=0; allQuotes().forEach(function(q){ const m=String(q.number_str||'').match(/(\d+)/); const n=m?parseInt(m[1],10):0; if(n>mx)mx=n; }); return mx+1; }
 // Rows = quotations built in the app + quotes uploaded on sites (so nothing is lost).
@@ -8546,6 +8569,8 @@ function renderQuoteEditor(editId){
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit quotation':'New quotation'} · ${esc(numStr)}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:6px">Build the quote — front page, photos, then choose the areas to quote.</div>
     ${fld('Quote number (you can change it)','q_num',numStr)}
+    ${(!existing && qeClientOptions().length) ? `<div style="margin-bottom:10px"><label style="${lbl}">↻ Repeat client (optional) — copy details from a previous quote</label>
+      <select class="f-input" id="q_repeat" style="margin:0" onchange="qeRepeatClient(this.value)"><option value="">— new client —</option>${qeClientOptions().map(function(o){ return `<option value="${esc(o.id)}">${esc(o.label)}</option>`; }).join('')}</select></div>` : ''}
 
     ${sec('Front page — header')}
     <div style="margin-bottom:10px"><label style="${lbl}">ATTENTION (contact, then company — one per line)</label>
