@@ -7819,9 +7819,34 @@ function renderInvoiceEditor(siteId, poId, invId){
   if(existing && !poId && existing.po_id) poId = existing.po_id;   // keep the PO link when editing
   const po=poId ? sitePOs(s).find(function(x){ return x.id===poId; }) : null;
   INV_PO=po;
-  // Edit → fill from the saved invoice. New with PO → from the PO. New without PO → from the site quote.
+  // Edit → fill from the saved invoice. New → from the PO, but fall back to the most
+  // recent invoice already raised for this site, so a recurring client's name, address,
+  // VAT & reg carry over automatically and only the % needs to change.
+  let lastInv = null;
+  if(!existing){
+    const invs = siteInvoices(s).slice().sort(function(a,b){ return String(b.date||'').localeCompare(String(a.date||'')) || String(b.number_str||'').localeCompare(String(a.number_str||'')); });
+    lastInv = po ? (invs.find(function(x){ return (x.po_id && x.po_id===po.id) || (po.order_nr && x.order_nr===po.order_nr); }) || invs[0] || null) : (invs[0] || null);
+  }
+  const pick = function(){ for(let i=0;i<arguments.length;i++){ const v=arguments[i]; if(v!=null && String(v).trim()!=='') return v; } return ''; };
   const src = existing ? existing
-            : (po ? po : { client_name:s.client, client_address:d.address, client_vat:d.client_vat, client_reg:d.client_reg, order_nr:'', project_ref:s.name });
+    : (po ? {
+        client_name:    pick(po.client_name,    lastInv&&lastInv.client_name,    s.client),
+        client_address: pick(po.client_address, lastInv&&lastInv.client_address, d.address),
+        client_vat:     pick(po.client_vat,     lastInv&&lastInv.client_vat,     d.client_vat),
+        client_reg:     pick(po.client_reg,     lastInv&&lastInv.client_reg,     d.client_reg),
+        client_group:   pick(po.client_group,   lastInv&&lastInv.client_group),
+        order_nr:       pick(po.order_nr,        lastInv&&lastInv.order_nr),
+        project_ref:    pick(po.project_ref,     lastInv&&lastInv.project_ref,    s.name)
+      }
+      : {
+        client_name:    pick(s.client,     lastInv&&lastInv.client_name),
+        client_address: pick(d.address,    lastInv&&lastInv.client_address),
+        client_vat:     pick(d.client_vat, lastInv&&lastInv.client_vat),
+        client_reg:     pick(d.client_reg, lastInv&&lastInv.client_reg),
+        client_group:   pick(lastInv&&lastInv.client_group),
+        order_nr:       '',
+        project_ref:    pick(s.name, lastInv&&lastInv.project_ref)
+      });
   const basis = existing
       ? (parseFloat(existing.pct)>0 ? Math.round(existing.amount_ex/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
       : (po ? (parseFloat(po.po_total)||0) : (siteQuoteValue(s)||parseFloat(s.quote_value)||0));
