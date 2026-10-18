@@ -7847,9 +7847,13 @@ function renderInvoiceEditor(siteId, poId, invId){
         order_nr:       '',
         project_ref:    pick(s.name, lastInv&&lastInv.project_ref)
       });
+  // The project value the % works off: the PO total, but if the PO never captured it,
+  // work it back from the last invoice (amount ÷ its %), then the site quote.
+  const lastInvBasis = (lastInv && parseFloat(lastInv.pct)>0) ? Math.round(parseFloat(lastInv.amount_ex)/(parseFloat(lastInv.pct)/100)*100)/100 : 0;
   const basis = existing
       ? (parseFloat(existing.pct)>0 ? Math.round(existing.amount_ex/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
-      : (po ? (parseFloat(po.po_total)||0) : (siteQuoteValue(s)||parseFloat(s.quote_value)||0));
+      : (po ? ((parseFloat(po.po_total)||0) || lastInvBasis || (siteQuoteValue(s)||parseFloat(s.quote_value)||0))
+            : ((siteQuoteValue(s)||parseFloat(s.quote_value)||0) || lastInvBasis));
   const done=po?Math.round(parseFloat(po.invoiced_pct)||0):0;
   const remaining=Math.max(0,100-done);
   const numStr = existing ? existing.number_str : ('PR'+String(nextInvoiceNumber()).padStart(6,'0'));
