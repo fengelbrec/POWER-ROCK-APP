@@ -7991,7 +7991,7 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
   const isClone = (manual === 'clone');        // copied from a past invoice (same client, new site)
   const seed = isClone ? (INV_SEED || {}) : null;
   INV_SEED = null;                              // consume it so it can't leak into a later invoice
-  manual = !!manual;                            // clone behaves like a manual invoice (type the amount)
+  manual = (manual === true);                   // only the real "manual" path; a clone uses the new site's quote as the % basis
   const s=(SUMMARY && SUMMARY.site)||{};
   const d=s.details||{};
   const existing = invId ? siteInvoices(s).find(function(x){ return x.id===invId; }) : null;
@@ -8040,8 +8040,8 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
   const defDesc = existing ? (existing.description||'')
                 : (po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
                       : 'Preparation & Paint as per quotation');
-  const startPct = existing ? (parseFloat(existing.pct)||0) : (manual ? '' : (po ? (remaining>0?remaining:100) : 100));
-  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : (manual ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100);
+  const startPct = existing ? (parseFloat(existing.pct)||0) : ((manual||isClone) ? '' : (po ? (remaining>0?remaining:100) : 100));
+  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : ((manual||isClone) ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100);
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
