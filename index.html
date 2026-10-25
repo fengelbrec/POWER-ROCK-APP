@@ -7779,9 +7779,17 @@ function cloneInvoiceToSite(siteId, srcSiteId, srcInvId){
   const src = ((typeof OWNER!=='undefined' && OWNER.sites) || []).find(function(st){ return st.id===srcSiteId; });
   const iv = src ? siteInvoices(src).find(function(x){ return x.id===srcInvId; }) : null;
   if(!iv){ alert('Could not find that invoice — try another.'); return; }
+  // Keep EVERYTHING about the client. Take it from the invoice first, then fall back to the
+  // source site's saved client details (older invoices didn't always store VAT/reg/address),
+  // so nothing comes across blank — only the PO number, amount, site & date change.
+  const sd = (src && src.details) || {};
+  const pk = function(){ for(let i=0;i<arguments.length;i++){ const v=arguments[i]; if(v!=null && String(v).trim()!=='') return v; } return ''; };
   INV_SEED = {
-    client_name: iv.client_name||'', client_address: iv.client_address||'',
-    client_vat: iv.client_vat||'',  client_reg: iv.client_reg||'',  client_group: iv.client_group||''
+    client_name:    pk(iv.client_name,    src && src.client),
+    client_address: pk(iv.client_address, sd.address),
+    client_vat:     pk(iv.client_vat,     sd.client_vat),
+    client_reg:     pk(iv.client_reg,     sd.client_reg),
+    client_group:   pk(iv.client_group)
   };
   renderInvoiceEditor(siteId, null, null, 'clone');
 }
