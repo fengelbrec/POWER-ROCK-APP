@@ -491,6 +491,10 @@ input[type=password]{letter-spacing:5px}
       <input type="file" id="as_quotefile" accept=".pdf,image/*" onchange="handleQuoteFile(this)" style="margin-bottom:8px;font-size:13px;width:100%"/>
       <div id="as_quotefile_note" style="font-size:11px;color:#8A8470;margin-bottom:8px">Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.</div>
 
+      <div id="as_extra_quotes"></div>
+      <button type="button" onclick="addAnotherQuote()" style="width:100%;background:#F4F2EC;border:1.5px dashed #C9BFA8;border-radius:10px;padding:11px;font-size:13px;font-weight:800;color:#6B5A2B;font-family:inherit;cursor:pointer;margin-bottom:6px">＋ Add another quote</button>
+      <div style="font-size:11px;color:#8A8470;margin-bottom:8px">Two separate quotes for one job (one PO / one invoice)? Add the second here — I'll <b>add the totals together</b> for the project value and the deposit invoice.</div>
+
       <div style="background:#1A7A4A;border-radius:12px;padding:14px 15px;margin-top:6px">
         <div style="font-size:12.5px;font-weight:800;color:#fff;margin-bottom:4px">📎 Client Purchase Order — if you have one (optional)</div>
         <div style="font-size:11px;color:rgba(255,255,255,0.85);margin-bottom:10px">Upload the PO now and I'll read it in and save it against this site, ready to invoice against. You can also add it later on the site.</div>
@@ -3172,6 +3176,16 @@ function duSiteDailyTab(s, mine){
   return h;
 }
 
+// Extra quotes added for a one-job/one-invoice site — shown under the Quotation on the Documents list.
+function extraQuoteRows(d){
+  const xs = (d && Array.isArray(d.extra_quotes)) ? d.extra_quotes : [];
+  if(!xs.length) return '';
+  return xs.map(function(q,i){
+    const right = q.url ? `<a href="${q.url}" target="_blank" style="color:#1A7A4A;font-weight:800;text-decoration:none">Open</a>` : `<span style="color:#A39E8C">saved</span>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;margin:-5px 0 9px;border:1px dashed #D8D3C6;border-radius:10px;background:#FBFAF6;font-size:12px"><span style="color:#6B5A2B;font-weight:700">Quote ${i+2}${q.name?` · <span style="font-weight:400;color:#8A8470">${esc(q.name)}</span>`:''}</span>${right}</div>`;
+  }).join('');
+}
+
 // INFO tab — the site information, read-only, with an Edit button (modal editor).
 function duSiteInfoTab(s){
   const d = s.details || {};
@@ -3200,6 +3214,7 @@ function duSiteInfoTab(s){
     <div class="section-lbl" style="margin-top:0">Documents</div>
     ${docRow('Specification', d.spec_url, d.spec_name)}
     ${docRow('Quotation', d.quote_url, d.quote_name)}
+    ${extraQuoteRows(d)}
     ${docRow('Guarantee', d.guarantee_url, d.guarantee_name)}`;
 }
 function duEditSiteInfo(siteId){
@@ -3766,6 +3781,8 @@ function renderPreviousSites(){
 
 let PENDING_SPEC = null;
 let PENDING_QUOTE = null;
+let PENDING_QUOTE_EXTRA = [];   // extra quotes for one job (2 quotes, one PO/invoice) — their totals are ADDED to the main quote
+let QUOTE_AUTO_SUM = 0;         // the quoted value we last auto-filled, so we don't clobber a value the user typed
 let PENDING_SITE_PO = null;   // a client PO uploaded during new-site registration
 let NEW_SITE_THEN_INVOICE = false;   // when true, saving a new site jumps straight into invoicing it (deposit)
 let productRowCount = 0;
@@ -3780,6 +3797,9 @@ function openAddSite(){
   productRowCount = 0;
   PENDING_SPEC = null;
   PENDING_QUOTE = null;
+  PENDING_QUOTE_EXTRA = [];
+  QUOTE_AUTO_SUM = 0;
+  if($('as_extra_quotes')) $('as_extra_quotes').innerHTML = '';
   PENDING_SITE_PO = null;
   NEW_SITE_THEN_INVOICE = false;   // reset; the invoice-section path re-sets this true after opening
   if($('as_quotefile')) $('as_quotefile').value='';
@@ -3872,8 +3892,8 @@ async function extractQuoteTotalFromPdf(file){
 }
 async function handleQuoteFile(input){
   const f = input.files && input.files[0];
-  if(!f){ PENDING_QUOTE = null; return; }
-  PENDING_QUOTE = { name:f.name, file:f };
+  if(!f){ PENDING_QUOTE = null; refreshQuotedValue(); return; }
+  PENDING_QUOTE = { name:f.name, file:f, total:0 };
   const note = $('as_quotefile_note');
   note.textContent = '✓ '+f.name+' — will be uploaded when you save the site.';
   if(!/\.pdf$/i.test(f.name)) return;   // photos can't be read — leave manual
@@ -3883,17 +3903,79 @@ async function handleQuoteFile(input){
     const qv = $('as_quotevalue');
     if(r && r.value>0){
       const val = Math.round(r.value*100)/100;
-      if(qv && !(parseFloat(qv.value)>0)){
-        qv.value = val; if(typeof recalcQuoteTotal==='function') recalcQuoteTotal();
-        note.textContent = '✓ '+f.name+' — read Total (excl VAT) '+R(val)+' from the quote. Please check it’s right.';
-      } else {
-        note.textContent = '✓ '+f.name+' — the quote shows '+R(val)+' (excl VAT); you entered '+R(parseFloat(qv.value)||0)+'.';
-      }
+      if(PENDING_QUOTE) PENDING_QUOTE.total = val;
+      const summed = refreshQuotedValue();
+      note.textContent = PENDING_QUOTE_EXTRA.some(function(q){ return q.total>0; })
+        ? '✓ '+f.name+' — read '+R(val)+' (excl VAT). Combined quoted value is now '+R(summed)+'.'
+        : '✓ '+f.name+' — read Total (excl VAT) '+R(val)+' from the quote. Please check it’s right.';
     } else {
       note.textContent = '✓ '+f.name+' — couldn’t read the total automatically; please type the Total quoted value above.';
     }
   }catch(e){
     note.textContent = '✓ '+f.name+' — will be uploaded when you save the site. (Couldn’t auto-read the total — type it above.)';
+  }
+}
+
+// Total quoted value = the main quote + every extra quote's total, ADDED together.
+// We only overwrite the field while it still holds a value WE auto-filled — never a number the user typed.
+function refreshQuotedValue(){
+  const sum = ((PENDING_QUOTE && PENDING_QUOTE.total) || 0)
+    + PENDING_QUOTE_EXTRA.reduce(function(a,q){ return a + ((q && q.total) || 0); }, 0);
+  const rounded = Math.round(sum*100)/100;
+  const qv = $('as_quotevalue');
+  if(qv){
+    const cur = parseFloat(qv.value) || 0;
+    if(!(cur>0) || Math.abs(cur - QUOTE_AUTO_SUM) < 0.005){   // blank, or still our auto value
+      qv.value = rounded>0 ? rounded : '';
+      QUOTE_AUTO_SUM = rounded;
+      if(typeof recalcQuoteTotal==='function') recalcQuoteTotal();
+    }
+  }
+  return rounded;
+}
+
+// "＋ Add another quote" — a second (or third) quote for the SAME job, so one deposit invoice covers both.
+function addAnotherQuote(){
+  const box = $('as_extra_quotes'); if(!box) return;
+  const idx = PENDING_QUOTE_EXTRA.length;
+  PENDING_QUOTE_EXTRA.push({ name:'', file:null, total:0 });
+  const wrap = document.createElement('div');
+  wrap.id = 'as_xq_'+idx;
+  wrap.style.cssText = 'margin:0 0 8px;padding:10px 11px;border:1px solid #E2DCCF;border-radius:9px;background:#FBFAF6';
+  wrap.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
+      '<span style="font-size:12px;font-weight:800;color:#6B5A2B">Quote '+(idx+2)+'</span>'+
+      '<button type="button" onclick="removeExtraQuote('+idx+')" style="background:none;border:none;color:#B2342A;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">✕ Remove</button>'+
+    '</div>'+
+    '<input type="file" accept=".pdf,image/*" onchange="handleExtraQuoteFile(this,'+idx+')" style="font-size:13px;width:100%"/>'+
+    '<div id="as_xq_note_'+idx+'" style="font-size:11px;color:#8A8470;margin-top:6px">Upload this quote — its total is added to the project value.</div>';
+  box.appendChild(wrap);
+}
+function removeExtraQuote(idx){
+  if(PENDING_QUOTE_EXTRA[idx]) PENDING_QUOTE_EXTRA[idx] = { name:'', file:null, total:0 };   // zero it (keep the slot so other indexes stay valid)
+  const w = $('as_xq_'+idx); if(w) w.remove();
+  refreshQuotedValue();
+}
+async function handleExtraQuoteFile(input, idx){
+  const f = input.files && input.files[0];
+  const note = $('as_xq_note_'+idx);
+  if(!f){ PENDING_QUOTE_EXTRA[idx] = { name:'', file:null, total:0 }; refreshQuotedValue(); return; }
+  PENDING_QUOTE_EXTRA[idx] = { name:f.name, file:f, total:0 };
+  if(note) note.textContent = '✓ '+f.name+' — will be uploaded with the site.';
+  if(!/\.pdf$/i.test(f.name)){ return; }   // photos can't be read — he can type the combined total
+  if(note) note.textContent = '✓ '+f.name+' — reading the total…';
+  try{
+    const r = await extractQuoteTotalFromPdf(f);
+    if(r && r.value>0){
+      const val = Math.round(r.value*100)/100;
+      PENDING_QUOTE_EXTRA[idx].total = val;
+      const summed = refreshQuotedValue();
+      if(note) note.textContent = '✓ '+f.name+' — read '+R(val)+' (excl VAT). Combined quoted value is now '+R(summed)+'.';
+    } else {
+      if(note) note.textContent = '✓ '+f.name+' — couldn’t read its total; add it into the Total quoted value above by hand.';
+    }
+  }catch(e){
+    if(note) note.textContent = '✓ '+f.name+' — will be uploaded. (Couldn’t auto-read the total — add it in above.)';
   }
 }
 
@@ -4132,6 +4214,18 @@ async function saveSite(){
   let specUrl = '', quoteUrl = '';
   if(PENDING_SPEC && PENDING_SPEC.file) specUrl = await sbUploadFile(siteId + '/spec-' + stamp + '-' + PENDING_SPEC.name, PENDING_SPEC.file);
   if(PENDING_QUOTE && PENDING_QUOTE.file) quoteUrl = await sbUploadFile(siteId + '/quote-' + stamp + '-' + PENDING_QUOTE.name, PENDING_QUOTE.file);
+  // Extra quotes for the same job (2 quotes, one invoice) — uploaded alongside, kept on the site for the record.
+  const extraQuotes = [];
+  for(let qi=0; qi<PENDING_QUOTE_EXTRA.length; qi++){
+    const q = PENDING_QUOTE_EXTRA[qi];
+    if(q && q.file){
+      const u = await sbUploadFile(siteId + '/quote-' + stamp + '-' + (qi+2) + '-' + q.name, q.file);
+      if(u) extraQuotes.push({ name:q.name, url:u, total:q.total||0 });
+    }
+  }
+  // If the main quote slot was left empty but extras were added, promote the first extra to be the main quote.
+  let quoteName = PENDING_QUOTE ? PENDING_QUOTE.name : '';
+  if(!quoteUrl && extraQuotes.length){ const first = extraQuotes.shift(); quoteUrl = first.url; quoteName = first.name; }
 
   // A client PO uploaded during registration → save it against the site, ready to invoice.
   const poRecords = [];
@@ -4155,7 +4249,8 @@ async function saveSite(){
     surfaces: selectedSurfaces(), colours: colours,
     warranty: warranty, warranty_by: warrantyBy,
     spec_name: PENDING_SPEC ? PENDING_SPEC.name : '', spec_url: specUrl,
-    quote_name: PENDING_QUOTE ? PENDING_QUOTE.name : '', quote_url: quoteUrl,
+    quote_name: quoteName, quote_url: quoteUrl,
+    extra_quotes: extraQuotes.length ? extraQuotes : undefined,
     client_reg: (PENDING_SITE_PO && PENDING_SITE_PO.fields && PENDING_SITE_PO.fields.client_reg) || '',
     purchase_orders: poRecords,
     scope_lines: scopeLines,
@@ -6897,6 +6992,7 @@ function openSiteInfo(siteId, canEdit, editing){
     <div class="section-lbl" style="margin-top:0">Documents</div>
     ${docRow('Specification', 'spec', d.spec_url, d.spec_name)}
     ${docRow('Quotation', 'quote', d.quote_url, d.quote_name)}
+    ${extraQuoteRows(d)}
     ${docRow('Guarantee', 'guarantee', d.guarantee_url, d.guarantee_name)}
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
     $('siteDetailContent').innerHTML = h;
@@ -6936,6 +7032,7 @@ function openSiteInfo(siteId, canEdit, editing){
     <div class="section-lbl" style="margin-top:0">Documents (PDF)</div>
     ${docRow('Specification', 'spec', d.spec_url, d.spec_name)}
     ${docRow('Quotation', 'quote', d.quote_url, d.quote_name)}
+    ${extraQuoteRows(d)}
     ${docRow('Guarantee', 'guarantee', d.guarantee_url, d.guarantee_name)}
 
     <button class="cta-btn" style="margin-top:6px" onclick="saveSiteInfo('${siteId}')">Save details</button>
