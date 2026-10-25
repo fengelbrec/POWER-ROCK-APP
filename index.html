@@ -7035,6 +7035,10 @@ function openSiteInfo(siteId, canEdit, editing){
     ${extraQuoteRows(d)}
     ${docRow('Guarantee', 'guarantee', d.guarantee_url, d.guarantee_name)}
 
+    <label style="display:block;background:#F4F2EC;border:1.5px dashed #C9BFA8;border-radius:10px;padding:12px;font-size:13px;font-weight:800;color:#6B5A2B;text-align:center;cursor:pointer;margin:4px 0 4px">＋ Add another quote <span style="font-weight:600">(adds its total to the project value)</span>
+      <input type="file" accept=".pdf,image/*" onchange="addQuoteToSite('${siteId}', this)" style="display:none"/></label>
+    <div id="si_addquote_note" style="font-size:11px;color:#8A8470;margin:0 2px 10px">Two quotes for one job? Add the second here — I'll read its total and add it on, and save the PDF.</div>
+
     <button class="cta-btn" style="margin-top:6px" onclick="saveSiteInfo('${siteId}')">Save details</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="openSiteInfo('${siteId}', true, false)">Cancel</button>`;
 
@@ -7081,6 +7085,49 @@ async function saveSiteInfo(siteId){
   } else {
     showSaveToast('Could not save — check your signal');
   }
+}
+
+// Add a SECOND (or third) quote to an EXISTING site: upload it, read its total, ADD it to the
+// project value, and keep the PDF on the site — so a two-quote job becomes one invoice without
+// redoing the site. Persists immediately (no need to also press Save details).
+async function addQuoteToSite(siteId, input){
+  const f = input.files && input.files[0]; if(!f) return;
+  const note = $('si_addquote_note');
+  const s = SUMMARY.site || {};
+  if(note) note.textContent = 'Uploading '+f.name+'…';
+  let url = '';
+  try{ url = await sbUploadFile(siteId + '/quote-' + Date.now() + '-' + f.name, f); }catch(e){}
+  let total = 0;
+  if(/\.pdf$/i.test(f.name)){
+    if(note) note.textContent = 'Reading the total from '+f.name+'…';
+    try{ const r = await extractQuoteTotalFromPdf(f); if(r && r.value>0) total = Math.round(r.value*100)/100; }catch(e){}
+  }
+  // Bump the gross-quote field by this quote's total, then recompute the net project value.
+  const qEl = $('si_quote');
+  const curGross = parseFloat(String((qEl && qEl.value) || '').replace(/[^0-9.]/g,'')) || 0;
+  const newGross = Math.round((curGross + total)*100)/100;
+  if(qEl) qEl.value = newGross;
+  if(typeof siQuoteRecalc==='function') siQuoteRecalc();
+  const disc = parseFloat(($('si_discount')||{}).value) || 0;
+  const net = Math.round(newGross*(1-disc/100)*100)/100;
+  // Append to the site's extra quotes and persist now.
+  const d = Object.assign({}, s.details || {});
+  const xs = Array.isArray(d.extra_quotes) ? d.extra_quotes.slice() : [];
+  xs.push({ name:f.name, url:url||'', total:total });
+  d.extra_quotes = xs;
+  if(disc>0) d.quote_gross = newGross;
+  const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { quote_value: net, details: d });
+  if(ok){
+    s.details = d; s.quote_value = net;
+    const du = (DU_SITELIST||[]).find(function(x){ return x.id === siteId; });
+    if(du && du !== s){ du.details = d; du.quote_value = net; }
+    if(note) note.innerHTML = total>0
+      ? '✓ Added <b>'+esc(f.name)+'</b> ('+R(total)+'). Project value is now <b>'+R(net)+'</b>.'
+      : '✓ Added <b>'+esc(f.name)+'</b> — couldn’t read its total automatically, so type the combined value in the Quote box above. Saved.';
+  } else {
+    if(note) note.textContent = 'Could not save online — check your signal and try again.';
+  }
+  input.value = '';
 }
 
 async function replaceSiteFile(siteId, which, input){
