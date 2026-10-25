@@ -2677,13 +2677,14 @@ function wkCreateHtml(s){
     <div class="section-lbl">Page 2 — Site photographs (up to ${WK_MAX})</div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:16px" id="wkPhotos">${wkPhotosHtml()}</div>
 
-    <button class="cta-btn" onclick="wkAction('save')">💾 Save to archive</button>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px">
-      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('view')">👁 View PDF</button>
+    <button class="cta-btn" onclick="wkPreview()">👁 Create &amp; Preview report</button>
+    <div style="font-size:11px;color:#A39E8C;margin:6px 2px 12px;line-height:1.6">See exactly how the report will look first. On the preview you can go <b>back and Edit</b>, or make the <b>PDF</b> / <b>Share</b> / <b>Save</b> it.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('save')">💾 Save</button>
       <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('pdf')">⬇ Download</button>
       <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="wkAction('share')">📤 Share</button>
     </div>
-    <div style="font-size:11px;color:#A39E8C;margin:8px 2px 4px;line-height:1.6">Download and Share also save the report to the archive, so there is always a copy on the app.</div>`;
+    <div style="font-size:11px;color:#A39E8C;margin:8px 2px 4px;line-height:1.6">Those three skip the preview. Download and Share also save the report to the archive, so there is always a copy on the app.</div>`;
   return h;
 }
 function wkSet(field, v){ if(!WK_DRAFT) return; WK_DRAFT[field] = v; wkPersist(); }
@@ -2989,6 +2990,73 @@ async function wkAction(act){
       showSaveToast('Not saved online (check your signal) — it is kept on this device; tap Save again');
     }
   } finally { WK_BUSY = false; }
+}
+
+// ── On-screen preview — see the report exactly as it will print, BEFORE committing to a PDF ──
+// Renders the very same page HTML the PDF is built from, scaled to fit the screen. From here
+// Ferdi can go Back to Edit, or make the PDF / Share / Save. Nothing closes on an outside tap.
+let WK_PREV_FIT = null;
+async function wkPreview(){
+  if(WK_BUSY || !WK_DRAFT) return;
+  const d = WK_DRAFT;
+  if(!d.bullets.some(function(b){ return String(b).trim(); }) && !d.photos.length){
+    if(!confirm('This report has no bullets and no photos yet. Preview it anyway?')) return;
+  }
+  if(d.photos.some(function(p){ return !p.url; })){ showSaveToast('Photos are still loading — try again in a moment'); return; }
+  WK_BUSY = true; showSaveToast('Building the preview…');
+  const shots = [];
+  try{ for(let i = 0; i < (d.photos||[]).length; i++){ const u = await wkPrepPhoto(d.photos[i].url); if(u) shots.push(u); } }
+  catch(e){}
+  WK_BUSY = false; showSaveToast('');
+  const p1 = wkPage1Html(d);
+  const p2 = shots.length ? wkPage2Html(d, shots) : '';
+  const pageWrap = function(inner, lbl){
+    return `<div style="max-width:794px;margin:0 auto 6px;color:#E8E6DF;font-size:11px;font-weight:700;letter-spacing:1px">${lbl}</div>
+      <div class="wk-pwrap" style="width:100%;max-width:794px;margin:0 auto 22px">
+        <div class="wk-paper" style="width:794px;min-height:1123px;background:#fff;padding:40px 40px 64px;box-sizing:border-box;position:relative;transform-origin:top left;box-shadow:0 8px 30px rgba(0,0,0,.45)">${inner}</div>
+      </div>`;
+  };
+  let ov = document.getElementById('wkPreviewOv'); if(ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'wkPreviewOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:1400;background:#4A4A4A;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  ov.innerHTML =
+    '<div style="position:sticky;top:0;z-index:2;background:#1A1A1A;padding:10px 12px;display:flex;flex-direction:column;gap:9px">'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        '<button onclick="wkClosePreview()" style="background:#fff;color:#1A1A1A;border:none;border-radius:22px;padding:10px 18px;font-size:13.5px;font-weight:800;font-family:inherit;cursor:pointer">← Edit</button>'+
+        '<div style="color:#fff;font-size:13px;font-weight:700;line-height:1.3">Preview — Weekly Report '+esc(String(d.number||''))+'</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
+        '<button onclick="wkPreviewAct(\'pdf\')" style="background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">⬇ Create PDF</button>'+
+        '<button onclick="wkPreviewAct(\'share\')" style="background:#2c5f8a;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📤 Share</button>'+
+        '<button onclick="wkPreviewAct(\'save\')" style="background:#1A7A4A;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">💾 Save</button>'+
+      '</div>'+
+    '</div>'+
+    '<div id="wkPrevPages" style="padding:18px 10px 48px">'+ pageWrap(p1, 'PAGE 1') + (p2 ? pageWrap(p2, 'PAGE 2 — PHOTOS') : '') +'</div>';
+  document.body.appendChild(ov);
+  const fit = function(){
+    ov.querySelectorAll('.wk-pwrap').forEach(function(wrap){
+      const paper = wrap.querySelector('.wk-paper');
+      if(!paper) return;
+      // clientWidth can read 0 before layout / while hidden — fall back to the viewport so the page never scales to nothing.
+      const avail = wrap.clientWidth || Math.min(794, (window.innerWidth || 800) - 24);
+      const scale = Math.min(1, Math.max(0.1, avail / 794));
+      paper.style.transform = 'scale(' + scale + ')';
+      wrap.style.height = (paper.offsetHeight * scale) + 'px';
+    });
+  };
+  const imgs = Array.from(ov.querySelectorAll('img'));
+  Promise.all(imgs.map(function(im){ return im.complete ? null : new Promise(function(r){ im.onload = r; im.onerror = r; }); })).then(function(){ setTimeout(fit, 30); });
+  setTimeout(fit, 50);
+  WK_PREV_FIT = fit;
+  window.addEventListener('resize', fit);
+}
+function wkClosePreview(){
+  const ov = document.getElementById('wkPreviewOv'); if(ov) ov.remove();
+  if(WK_PREV_FIT){ window.removeEventListener('resize', WK_PREV_FIT); WK_PREV_FIT = null; }
+}
+async function wkPreviewAct(act){
+  await wkAction(act);
+  if(act === 'save') wkClosePreview();   // saved — drop back to the builder
 }
 
 function duLeaderSites(leaderKey){
@@ -7601,6 +7669,7 @@ function sitePOsHtml(){
     ${startBlock(`renderPOEditor('${s.id}')`, '📎', 'Upload Purchase Order &amp; create tax invoice', 'Capture a PO (with its file) and invoice a % of it', '#8B1A1A')}
     ${startBlock(`renderInvoiceEditor('${s.id}')`, '📄', 'Upload Quotation &amp; create tax invoice', 'Invoice from the quotation / contract total'+(d.quote_url?' · on file ✓':''), '#1A7A4A')}
     ${startBlock(`createManualInvoice('${s.id}')`, '✎', 'Create tax invoice manually', 'Type the client, description and amount yourself', '#2c5f8a')}
+    ${startBlock(`renderInvoiceFromPast('${s.id}')`, '📋', 'Same client, new site — copy a past invoice', 'Reuse a previous invoice’s details; just set the new site, order &amp; amount', '#6B4FA3')}
     <div style="height:6px"></div>`;
   if(pos.length){
     h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:2px 0 8px">PURCHASE ORDERS</div>`;
@@ -7651,6 +7720,72 @@ function sitePOsHtml(){
   h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Close</button>`;
   return h;
 }
+
+// ── Copy a past invoice onto a NEW site for the SAME client ──
+// Previous invoices live on every site (details.invoices). We gather them all, put this
+// site's client at the top, and let Ferdi pick one; its client block is then copied into a
+// fresh invoice for the current site (order number, amount & date left blank/today).
+let INV_SEED = null;
+function invClientKey(x){ return String(x||'').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').split(/\s+/).filter(function(w){ return w.length>=3; }); }
+function invClientMatch(a,b){ const A=invClientKey(a), B=invClientKey(b); if(!A.length||!B.length) return false; return A.some(function(w){ return B.indexOf(w)!==-1; }); }
+function renderInvoiceFromPast(siteId){
+  const s = (SUMMARY && SUMMARY.site) || {};
+  const cur = s.client || '';
+  const all = [];
+  ((typeof OWNER!=='undefined' && OWNER.sites) || []).forEach(function(st){
+    siteInvoices(st).forEach(function(iv){ all.push({ siteId: st.id, siteName: st.name||'', iv: iv }); });
+  });
+  all.sort(function(a,b){ return String(b.iv.date||'').localeCompare(String(a.iv.date||'')) || String(b.iv.number_str||'').localeCompare(String(a.iv.number_str||'')); });
+  const mine   = all.filter(function(r){ return invClientMatch(r.iv.client_name, cur); });
+  const others = all.filter(function(r){ return !invClientMatch(r.iv.client_name, cur); });
+  const row = function(r){
+    const iv = r.iv;
+    const k = (recClient(iv)+' '+r.siteName+' '+(iv.project_ref||'')+' '+(iv.number_str||'')).toLowerCase();
+    return `<button data-k="${esc(k)}" onclick="cloneInvoiceToSite('${s.id}','${r.siteId}','${iv.id}')" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #E2DCCF;border-radius:10px;padding:11px 14px;margin-bottom:8px;cursor:pointer;font-family:inherit">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-weight:800;font-size:13px;color:#1A1A1A;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(recClient(iv)||'(no client)')}</div>
+        <div class="disp" style="font-weight:800;font-size:13px;white-space:nowrap">${R(iv.total_incl||0)}</div>
+      </div>
+      <div style="font-size:11px;color:#8A8470;margin-top:3px">${esc(r.siteName||iv.project_ref||'')} · ${esc(iv.number_str||'')}${iv.date?' · '+fd(iv.date):''}</div>
+    </button>`;
+  };
+  let h = `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Copy a past invoice</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:12px">Pick a previous invoice for <b>${esc(cur||'this client')}</b>. Its client details are copied onto a new invoice for <b>${esc(s.name||'this site')}</b> — you just set the order number, amount and date.</div>`;
+  if(!all.length){
+    h += `<div style="font-size:12.5px;color:#A39E8C;padding:6px 0 12px">No past invoices anywhere yet to copy from. Use one of the other options above.</div>`;
+  } else {
+    h += `<input class="f-input" placeholder="🔍 Search client, site or invoice number" oninput="invPastFilter(this.value)" style="margin:0 0 12px"/>
+      <div id="invPastList">`;
+    if(mine.length){
+      h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#6B4FA3;margin:2px 0 8px">${esc(cur||'THIS CLIENT').toUpperCase()}</div>` + mine.map(row).join('');
+    }
+    if(others.length){
+      h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:14px 0 8px">OTHER CLIENTS</div>` + others.map(row).join('');
+    }
+    h += `</div>`;
+  }
+  h += `<button class="cta-btn ghost" style="margin-top:6px" onclick="refreshSitePOs()">← Back</button>`;
+  $('siteDetailContent').innerHTML = h;
+}
+function invPastFilter(q){
+  q = String(q||'').toLowerCase().trim();
+  const list = $('invPastList'); if(!list) return;
+  list.querySelectorAll('button[data-k]').forEach(function(el){
+    el.style.display = (!q || el.getAttribute('data-k').indexOf(q)!==-1) ? '' : 'none';
+  });
+}
+function cloneInvoiceToSite(siteId, srcSiteId, srcInvId){
+  const src = ((typeof OWNER!=='undefined' && OWNER.sites) || []).find(function(st){ return st.id===srcSiteId; });
+  const iv = src ? siteInvoices(src).find(function(x){ return x.id===srcInvId; }) : null;
+  if(!iv){ alert('Could not find that invoice — try another.'); return; }
+  INV_SEED = {
+    client_name: iv.client_name||'', client_address: iv.client_address||'',
+    client_vat: iv.client_vat||'',  client_reg: iv.client_reg||'',  client_group: iv.client_group||''
+  };
+  renderInvoiceEditor(siteId, null, null, 'clone');
+}
+
 function redownloadInvoice(siteId, invId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
   const iv=siteInvoices(s).find(function(x){ return x.id===invId; });
@@ -7845,7 +7980,10 @@ let INV_PO=null;
 // Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
 function createManualInvoice(siteId){ renderInvoiceEditor(siteId, null, null, true); }
 function renderInvoiceEditor(siteId, poId, invId, manual){
-  manual = !!manual;
+  const isClone = (manual === 'clone');        // copied from a past invoice (same client, new site)
+  const seed = isClone ? (INV_SEED || {}) : null;
+  INV_SEED = null;                              // consume it so it can't leak into a later invoice
+  manual = !!manual;                            // clone behaves like a manual invoice (type the amount)
   const s=(SUMMARY && SUMMARY.site)||{};
   const d=s.details||{};
   const existing = invId ? siteInvoices(s).find(function(x){ return x.id===invId; }) : null;
@@ -7872,11 +8010,11 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
         project_ref:    pick(po.project_ref,     lastInv&&lastInv.project_ref,    s.name)
       }
       : {
-        client_name:    pick(s.client,     lastInv&&lastInv.client_name),
-        client_address: pick(d.address,    lastInv&&lastInv.client_address),
-        client_vat:     pick(d.client_vat, lastInv&&lastInv.client_vat),
-        client_reg:     pick(d.client_reg, lastInv&&lastInv.client_reg),
-        client_group:   pick(lastInv&&lastInv.client_group),
+        client_name:    pick(seed&&seed.client_name,    s.client,     lastInv&&lastInv.client_name),
+        client_address: pick(seed&&seed.client_address, d.address,    lastInv&&lastInv.client_address),
+        client_vat:     pick(seed&&seed.client_vat,     d.client_vat, lastInv&&lastInv.client_vat),
+        client_reg:     pick(seed&&seed.client_reg,     d.client_reg, lastInv&&lastInv.client_reg),
+        client_group:   pick(seed&&seed.client_group,   lastInv&&lastInv.client_group),
         order_nr:       '',
         project_ref:    pick(s.name, lastInv&&lastInv.project_ref)
       });
@@ -7901,14 +8039,16 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
   const isGen = !!(d && d.is_general);
   // Quotation strip (no-PO path): open the quote on file, or upload it right here.
-  const quoteStrip = manual
+  const quoteStrip = isClone
+    ? `<div style="background:#F0ECF7;border:1px solid #D4C7E8;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6B4FA3">📋 Copied from a past invoice — the client name, address, VAT &amp; reg are filled in. Set the <b>order number</b>, <b>amount</b> and <b>date</b> below; the project is already set to this site.</div>`
+    : manual
     ? `<div style="background:#EAF1F7;border:1px solid #BBD2E6;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2c5f8a">✎ Manual invoice — type the client, description and amount below. (The client is pre-filled from this site; edit anything.)</div>`
     : (po || isGen) ? '' : (d.quote_url
       ? `<div style="background:#EEF4EE;border:1px solid #CFE3CF;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2b5a2b">📄 Quotation on file${d.quote_name?' · '+esc(d.quote_name):''} — <a href="${d.quote_url}" target="_blank" style="color:#1A7A4A;font-weight:800">Open</a>. Details below were filled in from the site quote — edit if needed.</div>`
       : `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">No quotation on file for this site yet. <label style="color:#8B1A1A;font-weight:800;cursor:pointer;text-decoration:underline">Upload the quotation<input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadQuoteThenInvoice('${siteId}',this)"/></label> (optional — you can still invoice below).</div>`);
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit invoice':'New invoice'} · ${numStr}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(manual?'Manual tax invoice — fill in the details yourself.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation')))}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(isClone?'Copied from a past invoice — set the new order number, amount and date.':(manual?'Manual tax invoice — fill in the details yourself.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation'))))}</div>
     ${quoteStrip}
     ${fld('Invoice number (you can change it to match your records)','inv_num',numStr)}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
