@@ -417,6 +417,7 @@ input[type=password]{letter-spacing:5px}
         <option value="costa">Costa</option>
         <option value="daniel">Daniel</option>
         <option value="talent">Talent</option>
+        <option value="">— Not assigned yet (future job) —</option>
       </select>
     </div>
 
@@ -854,7 +855,7 @@ const NAV = [
   {id:'sites', label:'Sites', icon:'▦'},
   {id:'financials', label:'Site P+L', icon:'▤'},
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
-  {id:'cashflow', label:'Cashflow', icon:'∿'},
+  {id:'calendar', label:'Calendar', icon:'📅'},
   {id:'quotations', label:'Quotations', icon:'✎'},
   {id:'leads', label:'Leads & Letters', icon:'📍'},
   {id:'invoiceinbox', label:'Supplier Invoices', icon:'📥'},
@@ -1321,7 +1322,7 @@ function paintDoor(id){
   const renderers = {
     overview: renderOverview, dailyupdates: renderDailyUpdates,
     sites: renderHenkSites, financials: renderFinancials, income: renderIncome,
-    splitengine: renderSplitEngine, vat: renderVAT, cashflow: renderCashflow,
+    splitengine: renderSplitEngine, vat: renderVAT, calendar: renderCalendar,
     quotations: renderQuotations, leads: renderLeads, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
   };
   (renderers[id] || renderEmpty)();
@@ -5271,6 +5272,219 @@ function renderCashflow(){
   $('pageBody').innerHTML = h;
 }
 
+// ═══════════════════════════════════════════
+// CALENDAR — Team Work Planner (replaces the old Cashflow tab)
+// Jobs come straight from the sites: each team in its own colour, future / not-yet-
+// assigned jobs in grey. Tap a day to see who's working and to plan new work.
+// ═══════════════════════════════════════════
+let CAL_MONTH = null;      // Date = 1st of the displayed month
+let CAL_TEAM  = 'all';     // 'all' | leader key | 'none' (unassigned only)
+const CAL_UNASSIGNED_COL = '#9A8F78';
+const CAL_NAVBTN = 'background:#242424;color:#fff;border:none;border-radius:10px;width:42px;height:42px;font-size:20px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto';
+
+function calTeamColour(team){ const lm = LEADER_META.find(function(l){ return l.key===team; }); return lm ? lm.colour : CAL_UNASSIGNED_COL; }
+function calYmd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function calParse(s){ if(!s) return null; const p=String(s).slice(0,10).split('-'); if(p.length<3) return null; const d=new Date(+p[0],+p[1]-1,+p[2]); d.setHours(0,0,0,0); return isNaN(d.getTime())?null:d; }
+function calToday(){ const t=new Date(); t.setHours(0,0,0,0); return t; }
+
+// Turn every real site into a calendar job with a start..end span.
+function calJobs(){
+  const sites = (typeof OWNER!=='undefined' && OWNER.sites) ? OWNER.sites : [];
+  const today = calToday();
+  const out = [];
+  sites.forEach(function(s){
+    const d = s.details || {};
+    if(d.is_general || d.is_expense_store) return;      // holder / store records, not real jobs
+    const start = calParse(s.started); if(!start) return;
+    const done = s.status==='done';
+    const upcoming = (typeof siteNotStarted==='function') ? siteNotStarted(s) : false;
+    let end;
+    if(done) end = calParse(s.end_date) || start;
+    else if(upcoming) end = calParse(d.expected_end) || start;        // planned job: its planned span (or just the start day)
+    else { const ee = calParse(d.expected_end); end = (ee && ee>today) ? ee : today; }   // running → up to today
+    if(end < start) end = start;
+    out.push({ id:s.id, name:s.name||'Site', client:s.client||'', team:s.team_leader||'', start:start, end:end, done:done, upcoming:upcoming, unassigned:!s.team_leader });
+  });
+  return out;
+}
+function calJobsOnDay(jobs, day){ const t=day.getTime(); return jobs.filter(function(j){ return j.start.getTime()<=t && t<=j.end.getTime(); }); }
+function calJobMatchesFilter(j){ if(CAL_TEAM==='all') return true; if(CAL_TEAM==='none') return j.unassigned; return j.team===CAL_TEAM; }
+
+function renderCalendar(){
+  if(!CAL_MONTH){ const t=new Date(); CAL_MONTH=new Date(t.getFullYear(), t.getMonth(), 1); }
+  const jobs = calJobs();
+  const monthStart = new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth(), 1);
+  const monthLabel = monthStart.toLocaleDateString('en-ZA',{ month:'long', year:'numeric' });
+  let h = `<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Calendar</div>
+    <div class="snap-meta" style="margin:-6px 0 14px">Plan who works where. Jobs fill in from your sites — each team in its colour, future jobs in grey until you assign a team. Tap a day to see or plan work.</div>`;
+  h += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+    <button onclick="calShift(-1)" style="${CAL_NAVBTN}">‹</button>
+    <div style="flex:1;text-align:center">
+      <div class="disp" style="font-size:17px;font-weight:800">${monthLabel}</div>
+      <button onclick="calGoToday()" style="background:none;border:none;color:#8B1A1A;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">Jump to today</button>
+    </div>
+    <button onclick="calShift(1)" style="${CAL_NAVBTN}">›</button>
+  </div>`;
+  h += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">`
+    + calLegendChip('all','All','#444')
+    + LEADER_META.map(function(lm){ return calLegendChip(lm.key, lm.name, lm.colour); }).join('')
+    + calLegendChip('none','To assign', CAL_UNASSIGNED_COL)
+    + `</div>`;
+  h += calFreeStrip(jobs);
+  h += calGrid(monthStart, jobs);
+  h += `<button class="cta-btn ghost" style="margin-top:14px" onclick="calPrint()">🖨 Print / share this month</button>`;
+  $('pageBody').innerHTML = h;
+}
+function calLegendChip(key,label,colour){
+  const active = CAL_TEAM===key;
+  return `<button onclick="calSetTeam('${key}')" style="display:flex;align-items:center;gap:6px;background:${active?colour:'#fff'};color:${active?'#fff':'#1A1A1A'};border:1.5px solid ${colour};border-radius:20px;padding:6px 11px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">
+    <span style="width:10px;height:10px;border-radius:50%;background:${active?'#fff':colour}"></span>${esc(label)}</button>`;
+}
+function calSetTeam(k){ CAL_TEAM=k; renderCalendar(); }
+function calShift(n){ CAL_MONTH=new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth()+n, 1); renderCalendar(); }
+function calGoToday(){ const t=new Date(); CAL_MONTH=new Date(t.getFullYear(), t.getMonth(), 1); renderCalendar(); }
+
+// "Who's free" — which of the 4 teams have no job this week / next week (Mon–Sun).
+function calFreeStrip(jobs){
+  const today = calToday();
+  const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay()+6)%7));
+  const freeIn = function(weekStart){
+    const ws = weekStart.getTime(), we = weekStart.getTime()+6*86400000;
+    const busy = {};
+    jobs.forEach(function(j){ if(j.team && !j.done && j.start.getTime()<=we && j.end.getTime()>=ws) busy[j.team]=true; });
+    return LEADER_META.filter(function(lm){ return !busy[lm.key]; });
+  };
+  const nm = function(list){ return list.length ? list.map(function(l){ return `<span style="color:${l.colour};font-weight:800">${l.name}</span>`; }).join(', ') : `<span style="color:#1A7A4A;font-weight:800">all teams booked</span>`; };
+  return `<div class="ledger-card" style="padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#8A8470;text-transform:uppercase;margin-bottom:6px">Who's free to take a new job</div>
+    <div style="font-size:12.5px;color:#1A1A1A;line-height:1.8"><b>This week:</b> ${nm(freeIn(monday))}<br><b>Next week:</b> ${nm(freeIn(new Date(monday.getTime()+7*86400000)))}</div>
+  </div>`;
+}
+
+function calGrid(monthStart, jobs){
+  const today = calToday();
+  const year=monthStart.getFullYear(), mon=monthStart.getMonth();
+  const offset=(new Date(year,mon,1).getDay()+6)%7;      // Monday-start
+  const daysInMonth=new Date(year,mon+1,0).getDate();
+  const totalCells=Math.ceil((offset+daysInMonth)/7)*7;
+  const gridStart=new Date(year,mon,1-offset);
+  const dow=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let h=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">`;
+  dow.forEach(function(d){ h+=`<div style="text-align:center;font-size:9px;font-weight:800;color:#8A8470;padding:2px 0">${d}</div>`; });
+  for(let i=0;i<totalCells;i++){
+    const day=new Date(gridStart.getFullYear(),gridStart.getMonth(),gridStart.getDate()+i);
+    const inMonth=day.getMonth()===mon;
+    const isToday=day.getTime()===today.getTime();
+    const dj=calJobsOnDay(jobs,day).filter(calJobMatchesFilter);
+    const chips=dj.slice(0,3).map(function(j){ const c=calTeamColour(j.team);
+      return `<div style="background:${c}22;border-left:3px solid ${c};border-radius:3px;padding:1px 3px;margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"><span style="font-size:8px;font-weight:700;color:#1A1A1A">${j.upcoming?'◷':''}${esc(j.name)}</span></div>`;
+    }).join('');
+    const more=dj.length>3?`<div style="font-size:7.5px;color:#8A8470;margin-top:1px">+${dj.length-3}</div>`:'';
+    h+=`<div onclick="calDay('${calYmd(day)}')" style="min-height:60px;background:${inMonth?'#fff':'#F3F1EB'};border:1px solid ${isToday?'#8B1A1A':'#E6E2D8'};${isToday?'box-shadow:0 0 0 1.5px #8B1A1A inset;':''}border-radius:6px;padding:2px 3px 4px;cursor:pointer;overflow:hidden">
+      <div style="font-size:10px;font-weight:800;color:${isToday?'#8B1A1A':(inMonth?'#1A1A1A':'#B8B2A2')};text-align:right">${day.getDate()}</div>${chips}${more}</div>`;
+  }
+  h+=`</div>`;
+  return h;
+}
+
+// ── Day detail + plan-a-job overlay (closes only via its buttons) ──
+function calCloseOverlay(){ const o=$('calOverlay'); if(o) o.remove(); }
+function calOverlayShell(title, inner){
+  let o=$('calOverlay'); if(o) o.remove();
+  o=document.createElement('div'); o.id='calOverlay';
+  o.style.cssText='position:fixed;inset:0;z-index:1400;background:rgba(20,18,16,0.55);display:flex;align-items:flex-end;justify-content:center';
+  o.innerHTML=`<div style="background:#F7F5EF;width:100%;max-width:460px;max-height:88vh;overflow-y:auto;border-radius:18px 18px 0 0;padding:18px 16px 24px;-webkit-overflow-scrolling:touch">
+    <div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+      <div class="disp" style="font-size:16px;font-weight:800;min-width:0">${title}</div>
+      <button onclick="calCloseOverlay()" style="background:#242424;color:#fff;border:none;border-radius:20px;padding:8px 15px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto">Close</button>
+    </div>${inner}</div>`;
+  document.body.appendChild(o);
+}
+function calDay(ymd){
+  const day=calParse(ymd); if(!day) return;
+  const jobs=calJobsOnDay(calJobs(),day).filter(calJobMatchesFilter);
+  const label=day.toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const list = jobs.length ? jobs.map(function(j){ const c=calTeamColour(j.team);
+    const teamName=j.team?henkLeaderName(j.team):'Not assigned';
+    const status=j.done?'Completed':(j.upcoming?'Planned / upcoming':'Running');
+    return `<div onclick="calOpenSite('${j.id}')" style="display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #E6E2D8;border-left:5px solid ${c};border-radius:9px;padding:11px 12px;margin-bottom:8px;cursor:pointer">
+      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13px;color:#1A1A1A">${esc(j.name)}</div>
+      <div style="font-size:11px;color:#8A8470;margin-top:2px">${j.client?esc(j.client)+' · ':''}<span style="color:${c};font-weight:800">${esc(teamName)}</span> · ${status}</div></div>
+      <span style="color:#B8B2A2;font-size:16px">›</span></div>`;
+  }).join('') : `<div style="font-size:12.5px;color:#A39E8C;padding:4px 0 12px">No jobs on this day.</div>`;
+  calOverlayShell(label, list + `<button class="cta-btn" style="margin-top:6px" onclick="calPlanJob('${ymd}')">＋ Plan a job for this day</button>`);
+}
+function calOpenSite(id){ calCloseOverlay(); if(typeof openSiteSummary==='function') openSiteSummary(id); }
+function calPlanJob(ymd){
+  const leaderOpts = `<option value="">— Not assigned yet —</option>` + LEADER_META.map(function(l){ return `<option value="${l.key}">${l.name}</option>`; }).join('');
+  const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  const inner=`
+    <div style="margin-bottom:10px"><label style="${lbl}">Job / site name</label><input class="f-input" id="cal_name" placeholder="e.g. Kyalami Race Track" style="margin:0"/></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Client (optional)</label><input class="f-input" id="cal_client" placeholder="e.g. Burstone Group" style="margin:0"/></div>
+    <div style="margin-bottom:10px"><label style="${lbl}">Team (leave as not-assigned if you're unsure)</label><select class="f-input" id="cal_team" style="margin:0">${leaderOpts}</select></div>
+    <div style="display:flex;gap:10px">
+      <div style="flex:1;min-width:0"><label style="${lbl}">Start date</label><input class="f-input" id="cal_start" type="date" value="${esc(ymd)}" style="margin:0"/></div>
+      <div style="flex:1;min-width:0"><label style="${lbl}">Expected end (optional)</label><input class="f-input" id="cal_end" type="date" style="margin:0"/></div>
+    </div>
+    <button class="cta-btn" style="margin-top:14px" onclick="calSavePlan()">Save planned job</button>
+    <div style="font-size:11px;color:#A39E8C;margin-top:8px;line-height:1.6">This creates an <b>upcoming</b> job you'll also find in Sites. Add the quote, PO and full details there when you're ready.</div>`;
+  calOverlayShell('Plan a job', inner);
+}
+async function calSavePlan(){
+  const name=(($('cal_name')||{}).value||'').trim();
+  if(!name){ alert('Please type a job / site name.'); return; }
+  const client=(($('cal_client')||{}).value||'').trim();
+  const team=($('cal_team')||{}).value||'';
+  const start=($('cal_start')||{}).value||invToday();
+  const end=($('cal_end')||{}).value||'';
+  const siteId=uid();
+  const details={ upcoming:true }; if(end) details.expected_end=end;
+  showSaveToast('Saving planned job…');
+  const ok = await sbUpsert('sites', { id:siteId, name:name, client:client, team_leader:team, status:'active', started:start, quote_value:0, labour_budget:0, material_budget:0, details:details });
+  if(ok!==false){
+    if(typeof OWNER!=='undefined' && OWNER.sites){
+      const row={ id:siteId, name:name, client:client, team_leader:team, status:'active', started:start, quote_value:0, labour_budget:0, material_budget:0, details:details };
+      OWNER.sites.push(typeof normSiteEnd==='function'?normSiteEnd(row):row);
+    }
+    showSaveToast('Planned job added to the calendar');
+    calCloseOverlay(); renderCalendar();
+  } else { showSaveToast('Could not save — check your signal and try again'); }
+}
+
+// Print / share a clean month planner (like a paper work-planner).
+function calPrint(){
+  const monthStart=new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth(), 1);
+  const jobs=calJobs();
+  const monthLabel=monthStart.toLocaleDateString('en-ZA',{month:'long',year:'numeric'});
+  const year=monthStart.getFullYear(), mon=monthStart.getMonth();
+  const offset=(new Date(year,mon,1).getDay()+6)%7;
+  const daysInMonth=new Date(year,mon+1,0).getDate();
+  const totalCells=Math.ceil((offset+daysInMonth)/7)*7;
+  const gridStart=new Date(year,mon,1-offset);
+  const dow=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const tds=[];
+  for(let i=0;i<totalCells;i++){
+    const day=new Date(gridStart.getFullYear(),gridStart.getMonth(),gridStart.getDate()+i);
+    const inMonth=day.getMonth()===mon;
+    const dj=calJobsOnDay(jobs,day).filter(calJobMatchesFilter);
+    const items=dj.map(function(j){ const c=calTeamColour(j.team); return '<div style="font-size:8px;border-left:3px solid '+c+';padding-left:3px;margin-top:2px;color:#111">'+esc(j.name)+(j.team?' ('+esc(henkLeaderName(j.team))+')':'')+'</div>'; }).join('');
+    tds.push('<td style="border:1px solid #333;vertical-align:top;height:92px;width:14.28%;padding:3px;background:'+(inMonth?'#fff':'#f0f0f0')+'"><div style="font-size:9px;font-weight:bold;color:'+(inMonth?'#111':'#999')+'">'+day.getDate()+'</div>'+items+'</td>');
+  }
+  let rows=''; for(let r=0;r<tds.length;r+=7){ rows+='<tr>'+tds.slice(r,r+7).join('')+'</tr>'; }
+  const legend=LEADER_META.map(function(l){ return '<span style="margin-right:12px"><span style="display:inline-block;width:9px;height:9px;background:'+l.colour+'"></span> '+l.name+'</span>'; }).join('')+'<span><span style="display:inline-block;width:9px;height:9px;background:'+CAL_UNASSIGNED_COL+'"></span> To assign</span>';
+  const win=window.open('','_blank');
+  if(!win){ alert('Please allow pop-ups so the planner can open to print.'); return; }
+  win.document.write('<html><head><title>Power Rock — Work Planner — '+monthLabel+'</title></head>'
+    +'<body style="font-family:Arial,sans-serif;margin:14px" onload="window.print()">'
+    +'<h2 style="text-align:center;margin:0 0 2px">POWER ROCK — TEAM WORK PLANNER</h2>'
+    +'<div style="text-align:center;font-size:12px;margin-bottom:6px">'+monthLabel+' &nbsp;|&nbsp; '+legend+'</div>'
+    +'<table style="border-collapse:collapse;width:100%;table-layout:fixed">'
+    +'<tr>'+dow.map(function(d){return '<th style="border:1px solid #333;font-size:10px;padding:3px;background:#222;color:#fff">'+d+'</th>';}).join('')+'</tr>'
+    +rows+'</table></body></html>');
+  win.document.close();
+}
+
 // ───────────────────────────────────────────
 // SUPPLIERS
 // ───────────────────────────────────────────
@@ -7005,7 +7219,7 @@ function openSiteInfo(siteId, canEdit, editing){
     return `<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">${label}</label>
       <input class="f-input" id="${id}" value="${esc(value)}" ${hint?`placeholder="${hint}"`:''} style="margin:0"/></div>`;
   };
-  const leaderOpts = LEADER_META.map(function(lm){ return `<option value="${lm.key}" ${s.team_leader===lm.key?'selected':''}>${lm.name}</option>`; }).join('');
+  const leaderOpts = `<option value="" ${!s.team_leader?'selected':''}>— Not assigned yet —</option>` + LEADER_META.map(function(lm){ return `<option value="${lm.key}" ${s.team_leader===lm.key?'selected':''}>${lm.name}</option>`; }).join('');
   h += `<div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
       ${fld('Site name', 'si_name', s.name)}
       ${fld('Client', 'si_client', s.client)}
@@ -7062,7 +7276,7 @@ async function saveSiteInfo(siteId){
   const discPct = parseFloat(v('si_discount')) || 0;
   const quote = Math.round(grossQuote*(1-discPct/100)*100)/100;   // net project value, after discount
   if(discPct>0){ d.discount_pct = discPct; d.quote_gross = grossQuote; } else { delete d.discount_pct; delete d.quote_gross; }
-  const leader = v('si_leader') || s.team_leader;
+  const leader = $('si_leader') ? $('si_leader').value : s.team_leader;   // allow explicit "not assigned"
   const started = v('si_started') || s.started || '';
   const name = v('si_name').trim() || s.name;
   d.client_vat = v('si_client_vat').trim();
