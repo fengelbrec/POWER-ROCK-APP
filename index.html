@@ -5323,6 +5323,7 @@ function calJobsOnDay(jobs, day){ const t=day.getTime(); return jobs.filter(func
 function calJobMatchesFilter(j){ if(CAL_TEAM==='all') return true; if(CAL_TEAM==='none') return j.unassigned; return j.team===CAL_TEAM; }
 
 function renderCalendar(){
+  if(SUMMARY_SITE){ renderSiteSummary(SUMMARY_SITE); return; }   // a site was opened from the calendar — show it (same as the other tabs)
   if(!CAL_MONTH){ const t=new Date(); CAL_MONTH=new Date(t.getFullYear(), t.getMonth(), 1); }
   const jobs = calJobs();
   const monthStart = new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth(), 1);
