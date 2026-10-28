@@ -5531,7 +5531,7 @@ function renderTeams(){
   const mStart=new Date(yy,mm-1,1); mStart.setHours(0,0,0,0);
   const mEnd=new Date(yy,mm,0); mEnd.setHours(0,0,0,0);
   const monthLabel=mStart.toLocaleDateString('en-ZA',{month:'long',year:'numeric'});
-  const sites=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).filter(function(s){ const d=s.details||{}; return !d.is_general && !d.is_expense_store; });
+  const sites=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).filter(function(s){ const d=s.details||{}; return !d.is_general && !d.is_expense_store && !d.exclude_stats; });   // exclude_stats = site started mid-job, numbers unreliable
   const groups=LEADER_META.map(function(lm){ return {key:lm.key,name:lm.name,colour:lm.colour}; });
   groups.push({key:'',name:'Unassigned',colour:CAL_UNASSIGNED_COL});
   // stats for every team + company roll-up
@@ -5572,22 +5572,29 @@ function renderTeams(){
     { key:'avgwage',label:'Avg wage / day',            val:function(st){ return Rc(st.cAvgWage); } },
     { key:'avgprof',label:'Avg profit / day',          val:function(st){ return Rc(st.cAvgDay); } }
   ];
+  // Company TOTAL column (summed over the shown teams) — reuses the same metric.val()
+  const T={ out:0,monthBill:0,agreed:0,paid:0,cNet:0,cDays:0,cQuote:0,cMonthNet:0,cMonthQuote:0,cCount:0,cAgreed:0,gsLen:0 };
+  cols.forEach(function(x){ const s=x.st; T.out+=s.out; T.monthBill+=s.monthBill; T.agreed+=s.agreed; T.paid+=s.paid; T.cNet+=s.cNet; T.cDays+=s.cDays; T.cQuote+=s.cQuote; T.cMonthNet+=s.cMonthNet; T.cMonthQuote+=s.cMonthQuote; T.cCount+=s.cCount; T.cAgreed+=s.cAgreed; T.gsLen+=s.gs.length; });
+  const totalSt={ out:T.out, monthBill:T.monthBill, agreed:T.agreed, paid:T.paid, cNet:T.cNet, cDays:T.cDays, cQuote:T.cQuote, cMonthNet:T.cMonthNet, cMonthQuote:T.cMonthQuote, cCount:T.cCount, cAgreed:T.cAgreed,
+    gs:{length:T.gsLen}, cMargin:(T.cQuote>0?T.cNet/T.cQuote*100:0), cMonthMargin:(T.cMonthQuote>0?T.cMonthNet/T.cMonthQuote*100:0), cAvgDay:(T.cDays>0?T.cNet/T.cDays:0), cAvgWage:(T.cDays>0?T.cAgreed/T.cDays:0) };
   h+=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #E6E2D8;border-radius:12px">
-    <table style="border-collapse:separate;border-spacing:0;width:100%;min-width:${84+cols.length*88}px">
-      <tr><th style="position:sticky;left:0;background:#F7F5EF;z-index:2;min-width:84px;border-top-left-radius:11px"></th>`;
+    <table style="border-collapse:separate;border-spacing:0;table-layout:auto">
+      <tr><th style="position:sticky;left:0;background:#F7F5EF;z-index:2;width:118px;border-top-left-radius:11px"></th>`;
   cols.forEach(function(x){ const open=(TEAM_OPEN===x.g.key);
-    h+=`<th onclick="teamToggle('${x.g.key}')" style="background:${x.g.colour};color:#fff;padding:9px 6px;cursor:pointer;text-align:center;border-left:1px solid rgba(255,255,255,.18)">
+    h+=`<th onclick="teamToggle('${x.g.key}')" style="background:${x.g.colour};color:#fff;padding:9px 8px;cursor:pointer;text-align:center;min-width:96px;border-left:1px solid rgba(255,255,255,.18)">
       <div style="font-weight:800;font-size:13px;font-family:'Poppins',sans-serif">${esc(x.g.name)}</div>
       <div style="font-size:8.5px;opacity:.9;margin-top:1px">${open?'▾ hide sites':'▸ sites'}</div>
     </th>`;
   });
-  h+=`</tr>`;
+  h+=`<th style="background:#242424;color:#fff;padding:9px 8px;text-align:center;min-width:96px;border-left:2px solid #fff;border-top-right-radius:11px"><div style="font-weight:800;font-size:13px;font-family:'Poppins',sans-serif">TOTAL</div><div style="font-size:8.5px;opacity:.7;margin-top:1px">all teams</div></th></tr>`;
   metrics.forEach(function(m){
-    if(m.divider){ h+=`<tr><td colspan="${cols.length+1}" style="background:#EFE7D8;color:#8B6B2E;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:6px 8px;text-align:center;border-top:1px solid #E0D4BC">▾ ${esc(m.label)} · open jobs left out</td></tr>`; return; }
-    h+=`<tr><td style="position:sticky;left:0;background:#fff;z-index:1;font-size:10px;font-weight:800;color:#8A8470;text-transform:uppercase;letter-spacing:.3px;padding:9px 8px;white-space:nowrap;border-top:1px solid #EFECE3">${esc(m.label)}</td>`;
+    if(m.divider){ h+=`<tr><td colspan="${cols.length+2}" style="background:#EFE7D8;color:#8B6B2E;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:6px 8px;text-align:center;border-top:1px solid #E0D4BC">▾ ${esc(m.label)} · open jobs left out</td></tr>`; return; }
+    h+=`<tr><td style="position:sticky;left:0;background:#fff;z-index:1;font-size:9.5px;font-weight:800;color:#8A8470;text-transform:uppercase;letter-spacing:.2px;padding:9px 8px;white-space:nowrap;border-top:1px solid #EFECE3">${esc(m.label)}</td>`;
     cols.forEach(function(x){ const open=(TEAM_OPEN===x.g.key); const c=m.col?m.col(x.st):'#1A1A1A';
       h+=`<td onclick="teamCalc('${m.key}','${x.g.key}')" title="Tap to see how this is worked out" style="text-align:center;padding:9px 6px;border-top:1px solid #EFECE3;border-left:1px solid #F3F1EB;cursor:pointer;${open?'background:'+x.g.colour+'14;':''}"><span class="disp" style="font-weight:${m.bold?800:700};font-size:12px;color:${c};white-space:nowrap;border-bottom:1px dotted #C9C3B4;padding-bottom:1px">${m.val(x.st)}</span></td>`;
     });
+    const tc=m.col?m.col(totalSt):'#1A1A1A';
+    h+=`<td style="text-align:center;padding:9px 8px;border-top:1px solid #EFECE3;border-left:2px solid #E0D4BC;background:#FAF8F3"><span class="disp" style="font-weight:800;font-size:12px;color:${tc};white-space:nowrap">${m.val(totalSt)}</span></td>`;
     h+=`</tr>`;
   });
   h+=`</table></div>`;
@@ -5625,7 +5632,7 @@ function teamCalc(key, teamKey){
   const mStart=new Date(yy,mm-1,1); mStart.setHours(0,0,0,0);
   const mEnd=new Date(yy,mm,0); mEnd.setHours(0,0,0,0);
   const monthShort=mStart.toLocaleDateString('en-ZA',{month:'short'});
-  const sites=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).filter(function(s){ const d=s.details||{}; return !d.is_general&&!d.is_expense_store; });
+  const sites=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).filter(function(s){ const d=s.details||{}; return !d.is_general&&!d.is_expense_store&&!d.exclude_stats; });
   const g = teamKey==='' ? {name:'Unassigned',colour:CAL_UNASSIGNED_COL} : (LEADER_META.find(function(l){return l.key===teamKey;})||{name:teamKey,colour:'#555'});
   const st = teamComputeStats(teamKey, sites, mStart, mEnd);
   const det = st.gs.map(function(s){ const fin=ownerFin(s); const days=fin.days||0; const ov=ownerDaysOverlap(s,mStart,mEnd); const lp=((OWNER.costs[s.id]||{}).labour)||0;
@@ -7498,6 +7505,9 @@ function openSiteInfo(siteId, canEdit, editing){
       ${fld('Surfaces', 'si_surfaces', surfacesTxt, 'Comma separated')}
       <div style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px">Approved colours</label>
         <textarea class="f-input" id="si_colours" rows="2" style="margin:0">${esc(coloursTxt)}</textarea></div>
+      <label style="display:flex;align-items:flex-start;gap:9px;background:#FBF6EC;border:1px solid #ECDFC4;border-radius:9px;padding:11px 12px;cursor:pointer">
+        <input type="checkbox" id="si_exclude_stats" ${d.exclude_stats?'checked':''} style="margin-top:2px;width:17px;height:17px;flex:0 0 auto"/>
+        <span style="font-size:12px;color:#6B5A2B;line-height:1.5"><b>Leave this site out of the Teams profit stats</b><br>Tick this if you started this job mid-way (so the costs aren’t fully captured and the profit/margin would be wrong). Invoices &amp; labour still work as normal.</span></label>
     </div>
 
     <div class="section-lbl" style="margin-top:0">Documents (PDF)</div>
@@ -7544,6 +7554,7 @@ async function saveSiteInfo(siteId){
   d.surfaces = v('si_surfaces').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
   d.surfaces_text = v('si_surfaces').trim();
   d.colours_text = v('si_colours').trim();
+  if($('si_exclude_stats') && $('si_exclude_stats').checked) d.exclude_stats = true; else delete d.exclude_stats;
   const ok = await sbPatch('sites', 'id=eq.' + encodeURIComponent(siteId), { name: name, client: client, quote_value: quote, team_leader: leader, started: started, details: d });
   if(ok){
     s.name = name; s.client = client; s.quote_value = quote; s.team_leader = leader; s.started = started; s.details = d;
