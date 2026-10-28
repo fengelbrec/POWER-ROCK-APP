@@ -5510,15 +5510,15 @@ function teamToggle(k){ TEAM_OPEN = (TEAM_OPEN===k ? null : k); renderTeams(); }
 // Roll up one team's profit, days and labour from its sites.
 function teamComputeStats(key, sites, mStart, mEnd){
   const gs=sites.filter(function(s){ return (s.team_leader||'')===key; });
-  let yearNet=0, yearDays=0, yearQuote=0, monthNet=0, monthBill=0, agreed=0, paid=0; const rows=[];
+  let yearNet=0, yearDays=0, yearQuote=0, monthNet=0, monthBill=0, monthQuote=0, agreed=0, paid=0; const rows=[];
   gs.forEach(function(s){
     const fin=ownerFin(s); const days=fin.days||0; const net=fin.net||0;
-    if(days>0){ const ov=ownerDaysOverlap(s,mStart,mEnd); yearNet+=net; yearDays+=days; yearQuote+=fin.quote; monthNet += (net/days)*ov; monthBill += (fin.labourActual/days)*ov; }   // upcoming jobs earn R0 until they start
+    if(days>0){ const ov=ownerDaysOverlap(s,mStart,mEnd); yearNet+=net; yearDays+=days; yearQuote+=fin.quote; monthNet += (net/days)*ov; monthBill += (fin.labourActual/days)*ov; monthQuote += (fin.quote/days)*ov; }   // upcoming jobs earn R0 until they start
     const lp=((OWNER.costs[s.id]||{}).labour)||0;
     agreed+=fin.labourActual; paid+=lp;
     rows.push({ s:s, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, days:days });
   });
-  return { gs, yearNet, yearDays, yearQuote, monthNet, monthBill, agreed, paid, out:agreed-paid, avgDay:(yearDays>0?yearNet/yearDays:0), margin:(yearQuote>0?yearNet/yearQuote*100:0), rows };
+  return { gs, yearNet, yearDays, yearQuote, monthNet, monthBill, monthQuote, agreed, paid, out:agreed-paid, avgDay:(yearDays>0?yearNet/yearDays:0), margin:(yearQuote>0?yearNet/yearQuote*100:0), monthMargin:(monthQuote>0?monthNet/monthQuote*100:0), rows };
 }
 function renderTeams(){
   if(!TEAM_MONTH){ const t=new Date(); TEAM_MONTH=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0'); }
@@ -5559,6 +5559,7 @@ function renderTeams(){
     { key:'bill_y', label:'Wage bill · '+yy,           val:function(st){ return Rc(st.agreed); } },
     { key:'paid',   label:'Paid to date',              val:function(st){ return Rc(st.paid); },     col:function(){ return '#1A7A4A'; } },
     { key:'prof_m', label:monthShort+' profit',        val:function(st){ return Rc(st.monthNet); } },
+    { key:'margin_m',label:'Profit margin · '+monthShort, val:function(st){ return st.monthQuote>0?Math.round(st.monthMargin)+'%':'—'; }, col:function(st){ return st.monthMargin>=30?'#1A7A4A':(st.monthMargin>=15?'#C08A00':'#B2342A'); }, bold:true },
     { key:'prof_y', label:yy+' profit',                val:function(st){ return Rc(st.yearNet); },  col:function(){ return '#1A7A4A'; } },
     { key:'margin', label:'Profit margin · '+yy,       val:function(st){ return st.yearQuote>0?Math.round(st.margin)+'%':'—'; }, col:function(st){ return st.margin>=30?'#1A7A4A':(st.margin>=15?'#C08A00':'#B2342A'); }, bold:true },
     { key:'sites',  label:'Sites',                     val:function(st){ return String(st.gs.length); } },
@@ -5622,7 +5623,7 @@ function teamCalc(key, teamKey){
   const st = teamComputeStats(teamKey, sites, mStart, mEnd);
   const det = st.gs.map(function(s){ const fin=ownerFin(s); const days=fin.days||0; const ov=ownerDaysOverlap(s,mStart,mEnd); const lp=((OWNER.costs[s.id]||{}).labour)||0;
     return { id:s.id, name:s.name, status:s.status, days:days, ov:ov, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, net:fin.net||0,
-             bill_m:(days>0?(fin.labourActual/days)*ov:0), prof_m:(days>0?(fin.net/days)*ov:0),
+             bill_m:(days>0?(fin.labourActual/days)*ov:0), prof_m:(days>0?(fin.net/days)*ov:0), quote_m:(days>0?(fin.quote/days)*ov:0),
              quote:fin.quote, material:fin.material, overheads:fin.overheads, henk:fin.henk }; });
   const cell=function(v,i){ return `<td style="text-align:${i?'right':'left'};padding:7px 8px;border-bottom:1px solid #F0EDE4;white-space:nowrap;color:#1A1A1A">${v}</td>`; };
   const nm=function(d){ return esc(d.name)+(d.status==='done'?' <span style="color:#A39E8C;font-size:9px">done</span>':''); };
@@ -5655,6 +5656,10 @@ function teamCalc(key, teamKey){
     title='Profit margin · '+yy; intro='Net profit as a share of the job value: <b>profit ÷ quote (ex VAT)</b>, per job.';
     const rows=det.filter(function(d){return d.days>0;}).map(function(d){ const m=d.quote>0?d.net/d.quote*100:0; return `<tr>${cell(nm(d),0)}${cell(R(d.quote),1)}${cell('<span style="color:#1A7A4A">'+R(d.net)+'</span>',1)}${cell('<b>'+Math.round(m)+'%</b>',1)}</tr>`; }).join('');
     body=tbl(['Site','Quote','Net','Margin'], rows, ['Total', R(st.yearQuote), '<span style="color:#1A7A4A">'+R(st.yearNet)+'</span>', '<b>'+(st.yearQuote>0?Math.round(st.margin):0)+'%</b>']);
+  } else if(key==='margin_m'){
+    title='Profit margin · '+monthShort; intro='Each job’s profit and value spread into '+monthShort+' (by days worked): <b>'+monthShort+' profit ÷ '+monthShort+' value</b>.';
+    const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ const m=d.quote_m>0?d.prof_m/d.quote_m*100:0; return `<tr>${cell(nm(d),0)}${cell(R(d.quote_m),1)}${cell('<span style="color:#1A7A4A">'+R(d.prof_m)+'</span>',1)}${cell('<b>'+Math.round(m)+'%</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell('—',1)}</tr>`;
+    body=tbl(['Site',monthShort+' value',monthShort+' net','Margin'], rows, ['Total', R(st.monthQuote), '<span style="color:#1A7A4A">'+R(st.monthNet)+'</span>', '<b>'+(st.monthQuote>0?Math.round(st.monthMargin):0)+'%</b>']);
   } else if(key==='prof_m'){
     title=monthShort+' profit'; intro='Each job’s net profit spread over its days, times the days worked in '+monthShort+'.';
     const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.days>0?d.net/d.days:0)+'/day',1)}${cell(d.ov+' days',1)}${cell('<b>'+R(d.prof_m)+'</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell(R(0),1)}</tr>`;
