@@ -5510,15 +5510,15 @@ function teamToggle(k){ TEAM_OPEN = (TEAM_OPEN===k ? null : k); renderTeams(); }
 // Roll up one team's profit, days and labour from its sites.
 function teamComputeStats(key, sites, mStart, mEnd){
   const gs=sites.filter(function(s){ return (s.team_leader||'')===key; });
-  let yearNet=0, yearDays=0, monthNet=0, agreed=0, paid=0; const rows=[];
+  let yearNet=0, yearDays=0, monthNet=0, monthBill=0, agreed=0, paid=0; const rows=[];
   gs.forEach(function(s){
     const fin=ownerFin(s); const days=fin.days||0; const net=fin.net||0;
-    if(days>0){ yearNet+=net; yearDays+=days; monthNet += (net/days)*ownerDaysOverlap(s,mStart,mEnd); }   // upcoming jobs earn R0 until they start
+    if(days>0){ const ov=ownerDaysOverlap(s,mStart,mEnd); yearNet+=net; yearDays+=days; monthNet += (net/days)*ov; monthBill += (fin.labourActual/days)*ov; }   // upcoming jobs earn R0 until they start
     const lp=((OWNER.costs[s.id]||{}).labour)||0;
     agreed+=fin.labourActual; paid+=lp;
     rows.push({ s:s, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, days:days });
   });
-  return { gs, yearNet, yearDays, monthNet, agreed, paid, out:agreed-paid, avgDay:(yearDays>0?yearNet/yearDays:0), rows };
+  return { gs, yearNet, yearDays, monthNet, monthBill, agreed, paid, out:agreed-paid, avgDay:(yearDays>0?yearNet/yearDays:0), rows };
 }
 function renderTeams(){
   if(!TEAM_MONTH){ const t=new Date(); TEAM_MONTH=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0'); }
@@ -5554,14 +5554,15 @@ function renderTeams(){
   </div>`;
   // ── COMPARISON MATRIX: teams across the top, metrics down the left ──
   const metrics=[
-    { label:'Outstanding',    val:function(st){ return Rc(st.out); },                                   col:function(st){ return st.out>0.5?'#B2342A':'#1A7A4A'; }, bold:true },
-    { label:'Avg wage / day', val:function(st){ return Rc(st.yearDays>0?st.agreed/st.yearDays:0); } },
-    { label:'Wage bill',      val:function(st){ return Rc(st.agreed); } },
-    { label:'Paid to date',   val:function(st){ return Rc(st.paid); },  col:function(){ return '#1A7A4A'; } },
-    { label:monthShort+' profit', val:function(st){ return Rc(st.monthNet); } },
-    { label:yy+' profit',     val:function(st){ return Rc(st.yearNet); }, col:function(){ return '#1A7A4A'; } },
-    { label:'Avg profit / day', val:function(st){ return Rc(st.avgDay); } },
-    { label:'Sites',          val:function(st){ return String(st.gs.length); } }
+    { key:'out',    label:'Outstanding',               val:function(st){ return Rc(st.out); },      col:function(st){ return st.out>0.5?'#B2342A':'#1A7A4A'; }, bold:true },
+    { key:'bill_m', label:'Wage bill · '+monthShort,   val:function(st){ return Rc(st.monthBill); } },
+    { key:'bill_y', label:'Wage bill · '+yy,           val:function(st){ return Rc(st.agreed); } },
+    { key:'paid',   label:'Paid to date',              val:function(st){ return Rc(st.paid); },     col:function(){ return '#1A7A4A'; } },
+    { key:'prof_m', label:monthShort+' profit',        val:function(st){ return Rc(st.monthNet); } },
+    { key:'prof_y', label:yy+' profit',                val:function(st){ return Rc(st.yearNet); },  col:function(){ return '#1A7A4A'; } },
+    { key:'sites',  label:'Sites',                     val:function(st){ return String(st.gs.length); } },
+    { key:'avgwage',label:'Avg wage / day · '+yy,      val:function(st){ return Rc(st.yearDays>0?st.agreed/st.yearDays:0); } },
+    { key:'avgprof',label:'Avg profit / day · '+yy,    val:function(st){ return Rc(st.avgDay); } }
   ];
   h+=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #E6E2D8;border-radius:12px">
     <table style="border-collapse:separate;border-spacing:0;width:100%;min-width:${84+cols.length*88}px">
@@ -5576,7 +5577,7 @@ function renderTeams(){
   metrics.forEach(function(m){
     h+=`<tr><td style="position:sticky;left:0;background:#fff;z-index:1;font-size:10px;font-weight:800;color:#8A8470;text-transform:uppercase;letter-spacing:.3px;padding:9px 8px;white-space:nowrap;border-top:1px solid #EFECE3">${esc(m.label)}</td>`;
     cols.forEach(function(x){ const open=(TEAM_OPEN===x.g.key); const c=m.col?m.col(x.st):'#1A1A1A';
-      h+=`<td style="text-align:center;padding:9px 6px;border-top:1px solid #EFECE3;border-left:1px solid #F3F1EB;${open?'background:'+x.g.colour+'14;':''}"><span class="disp" style="font-weight:${m.bold?800:700};font-size:12px;color:${c};white-space:nowrap">${m.val(x.st)}</span></td>`;
+      h+=`<td onclick="teamCalc('${m.key}','${x.g.key}')" title="Tap to see how this is worked out" style="text-align:center;padding:9px 6px;border-top:1px solid #EFECE3;border-left:1px solid #F3F1EB;cursor:pointer;${open?'background:'+x.g.colour+'14;':''}"><span class="disp" style="font-weight:${m.bold?800:700};font-size:12px;color:${c};white-space:nowrap;border-bottom:1px dotted #C9C3B4;padding-bottom:1px">${m.val(x.st)}</span></td>`;
     });
     h+=`</tr>`;
   });
@@ -5606,6 +5607,72 @@ function renderTeams(){
     h+=`</div></div>`;
   }
   $('pageBody').innerHTML=h;
+}
+
+// Tap any matrix cell → show how that number is worked out, per site.
+function teamCalc(key, teamKey){
+  if(!TEAM_MONTH){ const t=new Date(); TEAM_MONTH=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0'); }
+  const p=TEAM_MONTH.split('-'); const yy=+p[0], mm=+p[1];
+  const mStart=new Date(yy,mm-1,1); mStart.setHours(0,0,0,0);
+  const mEnd=new Date(yy,mm,0); mEnd.setHours(0,0,0,0);
+  const monthShort=mStart.toLocaleDateString('en-ZA',{month:'short'});
+  const sites=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).filter(function(s){ const d=s.details||{}; return !d.is_general&&!d.is_expense_store; });
+  const g = teamKey==='' ? {name:'Unassigned',colour:CAL_UNASSIGNED_COL} : (LEADER_META.find(function(l){return l.key===teamKey;})||{name:teamKey,colour:'#555'});
+  const st = teamComputeStats(teamKey, sites, mStart, mEnd);
+  const det = st.gs.map(function(s){ const fin=ownerFin(s); const days=fin.days||0; const ov=ownerDaysOverlap(s,mStart,mEnd); const lp=((OWNER.costs[s.id]||{}).labour)||0;
+    return { name:s.name, status:s.status, days:days, ov:ov, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, net:fin.net||0,
+             bill_m:(days>0?(fin.labourActual/days)*ov:0), prof_m:(days>0?(fin.net/days)*ov:0),
+             quote:fin.quote, material:fin.material, overheads:fin.overheads, henk:fin.henk }; });
+  const cell=function(v,i){ return `<td style="text-align:${i?'right':'left'};padding:7px 8px;border-bottom:1px solid #F0EDE4;white-space:nowrap;color:#1A1A1A">${v}</td>`; };
+  const nm=function(d){ return esc(d.name)+(d.status==='done'?' <span style="color:#A39E8C;font-size:9px">done</span>':''); };
+  const tbl=function(head, rowsHtml, foot){
+    return `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:collapse;width:100%;font-size:11.5px;min-width:300px">
+      <tr>${head.map(function(c,i){ return `<th style="text-align:${i?'right':'left'};color:#8A8470;font-weight:800;padding:7px 8px;border-bottom:1px solid #E6E2D8;white-space:nowrap">${c}</th>`; }).join('')}</tr>
+      ${rowsHtml}${foot?`<tr>${foot.map(function(c,i){ return `<td style="text-align:${i?'right':'left'};font-weight:800;padding:8px;border-top:2px solid #BDB8AA;white-space:nowrap">${c}</td>`; }).join('')}</tr>`:''}</table></div>`;
+  };
+  let title='', intro='', body='';
+  if(key==='out'){
+    title='Outstanding wages'; intro='What you still owe this team = <b>agreed labour − paid</b>, across their jobs.';
+    const rows=det.filter(function(d){return d.agreed>0||d.paid>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.agreed),1)}${cell(R(d.paid),1)}${cell('<b style="color:'+(d.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(d.out)+'</b>',1)}</tr>`; }).join('');
+    body=tbl(['Site','Agreed','Paid','Outstanding'], rows, ['Total','','','<span style="color:'+(st.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(st.out)+'</span>']);
+  } else if(key==='bill_y'){
+    title='Wage bill · '+yy; intro='The <b>agreed labour</b> on every job this team has this year, added together.';
+    const rows=det.map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.agreed),1)}</tr>`; }).join('');
+    body=tbl(['Site','Agreed labour'], rows, ['Total', R(st.agreed)]);
+  } else if(key==='bill_m'){
+    title='Wage bill · '+monthShort; intro='Each job’s labour spread over its days, times the days worked in '+monthShort+' — the wage cost for this month only.';
+    const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.days>0?d.agreed/d.days:0)+'/day',1)}${cell(d.ov+' days',1)}${cell('<b>'+R(d.bill_m)+'</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell(R(0),1)}</tr>`;
+    body=tbl(['Site','Labour/day','in '+monthShort,'= bill'], rows, ['Total','','', R(st.monthBill)]);
+  } else if(key==='paid'){
+    title='Paid to date'; intro='Every labour payment logged for this team’s jobs. Tap <b>Update</b> on a site to add or remove one.';
+    const rows=det.filter(function(d){return d.paid>0||d.agreed>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell('<span style="color:#1A7A4A">'+R(d.paid)+'</span>',1)}</tr>`; }).join('');
+    body=tbl(['Site','Paid'], rows, ['Total','<span style="color:#1A7A4A">'+R(st.paid)+'</span>']);
+  } else if(key==='prof_m'){
+    title=monthShort+' profit'; intro='Each job’s net profit spread over its days, times the days worked in '+monthShort+'.';
+    const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.days>0?d.net/d.days:0)+'/day',1)}${cell(d.ov+' days',1)}${cell('<b>'+R(d.prof_m)+'</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell(R(0),1)}</tr>`;
+    body=tbl(['Site','Profit/day','in '+monthShort,'= profit'], rows, ['Total','','', R(st.monthNet)]);
+  } else if(key==='prof_y'){
+    title=yy+' profit'; intro='Net profit of each job = <b>quote − labour − material − site costs − Henk 10%</b>.';
+    const rows=det.filter(function(d){return d.days>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.quote),1)}${cell('−'+R(d.agreed+d.material+d.overheads+d.henk),1)}${cell('<b style="color:#1A7A4A">'+R(d.net)+'</b>',1)}</tr>`; }).join('');
+    body=tbl(['Site','Quote','Costs','= net'], rows, ['Total','','','<span style="color:#1A7A4A">'+R(st.yearNet)+'</span>']);
+  } else if(key==='sites'){
+    title='Sites'; intro=st.gs.length+' job'+(st.gs.length!==1?'s':'')+' for this team this year.';
+    const rows=det.map(function(d){ return `<tr>${cell(nm(d),0)}${cell(d.days+' days',1)}</tr>`; }).join('') || `<tr>${cell('No sites yet',0)}${cell('',1)}</tr>`;
+    body=tbl(['Site','Days on site'], rows, ['Total', st.yearDays+' team-days']);
+  } else if(key==='avgwage'){
+    title='Avg wage / day · '+yy; intro='The team’s whole wage bill this year ÷ the total days they’ve worked.';
+    body=`<div class="ledger-card" style="padding:14px 16px;font-size:13px">
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span>Wage bill ${yy}</span><b>${R(st.agreed)}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span>÷ team-days worked</span><b>${st.yearDays}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:1px solid #EFECE3;margin-top:4px;font-size:15px"><span style="font-weight:800">= Avg wage / day</span><b>${R(st.yearDays>0?st.agreed/st.yearDays:0)}</b></div></div>`;
+  } else if(key==='avgprof'){
+    title='Avg profit / day · '+yy; intro='The team’s whole profit this year ÷ the total days they’ve worked.';
+    body=`<div class="ledger-card" style="padding:14px 16px;font-size:13px">
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span>${yy} profit</span><b style="color:#1A7A4A">${R(st.yearNet)}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span>÷ team-days worked</span><b>${st.yearDays}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:1px solid #EFECE3;margin-top:4px;font-size:15px"><span style="font-weight:800">= Avg profit / day</span><b>${R(st.avgDay)}</b></div></div>`;
+  }
+  calOverlayShell(esc(g.name)+' · '+title, `<div style="font-size:12px;color:#5C5748;line-height:1.6;margin-bottom:12px">${intro}</div>${body}`);
 }
 
 // Labour-payment editor for one site (reuses the calendar overlay shell).
