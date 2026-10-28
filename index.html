@@ -5510,15 +5510,15 @@ function teamToggle(k){ TEAM_OPEN = (TEAM_OPEN===k ? null : k); renderTeams(); }
 // Roll up one team's profit, days and labour from its sites.
 function teamComputeStats(key, sites, mStart, mEnd){
   const gs=sites.filter(function(s){ return (s.team_leader||'')===key; });
-  let yearNet=0, yearDays=0, monthNet=0, monthBill=0, agreed=0, paid=0; const rows=[];
+  let yearNet=0, yearDays=0, yearQuote=0, monthNet=0, monthBill=0, agreed=0, paid=0; const rows=[];
   gs.forEach(function(s){
     const fin=ownerFin(s); const days=fin.days||0; const net=fin.net||0;
-    if(days>0){ const ov=ownerDaysOverlap(s,mStart,mEnd); yearNet+=net; yearDays+=days; monthNet += (net/days)*ov; monthBill += (fin.labourActual/days)*ov; }   // upcoming jobs earn R0 until they start
+    if(days>0){ const ov=ownerDaysOverlap(s,mStart,mEnd); yearNet+=net; yearDays+=days; yearQuote+=fin.quote; monthNet += (net/days)*ov; monthBill += (fin.labourActual/days)*ov; }   // upcoming jobs earn R0 until they start
     const lp=((OWNER.costs[s.id]||{}).labour)||0;
     agreed+=fin.labourActual; paid+=lp;
     rows.push({ s:s, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, days:days });
   });
-  return { gs, yearNet, yearDays, monthNet, monthBill, agreed, paid, out:agreed-paid, avgDay:(yearDays>0?yearNet/yearDays:0), rows };
+  return { gs, yearNet, yearDays, yearQuote, monthNet, monthBill, agreed, paid, out:agreed-paid, avgDay:(yearDays>0?yearNet/yearDays:0), margin:(yearQuote>0?yearNet/yearQuote*100:0), rows };
 }
 function renderTeams(){
   if(!TEAM_MONTH){ const t=new Date(); TEAM_MONTH=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0'); }
@@ -5560,6 +5560,7 @@ function renderTeams(){
     { key:'paid',   label:'Paid to date',              val:function(st){ return Rc(st.paid); },     col:function(){ return '#1A7A4A'; } },
     { key:'prof_m', label:monthShort+' profit',        val:function(st){ return Rc(st.monthNet); } },
     { key:'prof_y', label:yy+' profit',                val:function(st){ return Rc(st.yearNet); },  col:function(){ return '#1A7A4A'; } },
+    { key:'margin', label:'Profit margin · '+yy,       val:function(st){ return st.yearQuote>0?Math.round(st.margin)+'%':'—'; }, col:function(st){ return st.margin>=30?'#1A7A4A':(st.margin>=15?'#C08A00':'#B2342A'); }, bold:true },
     { key:'sites',  label:'Sites',                     val:function(st){ return String(st.gs.length); } },
     { key:'avgwage',label:'Avg wage / day · '+yy,      val:function(st){ return Rc(st.yearDays>0?st.agreed/st.yearDays:0); } },
     { key:'avgprof',label:'Avg profit / day · '+yy,    val:function(st){ return Rc(st.avgDay); } }
@@ -5620,33 +5621,40 @@ function teamCalc(key, teamKey){
   const g = teamKey==='' ? {name:'Unassigned',colour:CAL_UNASSIGNED_COL} : (LEADER_META.find(function(l){return l.key===teamKey;})||{name:teamKey,colour:'#555'});
   const st = teamComputeStats(teamKey, sites, mStart, mEnd);
   const det = st.gs.map(function(s){ const fin=ownerFin(s); const days=fin.days||0; const ov=ownerDaysOverlap(s,mStart,mEnd); const lp=((OWNER.costs[s.id]||{}).labour)||0;
-    return { name:s.name, status:s.status, days:days, ov:ov, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, net:fin.net||0,
+    return { id:s.id, name:s.name, status:s.status, days:days, ov:ov, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, net:fin.net||0,
              bill_m:(days>0?(fin.labourActual/days)*ov:0), prof_m:(days>0?(fin.net/days)*ov:0),
              quote:fin.quote, material:fin.material, overheads:fin.overheads, henk:fin.henk }; });
   const cell=function(v,i){ return `<td style="text-align:${i?'right':'left'};padding:7px 8px;border-bottom:1px solid #F0EDE4;white-space:nowrap;color:#1A1A1A">${v}</td>`; };
   const nm=function(d){ return esc(d.name)+(d.status==='done'?' <span style="color:#A39E8C;font-size:9px">done</span>':''); };
+  // On the labour breakdowns, the site name is tappable → opens its labour-payment editor (same data as Sites).
+  const nmP=function(d){ return `<span onclick="teamLabourModal('${d.id}')" style="cursor:pointer;color:#8B1A1A;font-weight:700;border-bottom:1px dotted #B2342A">${esc(d.name)}</span>${d.status==='done'?' <span style="color:#A39E8C;font-size:9px">done</span>':''} <button onclick="teamLabourModal('${d.id}')" style="background:#242424;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:9.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-left:4px">Pay</button>`; };
   const tbl=function(head, rowsHtml, foot){
     return `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:collapse;width:100%;font-size:11.5px;min-width:300px">
       <tr>${head.map(function(c,i){ return `<th style="text-align:${i?'right':'left'};color:#8A8470;font-weight:800;padding:7px 8px;border-bottom:1px solid #E6E2D8;white-space:nowrap">${c}</th>`; }).join('')}</tr>
       ${rowsHtml}${foot?`<tr>${foot.map(function(c,i){ return `<td style="text-align:${i?'right':'left'};font-weight:800;padding:8px;border-top:2px solid #BDB8AA;white-space:nowrap">${c}</td>`; }).join('')}</tr>`:''}</table></div>`;
   };
   let title='', intro='', body='';
+  const payHint='<div style="font-size:11px;color:#8B1A1A;background:#FBF0EE;border:1px solid #F0D9D4;border-radius:8px;padding:8px 11px;margin-bottom:10px">💵 Tap a site name or its <b>Pay</b> button to add a labour payment — it updates here and on the Sites tab.</div>';
   if(key==='out'){
-    title='Outstanding wages'; intro='What you still owe this team = <b>agreed labour − paid</b>, across their jobs.';
-    const rows=det.filter(function(d){return d.agreed>0||d.paid>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.agreed),1)}${cell(R(d.paid),1)}${cell('<b style="color:'+(d.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(d.out)+'</b>',1)}</tr>`; }).join('');
+    title='Outstanding wages'; intro=payHint+'What you still owe this team = <b>agreed labour − paid</b>, across their jobs.';
+    const rows=det.filter(function(d){return d.agreed>0||d.paid>0;}).map(function(d){ return `<tr>${cell(nmP(d),0)}${cell(R(d.agreed),1)}${cell(R(d.paid),1)}${cell('<b style="color:'+(d.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(d.out)+'</b>',1)}</tr>`; }).join('');
     body=tbl(['Site','Agreed','Paid','Outstanding'], rows, ['Total','','','<span style="color:'+(st.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(st.out)+'</span>']);
   } else if(key==='bill_y'){
-    title='Wage bill · '+yy; intro='The <b>agreed labour</b> on every job this team has this year, added together.';
-    const rows=det.map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.agreed),1)}</tr>`; }).join('');
-    body=tbl(['Site','Agreed labour'], rows, ['Total', R(st.agreed)]);
+    title='Wage bill · '+yy; intro=payHint+'The <b>agreed labour</b> on every job this team has this year, added together.';
+    const rows=det.map(function(d){ return `<tr>${cell(nmP(d),0)}${cell(R(d.agreed),1)}${cell('<span style="color:#1A7A4A">'+R(d.paid)+'</span>',1)}${cell('<b style="color:'+(d.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(d.out)+'</b>',1)}</tr>`; }).join('');
+    body=tbl(['Site','Agreed','Paid','Outstanding'], rows, ['Total','', '<span style="color:#1A7A4A">'+R(st.paid)+'</span>','<span style="color:'+(st.out>0.5?'#B2342A':'#1A7A4A')+'">'+R(st.out)+'</span>']);
   } else if(key==='bill_m'){
-    title='Wage bill · '+monthShort; intro='Each job’s labour spread over its days, times the days worked in '+monthShort+' — the wage cost for this month only.';
-    const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.days>0?d.agreed/d.days:0)+'/day',1)}${cell(d.ov+' days',1)}${cell('<b>'+R(d.bill_m)+'</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell(R(0),1)}</tr>`;
+    title='Wage bill · '+monthShort; intro=payHint+'Each job’s labour spread over its days, times the days worked in '+monthShort+' — the wage cost for this month only.';
+    const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ return `<tr>${cell(nmP(d),0)}${cell(R(d.days>0?d.agreed/d.days:0)+'/day',1)}${cell(d.ov+' days',1)}${cell('<b>'+R(d.bill_m)+'</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell(R(0),1)}</tr>`;
     body=tbl(['Site','Labour/day','in '+monthShort,'= bill'], rows, ['Total','','', R(st.monthBill)]);
   } else if(key==='paid'){
-    title='Paid to date'; intro='Every labour payment logged for this team’s jobs. Tap <b>Update</b> on a site to add or remove one.';
-    const rows=det.filter(function(d){return d.paid>0||d.agreed>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell('<span style="color:#1A7A4A">'+R(d.paid)+'</span>',1)}</tr>`; }).join('');
-    body=tbl(['Site','Paid'], rows, ['Total','<span style="color:#1A7A4A">'+R(st.paid)+'</span>']);
+    title='Paid to date'; intro=payHint+'Every labour payment logged for this team’s jobs.';
+    const rows=det.filter(function(d){return d.paid>0||d.agreed>0;}).map(function(d){ return `<tr>${cell(nmP(d),0)}${cell('<span style="color:#1A7A4A">'+R(d.paid)+'</span>',1)}${cell(R(d.agreed),1)}</tr>`; }).join('');
+    body=tbl(['Site','Paid','Agreed'], rows, ['Total','<span style="color:#1A7A4A">'+R(st.paid)+'</span>', R(st.agreed)]);
+  } else if(key==='margin'){
+    title='Profit margin · '+yy; intro='Net profit as a share of the job value: <b>profit ÷ quote (ex VAT)</b>, per job.';
+    const rows=det.filter(function(d){return d.days>0;}).map(function(d){ const m=d.quote>0?d.net/d.quote*100:0; return `<tr>${cell(nm(d),0)}${cell(R(d.quote),1)}${cell('<span style="color:#1A7A4A">'+R(d.net)+'</span>',1)}${cell('<b>'+Math.round(m)+'%</b>',1)}</tr>`; }).join('');
+    body=tbl(['Site','Quote','Net','Margin'], rows, ['Total', R(st.yearQuote), '<span style="color:#1A7A4A">'+R(st.yearNet)+'</span>', '<b>'+(st.yearQuote>0?Math.round(st.margin):0)+'%</b>']);
   } else if(key==='prof_m'){
     title=monthShort+' profit'; intro='Each job’s net profit spread over its days, times the days worked in '+monthShort+'.';
     const rows=det.filter(function(d){return d.ov>0;}).map(function(d){ return `<tr>${cell(nm(d),0)}${cell(R(d.days>0?d.net/d.days:0)+'/day',1)}${cell(d.ov+' days',1)}${cell('<b>'+R(d.prof_m)+'</b>',1)}</tr>`; }).join('') || `<tr>${cell('No work in '+monthShort,0)}${cell('',1)}${cell('',1)}${cell(R(0),1)}</tr>`;
