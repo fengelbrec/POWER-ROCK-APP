@@ -854,6 +854,7 @@ const NAV = [
   {id:'income', label:'Income', icon:'💰'},
   {id:'sites', label:'Sites', icon:'▦'},
   {id:'financials', label:'Site P+L', icon:'▤'},
+  {id:'teams', label:'Teams', icon:'👥'},
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
   {id:'calendar', label:'Calendar', icon:'📅'},
   {id:'quotations', label:'Quotations', icon:'✎'},
@@ -1322,7 +1323,7 @@ function paintDoor(id){
   const renderers = {
     overview: renderOverview, dailyupdates: renderDailyUpdates,
     sites: renderHenkSites, financials: renderFinancials, income: renderIncome,
-    splitengine: renderSplitEngine, vat: renderVAT, calendar: renderCalendar,
+    splitengine: renderSplitEngine, vat: renderVAT, calendar: renderCalendar, teams: renderTeams,
     quotations: renderQuotations, leads: renderLeads, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
   };
   (renderers[id] || renderEmpty)();
@@ -1423,6 +1424,17 @@ function ownerFin(s){
            overheads, additional, accommodation:(c.accommodation||0), petrol:(c.petrol||0), henk, net, days:ownerDays(s) };
 }
 function siteProfitPerDay(s){ return siteNetProfitLive(s) / siteDaysOnSite(s); }
+// Days of a site's active span (started → end/today) that fall inside [mStart, mEnd]. Used to
+// spread a job's profit across calendar months for the Teams tab.
+function ownerDaysOverlap(s, mStart, mEnd){
+  if(!s || !s.started) return 0;
+  if(typeof siteNotStarted==='function' && siteNotStarted(s)) return 0;
+  const start=new Date(s.started); start.setHours(0,0,0,0);
+  const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date(); end.setHours(0,0,0,0);
+  const a=Math.max(start.getTime(), mStart.getTime()), b=Math.min(end.getTime(), mEnd.getTime());
+  if(b<a) return 0;
+  return Math.floor((b-a)/86400000)+1;
+}
 function slugId(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
 function mapsLinkFor(name){ return name ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(name) : ''; }
 
@@ -5484,6 +5496,119 @@ function calPrint(){
     +'<tr>'+dow.map(function(d){return '<th style="border:1px solid #333;font-size:10px;padding:3px;background:#222;color:#fff">'+d+'</th>';}).join('')+'</tr>'
     +rows+'</table></body></html>');
   win.document.close();
+}
+
+// ═══════════════════════════════════════════
+// TEAMS — each leader's profit (month / year / avg per day) + labour payments per site
+// Net profit & days come from ownerFin (same figures as the site cards); labour paid is
+// the site_costs (kind=labour) total already in OWNER.costs[siteId].labour.
+// ═══════════════════════════════════════════
+let TEAM_MONTH = null;   // 'YYYY-MM'
+function teamShift(n){ const p=TEAM_MONTH.split('-'); const d=new Date(+p[0], +p[1]-1+n, 1); TEAM_MONTH=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderTeams(); }
+function renderTeams(){
+  if(!TEAM_MONTH){ const t=new Date(); TEAM_MONTH=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0'); }
+  const p=TEAM_MONTH.split('-'); const yy=+p[0], mm=+p[1];
+  const mStart=new Date(yy,mm-1,1); mStart.setHours(0,0,0,0);
+  const mEnd=new Date(yy,mm,0); mEnd.setHours(0,0,0,0);
+  const monthLabel=mStart.toLocaleDateString('en-ZA',{month:'long',year:'numeric'});
+  const sites=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).filter(function(s){ const d=s.details||{}; return !d.is_general && !d.is_expense_store; });
+  const groups=LEADER_META.map(function(lm){ return {key:lm.key,name:lm.name,colour:lm.colour}; });
+  groups.push({key:'',name:'Unassigned',colour:CAL_UNASSIGNED_COL});
+
+  let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Teams</div>
+    <div class="snap-meta" style="margin:-6px 0 14px">Each team's profit and labour. Net profit uses the <b>agreed labour</b>; "paid" and "still to pay" come from your labour payments — tap <b>Update</b> to add one.</div>`;
+  h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+    <button onclick="teamShift(-1)" style="${CAL_NAVBTN}">‹</button>
+    <div style="flex:1;text-align:center"><div class="disp" style="font-size:16px;font-weight:800">${monthLabel}</div><div style="font-size:10.5px;color:#8A8470">month profit · year-to-date alongside</div></div>
+    <button onclick="teamShift(1)" style="${CAL_NAVBTN}">›</button>
+  </div>`;
+
+  groups.forEach(function(g){
+    const gs=sites.filter(function(s){ return (s.team_leader||'')===g.key; });
+    if(g.key==='' && !gs.length) return;
+    let yearNet=0, yearDays=0, monthNet=0, agreed=0, paid=0; const rows=[];
+    gs.forEach(function(s){
+      const fin=ownerFin(s); const days=fin.days||0; const net=fin.net||0;
+      // Only count profit for sites that have actually started (upcoming jobs earn nothing yet).
+      if(days>0){
+        yearNet+=net; yearDays+=days;
+        monthNet += (net/days) * ownerDaysOverlap(s, mStart, mEnd);
+      }
+      const lp=((OWNER.costs[s.id]||{}).labour)||0;
+      agreed+=fin.labourActual; paid+=lp;
+      rows.push({ s:s, agreed:fin.labourActual, paid:lp, out:fin.labourActual-lp, days:days });
+    });
+    const avgDay=yearDays>0?yearNet/yearDays:0, outTot=agreed-paid;
+    h+=`<div class="ledger-card" style="padding:0;margin-bottom:14px;overflow:hidden">
+      <div style="background:${g.colour};color:#fff;padding:12px 15px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="font-family:'Poppins',sans-serif;font-weight:800;font-size:16px;letter-spacing:.5px;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(g.name.toUpperCase())}</div>
+        <div style="text-align:right;flex:0 0 auto"><div style="font-size:9px;opacity:.85;font-weight:800;letter-spacing:1px">AVG PROFIT / DAY</div><div class="disp" style="font-size:18px;font-weight:800">${R(avgDay)}</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#EFECE3">
+        <div style="background:#fff;padding:11px 14px"><div style="font-size:9px;color:#8A8470;font-weight:800;letter-spacing:.5px">${esc(monthLabel.toUpperCase())}</div><div class="disp" style="font-size:16px;font-weight:800;color:#1A1A1A">${R(monthNet)}</div></div>
+        <div style="background:#fff;padding:11px 14px"><div style="font-size:9px;color:#8A8470;font-weight:800;letter-spacing:.5px">${yy} YEAR-TO-DATE</div><div class="disp" style="font-size:16px;font-weight:800;color:#1A7A4A">${R(yearNet)}</div></div>
+      </div>
+      <div style="padding:9px 14px;background:#FBFAF6;font-size:11px;color:#8A8470">${gs.length} site${gs.length!==1?'s':''} · ${yearDays} team-day${yearDays!==1?'s':''} this year · labour still to pay <b style="color:${outTot>0.5?'#B2342A':'#1A7A4A'}">${R(outTot)}</b></div>
+      <div style="padding:2px 14px 12px">`;
+    if(rows.length){
+      rows.sort(function(a,b){ return (a.s.status==='done'?1:0)-(b.s.status==='done'?1:0) || b.out-a.out; });
+      rows.forEach(function(r){
+        const outCol=r.out>0.5?'#B2342A':'#1A7A4A';
+        h+=`<div style="display:flex;align-items:center;gap:10px;border-top:1px solid #EFECE3;padding:9px 0">
+          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;color:#1A1A1A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.s.name)}${r.s.status==='done'?' <span style="font-size:9px;color:#A39E8C;font-weight:700">done</span>':''}</div>
+            <div style="font-size:10.5px;color:#8A8470">Agreed ${R(r.agreed)} · paid ${R(r.paid)}</div></div>
+          <div style="text-align:right;flex:0 0 auto"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.5px">STILL TO PAY</div><div class="disp" style="font-weight:800;font-size:13px;color:${outCol}">${R(r.out)}</div></div>
+          <button onclick="teamLabourModal('${r.s.id}')" style="background:#242424;color:#fff;border:none;border-radius:8px;padding:9px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto">Update</button>
+        </div>`;
+      });
+    } else h+=`<div style="font-size:12px;color:#A39E8C;padding:8px 0">No sites assigned to this team yet.</div>`;
+    h+=`</div></div>`;
+  });
+  $('pageBody').innerHTML=h;
+}
+
+// Labour-payment editor for one site (reuses the calendar overlay shell).
+async function teamLabourModal(siteId){
+  const s=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).find(function(x){ return x.id===siteId; }); if(!s) return;
+  showSaveToast('Loading payments…');
+  const rows=await sbGetRows('site_costs','site_id=eq.'+encodeURIComponent(siteId)+'&kind=eq.labour&order=paid_date.desc');
+  showSaveToast('');
+  renderTeamLabour(s, Array.isArray(rows)?rows:[]);
+}
+function renderTeamLabour(s, list){
+  const fin=ownerFin(s); const paid=list.reduce(function(a,c){ return a+(parseFloat(c.amount)||0); },0); const out=fin.labourActual-paid;
+  const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  let body=`<div class="ledger-card" style="padding:12px 14px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Agreed labour</span><span class="disp" style="font-weight:800">${R(fin.labourActual)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Paid so far</span><span class="disp" style="font-weight:800;color:#1A7A4A">${R(paid)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span style="font-weight:800">Still to pay</span><span class="disp" style="font-weight:800;color:${out>0.5?'#B2342A':'#1A7A4A'}">${R(out)}</span></div>
+  </div>`;
+  body+=`<div class="section-lbl" style="margin-top:0">Add a payment</div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <div style="flex:1;min-width:0"><label style="${lbl}">Amount</label><input class="f-input" id="tl_amt" type="number" step="0.01" placeholder="0.00" style="margin:0"/></div>
+      <div style="flex:1;min-width:0"><label style="${lbl}">Date paid</label><input class="f-input" id="tl_date" type="date" value="${invToday()}" style="margin:0"/></div>
+    </div>
+    <button class="cta-btn" onclick="teamSaveLabour('${s.id}')">Add payment</button>`;
+  body+=list.length ? `<div class="section-lbl">Payments logged</div>`+list.map(function(c){ return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#fff;border:1px solid #E6E2D8;border-radius:8px;margin-bottom:6px"><div><div style="font-weight:800;font-size:13px">${R(parseFloat(c.amount)||0)}</div><div style="font-size:11px;color:#8A8470">${esc(c.paid_date||'no date')}</div></div><button onclick="teamRemoveLabour('${c.id}','${s.id}')" style="background:none;border:none;color:#B2342A;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button></div>`; }).join('') : `<div style="font-size:12px;color:#A39E8C;margin-top:10px">No payments logged yet.</div>`;
+  calOverlayShell('Labour · '+esc(s.name), body);
+}
+async function teamSaveLabour(siteId){
+  const amt=parseFloat(($('tl_amt')||{}).value)||0; const date=($('tl_date')||{}).value||invToday();
+  if(!amt){ alert('Please enter the amount paid.'); return; }
+  showSaveToast('Saving payment…');
+  await sbInsert('site_costs', { id:uid(), site_id:siteId, kind:'labour', amount:amt, paid_date:date, note:'' });
+  await loadOwnerFin();
+  showSaveToast('Payment saved');
+  renderTeams();
+  teamLabourModal(siteId);
+}
+async function teamRemoveLabour(id, siteId){
+  if(!confirm('Remove this payment?')) return;
+  showSaveToast('Removing…');
+  await sbDelete('site_costs','id=eq.'+encodeURIComponent(id));
+  await loadOwnerFin();
+  renderTeams();
+  teamLabourModal(siteId);
 }
 
 // ───────────────────────────────────────────
