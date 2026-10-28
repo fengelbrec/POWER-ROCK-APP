@@ -5535,68 +5535,76 @@ function renderTeams(){
   all.forEach(function(x){ coAgreed+=x.st.agreed; coPaid+=x.st.paid; coOut+=x.st.out; coDays+=x.st.yearDays; coYear+=x.st.yearNet; coMonth+=x.st.monthNet; });
   const coAvgWage=coDays>0?coAgreed/coDays:0;
 
+  const monthShort = mStart.toLocaleDateString('en-ZA',{month:'short'});
+  const Rc=function(n){ return 'R '+Math.round(n||0).toLocaleString('en-ZA'); };   // compact rand, no cents
+  const cols = all.filter(function(x){ return x.g.key!=='' || x.st.gs.length; });       // the 4 leaders (+ Unassigned only if it has sites)
+
   let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Teams</div>
-    <div class="snap-meta" style="margin:-6px 0 12px">A snapshot of every team's wages &amp; profit. Tap a team to open its sites and update labour payments.</div>`;
-  // month nav (drives the "this month" profit figures)
-  h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+    <div class="snap-meta" style="margin:-6px 0 10px">Every team side by side. Tap a team's name to open its sites and update labour payments.</div>`;
+  // small company line (no big panel)
+  h+=`<div style="display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:11.5px;color:#8A8470;margin:0 0 10px">
+    <span>All teams · paid to date <b style="color:#1A7A4A">${Rc(coPaid)}</b></span>
+    <span>avg wage/day <b style="color:#1A1A1A">${Rc(coAvgWage)}</b></span>
+  </div>`;
+  // month nav (drives the "this month" profit row)
+  h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
     <button onclick="teamShift(-1)" style="${CAL_NAVBTN}">‹</button>
-    <div style="flex:1;text-align:center"><div class="disp" style="font-size:15px;font-weight:800">${monthLabel}</div><div style="font-size:10px;color:#8A8470">profit shown for this month · year-to-date too</div></div>
+    <div style="flex:1;text-align:center"><div class="disp" style="font-size:15px;font-weight:800">${monthLabel}</div><div style="font-size:10px;color:#8A8470">profit shown for this month</div></div>
     <button onclick="teamShift(1)" style="${CAL_NAVBTN}">›</button>
   </div>`;
-  // ── COMPANY WAGE SNAPSHOT ──
-  h+=`<div style="background:#242424;color:#fff;border-radius:14px;padding:16px;margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-      <div style="min-width:0"><div style="font-size:9.5px;letter-spacing:1px;color:rgba(255,255,255,.5);font-weight:800;text-transform:uppercase">Outstanding wages<br>all teams</div>
-        <div class="disp" style="font-size:25px;font-weight:800;color:${coOut>0.5?'#FFB3A0':'#8FD6A8'};line-height:1.1;margin-top:4px;white-space:nowrap">${R(coOut)}</div></div>
-      <div style="text-align:right;flex:0 0 auto"><div style="font-size:9px;letter-spacing:1px;color:rgba(255,255,255,.5);font-weight:800;text-transform:uppercase">Avg wage / day</div>
-        <div class="disp" style="font-size:20px;font-weight:800">${R(coAvgWage)}</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
-      <div style="background:rgba(255,255,255,.08);border-radius:10px;padding:10px 12px"><div style="font-size:9px;letter-spacing:.5px;color:rgba(255,255,255,.55);font-weight:800;text-transform:uppercase">Wage bill (agreed)</div><div class="disp" style="font-size:17px;font-weight:800;margin-top:2px">${R(coAgreed)}</div></div>
-      <div style="background:rgba(255,255,255,.08);border-radius:10px;padding:10px 12px"><div style="font-size:9px;letter-spacing:.5px;color:rgba(255,255,255,.55);font-weight:800;text-transform:uppercase">Paid to date</div><div class="disp" style="font-size:17px;font-weight:800;margin-top:2px;color:#8FD6A8">${R(coPaid)}</div></div>
-    </div>
-    <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12);display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.7)">
-      <span>${esc(monthLabel)} profit <b style="color:#fff">${R(coMonth)}</b></span>
-      <span>${yy} profit <b style="color:#8FD6A8">${R(coYear)}</b></span>
-    </div>
-  </div>`;
-  // ── TEAM ROWS (accordion) ──
-  all.forEach(function(x){
-    const g=x.g, st=x.st;
-    if(g.key==='' && !st.gs.length) return;
-    const open=(TEAM_OPEN===g.key), outCol=st.out>0.5?'#B2342A':'#1A7A4A';
-    h+=`<div class="ledger-card" style="margin-bottom:10px;overflow:hidden;border-left:5px solid ${g.colour}">
-      <div onclick="teamToggle('${g.key}')" style="cursor:pointer;display:flex;align-items:center;gap:11px;padding:12px 14px">
-        <span style="width:13px;height:13px;border-radius:50%;background:${g.colour};flex:0 0 auto"></span>
-        <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14.5px;color:#1A1A1A">${esc(g.name)}</div>
-          <div style="font-size:10.5px;color:#8A8470">${st.gs.length} site${st.gs.length!==1?'s':''} · avg ${R(st.avgDay)}/day · YTD ${R(st.yearNet)}</div></div>
-        <div style="text-align:right;flex:0 0 auto"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.5px">OUTSTANDING</div>
-          <div class="disp" style="font-weight:800;font-size:15px;color:${outCol}">${R(st.out)}</div></div>
-        <span style="color:#B8B2A2;font-size:14px;flex:0 0 auto;width:14px;text-align:center">${open?'▾':'▸'}</span>
-      </div>`;
-    if(open){
-      h+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:#EFECE3;border-top:1px solid #EFECE3">
-        <div style="background:#fff;padding:9px 11px"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.3px">AVG PROFIT/DAY</div><div class="disp" style="font-size:13.5px;font-weight:800">${R(st.avgDay)}</div></div>
-        <div style="background:#fff;padding:9px 11px"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.3px">${esc(monthLabel.split(' ')[0].toUpperCase())}</div><div class="disp" style="font-size:13.5px;font-weight:800">${R(st.monthNet)}</div></div>
-        <div style="background:#fff;padding:9px 11px"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.3px">${yy} YTD</div><div class="disp" style="font-size:13.5px;font-weight:800;color:#1A7A4A">${R(st.yearNet)}</div></div>
+  // ── COMPARISON MATRIX: teams across the top, metrics down the left ──
+  const metrics=[
+    { label:'Outstanding',    val:function(st){ return Rc(st.out); },                                   col:function(st){ return st.out>0.5?'#B2342A':'#1A7A4A'; }, bold:true },
+    { label:'Avg wage / day', val:function(st){ return Rc(st.yearDays>0?st.agreed/st.yearDays:0); } },
+    { label:'Wage bill',      val:function(st){ return Rc(st.agreed); } },
+    { label:'Paid to date',   val:function(st){ return Rc(st.paid); },  col:function(){ return '#1A7A4A'; } },
+    { label:monthShort+' profit', val:function(st){ return Rc(st.monthNet); } },
+    { label:yy+' profit',     val:function(st){ return Rc(st.yearNet); }, col:function(){ return '#1A7A4A'; } },
+    { label:'Avg profit / day', val:function(st){ return Rc(st.avgDay); } },
+    { label:'Sites',          val:function(st){ return String(st.gs.length); } }
+  ];
+  h+=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #E6E2D8;border-radius:12px">
+    <table style="border-collapse:separate;border-spacing:0;width:100%;min-width:${84+cols.length*88}px">
+      <tr><th style="position:sticky;left:0;background:#F7F5EF;z-index:2;min-width:84px;border-top-left-radius:11px"></th>`;
+  cols.forEach(function(x){ const open=(TEAM_OPEN===x.g.key);
+    h+=`<th onclick="teamToggle('${x.g.key}')" style="background:${x.g.colour};color:#fff;padding:9px 6px;cursor:pointer;text-align:center;border-left:1px solid rgba(255,255,255,.18)">
+      <div style="font-weight:800;font-size:13px;font-family:'Poppins',sans-serif">${esc(x.g.name)}</div>
+      <div style="font-size:8.5px;opacity:.9;margin-top:1px">${open?'▾ hide sites':'▸ sites'}</div>
+    </th>`;
+  });
+  h+=`</tr>`;
+  metrics.forEach(function(m){
+    h+=`<tr><td style="position:sticky;left:0;background:#fff;z-index:1;font-size:10px;font-weight:800;color:#8A8470;text-transform:uppercase;letter-spacing:.3px;padding:9px 8px;white-space:nowrap;border-top:1px solid #EFECE3">${esc(m.label)}</td>`;
+    cols.forEach(function(x){ const open=(TEAM_OPEN===x.g.key); const c=m.col?m.col(x.st):'#1A1A1A';
+      h+=`<td style="text-align:center;padding:9px 6px;border-top:1px solid #EFECE3;border-left:1px solid #F3F1EB;${open?'background:'+x.g.colour+'14;':''}"><span class="disp" style="font-weight:${m.bold?800:700};font-size:12px;color:${c};white-space:nowrap">${m.val(x.st)}</span></td>`;
+    });
+    h+=`</tr>`;
+  });
+  h+=`</table></div>`;
+  // ── expanded team's sites (shown below the table) ──
+  const openCol=cols.find(function(x){ return x.g.key===TEAM_OPEN; });
+  if(openCol){
+    const g=openCol.g, st=openCol.st;
+    h+=`<div class="ledger-card" style="margin-top:12px;overflow:hidden;border-left:5px solid ${g.colour}">
+      <div style="background:${g.colour};color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:800;font-size:13.5px;font-family:'Poppins',sans-serif">${esc(g.name)} · sites &amp; labour</span>
+        <button onclick="teamToggle('${g.key}')" style="background:rgba(255,255,255,.22);color:#fff;border:none;border-radius:16px;padding:5px 13px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">Close</button>
       </div>
       <div style="padding:2px 14px 12px">`;
-      if(st.rows.length){
-        st.rows.sort(function(a,b){ return (a.s.status==='done'?1:0)-(b.s.status==='done'?1:0) || b.out-a.out; });
-        st.rows.forEach(function(r){
-          const oc=r.out>0.5?'#B2342A':'#1A7A4A';
-          h+=`<div style="display:flex;align-items:center;gap:10px;border-top:1px solid #EFECE3;padding:9px 0">
-            <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;color:#1A1A1A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.s.name)}${r.s.status==='done'?' <span style="font-size:9px;color:#A39E8C;font-weight:700">done</span>':''}</div>
-              <div style="font-size:10.5px;color:#8A8470">Agreed ${R(r.agreed)} · paid ${R(r.paid)}</div></div>
-            <div style="text-align:right;flex:0 0 auto"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.5px">STILL TO PAY</div><div class="disp" style="font-weight:800;font-size:13px;color:${oc}">${R(r.out)}</div></div>
-            <button onclick="teamLabourModal('${r.s.id}')" style="background:#242424;color:#fff;border:none;border-radius:8px;padding:9px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto">Update</button>
-          </div>`;
-        });
-      } else h+=`<div style="font-size:12px;color:#A39E8C;padding:8px 0">No sites assigned to this team yet.</div>`;
-      h+=`</div>`;
-    }
-    h+=`</div>`;
-  });
+    if(st.rows.length){
+      st.rows.sort(function(a,b){ return (a.s.status==='done'?1:0)-(b.s.status==='done'?1:0) || b.out-a.out; });
+      st.rows.forEach(function(r){
+        const oc=r.out>0.5?'#B2342A':'#1A7A4A';
+        h+=`<div style="display:flex;align-items:center;gap:10px;border-top:1px solid #EFECE3;padding:9px 0">
+          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;color:#1A1A1A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.s.name)}${r.s.status==='done'?' <span style="font-size:9px;color:#A39E8C;font-weight:700">done</span>':''}</div>
+            <div style="font-size:10.5px;color:#8A8470">Agreed ${R(r.agreed)} · paid ${R(r.paid)}</div></div>
+          <div style="text-align:right;flex:0 0 auto"><div style="font-size:8.5px;color:#8A8470;font-weight:800;letter-spacing:.5px">STILL TO PAY</div><div class="disp" style="font-weight:800;font-size:13px;color:${oc}">${R(r.out)}</div></div>
+          <button onclick="teamLabourModal('${r.s.id}')" style="background:#242424;color:#fff;border:none;border-radius:8px;padding:9px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto">Update</button>
+        </div>`;
+      });
+    } else h+=`<div style="font-size:12px;color:#A39E8C;padding:8px 0">No sites assigned to this team yet.</div>`;
+    h+=`</div></div>`;
+  }
   $('pageBody').innerHTML=h;
 }
 
