@@ -5388,13 +5388,12 @@ function calGrid(monthStart, jobs){
     const inMonth=day.getMonth()===mon;
     const isToday=day.getTime()===today.getTime();
     const dj=calJobsOnDay(jobs,day).filter(calJobMatchesFilter);
-    const chips=dj.slice(0,3).map(function(j){ const c=calTeamColour(j.team);
+    const chips=dj.map(function(j){ const c=calTeamColour(j.team);   // show every job that day (all teams fit)
       const who = j.team ? esc(henkLeaderName(j.team))+' · ' : (j.unassigned ? 'To assign · ' : '');
-      return `<div style="background:${c}22;border-left:3px solid ${c};border-radius:3px;padding:2px 4px;margin-top:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;line-height:1.35"><span style="font-weight:800;color:${c}">${j.upcoming?'◷ ':''}${who}</span><span style="font-weight:600;color:#1A1A1A">${esc(j.name)}</span></div>`;
+      return `<div onclick="event.stopPropagation();calOpenSite('${j.id}')" title="Open this site" style="background:${c}22;border-left:3px solid ${c};border-radius:3px;padding:2px 4px;margin-top:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;line-height:1.35;cursor:pointer"><span style="font-weight:800;color:${c}">${j.upcoming?'◷ ':''}${who}</span><span style="font-weight:600;color:#1A1A1A">${esc(j.name)}</span></div>`;
     }).join('');
-    const more=dj.length>3?`<div style="font-size:9px;color:#8A8470;margin-top:2px;font-weight:700">+${dj.length-3} more</div>`:'';
     h+=`<div onclick="calDay('${calYmd(day)}')" style="min-height:74px;background:${inMonth?'#fff':'#F3F1EB'};border:1px solid ${isToday?'#8B1A1A':'#E6E2D8'};${isToday?'box-shadow:0 0 0 1.5px #8B1A1A inset;':''}border-radius:6px;padding:3px 4px 5px;cursor:pointer;overflow:hidden">
-      <div style="font-size:13.5px;font-weight:800;color:${isToday?'#8B1A1A':(inMonth?'#1A1A1A':'#B8B2A2')};text-align:right;line-height:1">${day.getDate()}</div>${chips}${more}</div>`;
+      <div style="font-size:13.5px;font-weight:800;color:${isToday?'#8B1A1A':(inMonth?'#1A1A1A':'#B8B2A2')};text-align:right;line-height:1">${day.getDate()}</div>${chips}</div>`;
   }
   h+=`</div>`;
   return h;
