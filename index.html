@@ -1632,6 +1632,7 @@ async function openMonthSnapshot(monthKey){
     if(!s.started) return null;
     const isGen = !!(s.details && s.details.is_general);
     if(isGen || /greenhill/i.test(s.name||'')) return null;   // holders/greenhill aren't real projects
+    if((s.details && s.details.exclude_stats) || (typeof siteNotStarted==='function' && siteNotStarted(s))) return null;   // not started yet (deposit only) or excluded — would inflate the profit
     const start=new Date(s.started);
     const end=(s.status==='done'&&s.end_date)?new Date(s.end_date):new Date();
     if(isNaN(start.getTime())) return null;
@@ -1729,7 +1730,7 @@ async function openMonthSnapshot(monthKey){
     </tfoot>
   </table></div>`;
 
-  h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px;line-height:1.7">These are ${monthName}'s projects with each one's live profit sheet. The month's invoiced turnover (${Rs(monthTurnIncl)} incl VAT) &amp; ${monthName} profit are shown above. Tap a site to open it.</div>`;
+  h += `<div style="font-size:10.5px;color:#8A8470;margin-top:14px;line-height:1.7">These are ${monthName}'s projects with each one's live profit sheet. The month's invoiced turnover (${Rs(monthTurnIncl)} incl VAT) &amp; ${monthName} profit are shown above. Jobs that haven't started yet (deposit only) are left out so the profit isn't inflated. Tap a site to open it.</div>`;
 
   $('monthSnapshotContent').innerHTML = h;
   openModal('modalMonthSnapshot');
