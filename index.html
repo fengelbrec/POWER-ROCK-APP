@@ -3083,8 +3083,8 @@ async function wkPreviewAct(act){
 // (pre-filled from the site's confirmed supplier invoices, editable), and up to 8
 // photos picked from the site's uploaded photos. Reuses the weekly PDF helpers.
 // ═══════════════════════════════════════════
-const CO_MAX = 8;
-let CO_DRAFT = null;      // { siteId, site, scope, start, end, bullets:[], products:[], photos:[{key,url}] }
+const CO_MAX = 9;
+let CO_DRAFT = null;      // { siteId, site, scope, start, end, bullets(=comments):[], products:[], photos:[{key,url}] }
 let CO_PHOTOLIST = [];    // the site's uploaded photos to choose from
 let CO_PREV_FIT = null;
 
@@ -3139,8 +3139,8 @@ function coListHtml(field, ph){
   }).join('');
 }
 function coSetItem(field,i,el){ if(CO_DRAFT&&CO_DRAFT[field]){ CO_DRAFT[field][i]=el.value; coPersist(); } }
-function coDelItem(field,i){ if(!CO_DRAFT||!CO_DRAFT[field]) return; CO_DRAFT[field].splice(i,1); if(!CO_DRAFT[field].length) CO_DRAFT[field].push(''); coPersist(); const box=$('co_'+field); if(box) box.innerHTML=coListHtml(field, field==='products'?'Product':'Line'); }
-function coAddItem(field){ if(!CO_DRAFT) return; CO_DRAFT[field].push(''); coPersist(); const box=$('co_'+field); if(box){ box.innerHTML=coListHtml(field, field==='products'?'Product':'Line'); const t=box.querySelectorAll('textarea'); if(t.length) t[t.length-1].focus(); } }
+function coDelItem(field,i){ if(!CO_DRAFT||!CO_DRAFT[field]) return; CO_DRAFT[field].splice(i,1); if(!CO_DRAFT[field].length) CO_DRAFT[field].push(''); coPersist(); const box=$('co_'+field); if(box) box.innerHTML=coListHtml(field, field==='products'?'Product':'Comment'); }
+function coAddItem(field){ if(!CO_DRAFT) return; CO_DRAFT[field].push(''); coPersist(); const box=$('co_'+field); if(box){ box.innerHTML=coListHtml(field, field==='products'?'Product':'Comment'); const t=box.querySelectorAll('textarea'); if(t.length) t[t.length-1].focus(); } }
 function coPhotosGridHtml(){
   if(!CO_PHOTOLIST.length) return `<div style="font-size:12px;color:#A39E8C">No site photos uploaded yet — add them in the <b>Site Photos</b> section first, then they'll appear here to choose from.</div>`;
   const chosen = CO_DRAFT.photos.map(function(p){ return p.key; });
@@ -3174,17 +3174,17 @@ function coBuilderHtml(s){
         <div><label style="${lbl}">Completion date</label><input class="f-input" type="date" style="margin:0" value="${esc(CO_DRAFT.end)}" onchange="coSetField('end',this.value)"/></div>
       </div>
     </div>
-    <div class="section-lbl" style="margin-top:0">Work completed — line items</div>
-    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
-      <div style="font-size:11px;color:#8A8470;margin-bottom:8px">One point per line, like the weekly report. Empty lines are left out.</div>
-      <div id="co_bullets">${coListHtml('bullets','Line')}</div>
-      <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="coAddItem('bullets')">＋ Add line</button>
-    </div>
-    <div class="section-lbl">Prominent products used</div>
+    <div class="section-lbl" style="margin-top:0">Products &amp; colours</div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
       <div style="font-size:11px;color:#8A8470;margin-bottom:8px">Pre-filled from your supplier invoices for this site. Edit or remove any line; brushes &amp; consumables are left out.</div>
       <div id="co_products">${coListHtml('products','Product')}</div>
       <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="coAddItem('products')">＋ Add product</button>
+    </div>
+    <div class="section-lbl">Comments</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="font-size:11px;color:#8A8470;margin-bottom:8px">One point per line — anything you want to tell the client. Empty lines are left out.</div>
+      <div id="co_bullets">${coListHtml('bullets','Comment')}</div>
+      <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="coAddItem('bullets')">＋ Add comment</button>
     </div>
     <div class="section-lbl">Photographs (up to ${CO_MAX})</div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px" id="co_photos">${coPhotosGridHtml()}</div>
@@ -3203,35 +3203,30 @@ function coPage1Html(r){
   const row=function(k,v){ return `<tr><td style="width:34%;border:1px solid #BDB8AA;background:#F0EEE6;font-weight:700;padding:12px 15px;font-size:14px">${k}</td><td style="border:1px solid #BDB8AA;padding:12px 15px;font-size:14px;font-weight:700">${esc(v)}</td></tr>`; };
   const bul=(r.bullets||[]).filter(function(b){ return String(b).trim(); });
   const prod=(r.products||[]).filter(function(p){ return String(p).trim(); });
-  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A;display:flex;flex-direction:column;min-height:1000px">
-    <div>
-      ${LETTERHEAD?`<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 26px"/>`:`<div style="font-size:24px;font-weight:800;color:#8B1A1A;margin-bottom:26px">POWER ROCK PAINTING</div>`}
-      <div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:1.5px;margin:4px 0 26px">PROJECT COMPLETION REPORT</div>
-      <table style="width:100%;border-collapse:collapse">
-        ${row('Project / Site:', r.site)}${row('Scope of Work:', r.scope)}${row('Start Date:', wkFmtDate(r.start))}${row('Completion Date:', wkFmtDate(r.end))}
-      </table>
-    </div>
-    <div style="margin-top:26px">
-      ${wkBar('WORK COMPLETED')}
-      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:20px 22px">
-        ${bul.length?bul.map(function(b){ return `<div style="display:flex;margin:0 0 14px;font-size:14px;line-height:1.6"><div style="width:24px;flex:0 0 24px;font-weight:800;color:#8B1A1A">•</div><div style="flex:1;white-space:pre-wrap">${esc(b)}</div></div>`; }).join(''):'<div style="color:#8A8470">—</div>'}
-      </div>
-    </div>
-    ${prod.length?`<div style="margin-top:22px">
-      ${wkBar('PRODUCTS USED')}
-      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:20px 22px">
-        ${prod.map(function(p){ return `<div style="display:flex;margin:0 0 11px;font-size:14px;line-height:1.5"><div style="width:24px;flex:0 0 24px;font-weight:800;color:#8B1A1A">•</div><div style="flex:1">${esc(p)}</div></div>`; }).join('')}
-      </div>
+  const bulletRow=function(t){ return `<div style="display:flex;margin:0 0 12px;font-size:14px;line-height:1.55"><div style="width:24px;flex:0 0 24px;font-weight:800;color:#8B1A1A">•</div><div style="flex:1;white-space:pre-wrap">${esc(t)}</div></div>`; };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A;min-height:1000px">
+    ${LETTERHEAD?`<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 26px"/>`:`<div style="font-size:24px;font-weight:800;color:#8B1A1A;margin-bottom:26px">POWER ROCK PAINTING</div>`}
+    <div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:1.5px;margin:4px 0 26px">PROJECT COMPLETION REPORT</div>
+    <table style="width:100%;border-collapse:collapse">
+      ${row('Project / Site:', r.site)}${row('Scope of Work:', r.scope)}${row('Start Date:', wkFmtDate(r.start))}${row('Completion Date:', wkFmtDate(r.end))}
+    </table>
+    ${prod.length?`<div style="margin-top:28px">
+      ${wkBar('PRODUCTS &amp; COLOURS')}
+      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:20px 22px">${prod.map(bulletRow).join('')}</div>
+    </div>`:''}
+    ${bul.length?`<div style="margin-top:22px">
+      ${wkBar('COMMENTS')}
+      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:20px 22px">${bul.map(bulletRow).join('')}</div>
     </div>`:''}
   </div>${coFooter(r)}`;
 }
 function coPhotosPageHtml(r, shots){
-  const ph = shots.length>6 ? 232 : 300;
-  const cells=shots.map(function(u){ return `<img src="${u}" style="height:${ph}px;width:auto;display:block;border:3px solid #000"/>`; }).join('');
+  // 3 per row, up to 3 rows (9 photos). Source photos are already cropped 4:5, so width:100% keeps them neat.
+  const cells=shots.map(function(u){ return `<img src="${u}" style="width:100%;height:auto;display:block;border:3px solid #000;box-sizing:border-box"/>`; }).join('');
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
     ${wkBar('SITE PHOTOGRAPHS')}
     <div style="font-size:12px;color:#5C5748;margin:-6px 0 12px">${esc(r.site)} · Completion Report · ${wkFmtDate(r.end)}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:space-evenly;align-content:space-evenly;min-height:916px">${cells}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:start">${cells}</div>
   </div>${coFooter(r)}`;
 }
 async function coBuildPdf(r){
