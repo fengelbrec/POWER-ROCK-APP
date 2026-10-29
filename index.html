@@ -3077,6 +3077,212 @@ async function wkPreviewAct(act){
   if(act === 'save') wkClosePreview();   // saved — drop back to the builder
 }
 
+// ═══════════════════════════════════════════
+// COMPLETION REPORT — a client-facing project-completion document.
+// Start + completion dates, work-completed line items, Prominent products used
+// (pre-filled from the site's confirmed supplier invoices, editable), and up to 8
+// photos picked from the site's uploaded photos. Reuses the weekly PDF helpers.
+// ═══════════════════════════════════════════
+const CO_MAX = 8;
+let CO_DRAFT = null;      // { siteId, site, scope, start, end, bullets:[], products:[], photos:[{key,url}] }
+let CO_PHOTOLIST = [];    // the site's uploaded photos to choose from
+let CO_PREV_FIT = null;
+
+function coPersist(){ try{ if(CO_DRAFT) localStorage.setItem('pr_completion_'+CO_DRAFT.siteId, JSON.stringify(CO_DRAFT)); }catch(e){} }
+function coIsConsumable(n){ return /brush|roller|\btape\b|masking|drop\s*sheet|sheeting|\bbucket\b|\btray\b|glove|sand\s*paper|sandpaper|scraper|\bblade\b|broom|\bcloth\b|\brag\b|thinner|turps|mineral turp|white spirit|caulk gun|filler knife|spatula|cable tie|cleaning cloth/i.test(n||''); }
+
+async function openSiteCompletion(siteId){
+  const s = (SUMMARY && SUMMARY.site && SUMMARY.site.id===siteId) ? SUMMARY.site : ((typeof OWNER!=='undefined'&&OWNER.sites)||[]).find(function(x){ return x.id===siteId; });
+  if(!s) return;
+  $('siteDetailContent').innerHTML = `<div style="text-align:center;padding:40px;color:#8A8470">Loading…</div>`;
+  openModal('modalSiteDetail');
+  const d = s.details || {};
+  CO_PHOTOLIST = (Array.isArray(d.site_photos)?d.site_photos:[]).filter(function(p){ return p && p.url; }).map(function(p){ return { url:p.url, key:p.url, date:p.at||'' }; });
+  // products from confirmed supplier invoices (line items), brushes/consumables left out
+  let prodNames = [];
+  try{
+    const invs = await sbGetRows('invoice_inbox', `select=line_items&site_guess=eq.${encodeURIComponent(siteId)}&status=eq.confirmed`);
+    const map = {};
+    (Array.isArray(invs)?invs:[]).forEach(function(inv){ (Array.isArray(inv.line_items)?inv.line_items:[]).forEach(function(li){
+      const name = String(li.product||'').trim(); if(!name || coIsConsumable(name)) return;
+      const colour = String(li.colour||'').trim();
+      const label = name + (colour && !/^(white|n\/?a|-|–)$/i.test(colour) ? ' — ' + colour : '');
+      map[label.toLowerCase()] = label;
+    }); });
+    prodNames = Object.keys(map).map(function(k){ return map[k]; }).sort();
+  }catch(e){}
+  let saved=null; try{ saved=JSON.parse(localStorage.getItem('pr_completion_'+siteId)||'null'); }catch(e){}
+  const endDate = (s.status==='done' && (s.end_date || d.end_date)) ? (s.end_date||d.end_date) : invToday();
+  if(saved && saved.siteId===siteId){
+    CO_DRAFT = saved;
+    CO_DRAFT.bullets = Array.isArray(CO_DRAFT.bullets)&&CO_DRAFT.bullets.length?CO_DRAFT.bullets:[''];
+    CO_DRAFT.products = Array.isArray(CO_DRAFT.products)&&CO_DRAFT.products.length?CO_DRAFT.products:(prodNames.length?prodNames.slice():['']);
+    CO_DRAFT.photos = Array.isArray(CO_DRAFT.photos)?CO_DRAFT.photos:[];
+    if(!CO_DRAFT.start) CO_DRAFT.start = s.started||'';
+    if(!CO_DRAFT.site) CO_DRAFT.site = s.name||'';
+  } else {
+    CO_DRAFT = { siteId:siteId, site:s.name||'', scope:(d.scope_text||d.surfaces_text||'Preparation & Paint'),
+      start:s.started||'', end:endDate, bullets:[''], products:(prodNames.length?prodNames.slice():['']), photos:[] };
+  }
+  coPersist();
+  $('siteDetailContent').innerHTML = coBuilderHtml(s);
+}
+
+function coSetField(f,v){ if(CO_DRAFT){ CO_DRAFT[f]=v; coPersist(); } }
+function coListHtml(field, ph){
+  return (CO_DRAFT[field]||[]).map(function(b,i){
+    return `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+      <div style="font-size:18px;line-height:38px;color:#8B1A1A;font-weight:800;width:10px;flex:0 0 auto">•</div>
+      <textarea class="f-input" rows="1" style="margin:0;flex:1;min-height:40px;resize:vertical;line-height:1.4;padding-top:9px" placeholder="${ph} ${i+1}" oninput="coSetItem('${field}',${i},this)">${esc(b)}</textarea>
+      <button onclick="coDelItem('${field}',${i})" title="Remove" style="width:34px;height:38px;border:none;border-radius:8px;background:#F0EEE6;color:#8B1A1A;font-size:16px;font-weight:800;cursor:pointer;flex:0 0 auto">×</button>
+    </div>`;
+  }).join('');
+}
+function coSetItem(field,i,el){ if(CO_DRAFT&&CO_DRAFT[field]){ CO_DRAFT[field][i]=el.value; coPersist(); } }
+function coDelItem(field,i){ if(!CO_DRAFT||!CO_DRAFT[field]) return; CO_DRAFT[field].splice(i,1); if(!CO_DRAFT[field].length) CO_DRAFT[field].push(''); coPersist(); const box=$('co_'+field); if(box) box.innerHTML=coListHtml(field, field==='products'?'Product':'Line'); }
+function coAddItem(field){ if(!CO_DRAFT) return; CO_DRAFT[field].push(''); coPersist(); const box=$('co_'+field); if(box){ box.innerHTML=coListHtml(field, field==='products'?'Product':'Line'); const t=box.querySelectorAll('textarea'); if(t.length) t[t.length-1].focus(); } }
+function coPhotosGridHtml(){
+  if(!CO_PHOTOLIST.length) return `<div style="font-size:12px;color:#A39E8C">No site photos uploaded yet — add them in the <b>Site Photos</b> section first, then they'll appear here to choose from.</div>`;
+  const chosen = CO_DRAFT.photos.map(function(p){ return p.key; });
+  return `<div style="font-size:11px;color:#8A8470;margin-bottom:8px">Tap to choose up to ${CO_MAX}. Chosen: <b>${CO_DRAFT.photos.length}/${CO_MAX}</b></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">`
+    + CO_PHOTOLIST.map(function(p,idx){ const at=chosen.indexOf(p.key);
+      return `<div onclick="coTogglePhoto(${idx})" style="position:relative;cursor:pointer">
+        <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:3px solid ${at!==-1?'#3F5A4C':'transparent'};background:#EFEDE7"><img src="${p.url}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
+        ${at!==-1?`<div style="position:absolute;top:4px;right:4px;background:#3F5A4C;color:#fff;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:800;line-height:22px;text-align:center">${at+1}</div>`:''}
+      </div>`;
+    }).join('') + `</div>`;
+}
+function coTogglePhoto(idx){
+  const p=CO_PHOTOLIST[idx]; if(!p) return;
+  const at=CO_DRAFT.photos.findIndex(function(c){ return c.key===p.key; });
+  if(at!==-1) CO_DRAFT.photos.splice(at,1);
+  else if(CO_DRAFT.photos.length>=CO_MAX){ showSaveToast('You already have '+CO_MAX+' photos — take one out first'); return; }
+  else CO_DRAFT.photos.push({ key:p.key, url:p.url });
+  coPersist(); const box=$('co_photos'); if(box) box.innerHTML=coPhotosGridHtml();
+}
+function coBuilderHtml(s){
+  const lbl='display:block;font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:.6px;margin-bottom:4px;text-transform:uppercase';
+  return `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Completion Report</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — a project-completion report to send to the client.</div>
+    <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
+      <label style="${lbl}">Project / Site</label><input class="f-input" value="${esc(CO_DRAFT.site)}" oninput="coSetField('site',this.value)"/>
+      <label style="${lbl}">Scope of work</label><input class="f-input" value="${esc(CO_DRAFT.scope)}" oninput="coSetField('scope',this.value)" placeholder="e.g. Exterior Preparation & Paint"/>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label style="${lbl}">Start date</label><input class="f-input" type="date" style="margin:0" value="${esc(CO_DRAFT.start)}" onchange="coSetField('start',this.value)"/></div>
+        <div><label style="${lbl}">Completion date</label><input class="f-input" type="date" style="margin:0" value="${esc(CO_DRAFT.end)}" onchange="coSetField('end',this.value)"/></div>
+      </div>
+    </div>
+    <div class="section-lbl" style="margin-top:0">Work completed — line items</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="font-size:11px;color:#8A8470;margin-bottom:8px">One point per line, like the weekly report. Empty lines are left out.</div>
+      <div id="co_bullets">${coListHtml('bullets','Line')}</div>
+      <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="coAddItem('bullets')">＋ Add line</button>
+    </div>
+    <div class="section-lbl">Prominent products used</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="font-size:11px;color:#8A8470;margin-bottom:8px">Pre-filled from your supplier invoices for this site. Edit or remove any line; brushes &amp; consumables are left out.</div>
+      <div id="co_products">${coListHtml('products','Product')}</div>
+      <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="coAddItem('products')">＋ Add product</button>
+    </div>
+    <div class="section-lbl">Photographs (up to ${CO_MAX})</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px" id="co_photos">${coPhotosGridHtml()}</div>
+    <button class="cta-btn" onclick="coPreview()">👁 Create &amp; Preview report</button>
+    <div style="font-size:11px;color:#A39E8C;margin:6px 2px 10px;line-height:1.6">See exactly how it looks first, then <b>Download</b> or <b>Share</b> it to the client.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="coAction('pdf')">⬇ Download</button>
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="coAction('share')">📤 Share</button>
+    </div>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+}
+
+// ── The PDF pages ──
+function coFooter(r){ return `<div style="position:absolute;left:40px;right:40px;bottom:22px;border-top:1px solid #D8D3C6;padding-top:6px;font-size:10px;color:#8A8470;display:flex;justify-content:space-between"><span>Power Rock Painting</span><span>Project Completion Report · ${esc(r.site)}</span></div>`; }
+function coPage1Html(r){
+  const row=function(k,v){ return `<tr><td style="width:34%;border:1px solid #BDB8AA;background:#F0EEE6;font-weight:700;padding:12px 15px;font-size:14px">${k}</td><td style="border:1px solid #BDB8AA;padding:12px 15px;font-size:14px;font-weight:700">${esc(v)}</td></tr>`; };
+  const bul=(r.bullets||[]).filter(function(b){ return String(b).trim(); });
+  const prod=(r.products||[]).filter(function(p){ return String(p).trim(); });
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A;display:flex;flex-direction:column;min-height:1000px">
+    <div>
+      ${LETTERHEAD?`<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 26px"/>`:`<div style="font-size:24px;font-weight:800;color:#8B1A1A;margin-bottom:26px">POWER ROCK PAINTING</div>`}
+      <div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:1.5px;margin:4px 0 26px">PROJECT COMPLETION REPORT</div>
+      <table style="width:100%;border-collapse:collapse">
+        ${row('Project / Site:', r.site)}${row('Scope of Work:', r.scope)}${row('Start Date:', wkFmtDate(r.start))}${row('Completion Date:', wkFmtDate(r.end))}
+      </table>
+    </div>
+    <div style="margin-top:26px">
+      ${wkBar('WORK COMPLETED')}
+      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:20px 22px">
+        ${bul.length?bul.map(function(b){ return `<div style="display:flex;margin:0 0 14px;font-size:14px;line-height:1.6"><div style="width:24px;flex:0 0 24px;font-weight:800;color:#8B1A1A">•</div><div style="flex:1;white-space:pre-wrap">${esc(b)}</div></div>`; }).join(''):'<div style="color:#8A8470">—</div>'}
+      </div>
+    </div>
+    ${prod.length?`<div style="margin-top:22px">
+      ${wkBar('PRODUCTS USED')}
+      <div style="border:1px solid #E0DCD2;border-radius:6px;padding:20px 22px">
+        ${prod.map(function(p){ return `<div style="display:flex;margin:0 0 11px;font-size:14px;line-height:1.5"><div style="width:24px;flex:0 0 24px;font-weight:800;color:#8B1A1A">•</div><div style="flex:1">${esc(p)}</div></div>`; }).join('')}
+      </div>
+    </div>`:''}
+  </div>${coFooter(r)}`;
+}
+function coPhotosPageHtml(r, shots){
+  const ph = shots.length>6 ? 232 : 300;
+  const cells=shots.map(function(u){ return `<img src="${u}" style="height:${ph}px;width:auto;display:block;border:3px solid #000"/>`; }).join('');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
+    ${wkBar('SITE PHOTOGRAPHS')}
+    <div style="font-size:12px;color:#5C5748;margin:-6px 0 12px">${esc(r.site)} · Completion Report · ${wkFmtDate(r.end)}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:space-evenly;align-content:space-evenly;min-height:916px">${cells}</div>
+  </div>${coFooter(r)}`;
+}
+async function coBuildPdf(r){
+  await loadPdfLibs();
+  const shots=[];
+  for(let i=0;i<(r.photos||[]).length;i++){ const u=await wkPrepPhoto(r.photos[i].url); if(u) shots.push(u); }
+  const pdf=new window.jspdf.jsPDF('p','mm','a4');
+  wkAddCanvas(pdf, await wkRenderCanvas(coPage1Html(r)), true);
+  if(shots.length) wkAddCanvas(pdf, await wkRenderCanvas(coPhotosPageHtml(r, shots)), false);
+  const nm=String(r.site||'Site').replace(/[^A-Za-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim()+' - Completion Report.pdf';
+  return { blob: pdf.output('blob'), name: nm };
+}
+async function coShare(r, d){
+  const file=new File([r.blob], r.name, {type:'application/pdf'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file], title:r.name, text:'Project Completion Report — '+(d.site||'')}); }catch(e){ if(!(e&&e.name==='AbortError')) saveBlobFile(r.blob,r.name); } return; }
+  saveBlobFile(r.blob, r.name); showSaveToast('Sharing isn’t available on this device — saved the PDF instead');
+}
+async function coAction(act){
+  const d=CO_DRAFT; if(!d) return;
+  if(!d.bullets.some(function(b){ return String(b).trim(); }) && !d.photos.length){ if(!confirm('This report has no line items and no photos yet. Carry on anyway?')) return; }
+  showSaveToast('Building the PDF…');
+  let r; try{ r=await coBuildPdf(d); }catch(e){ showSaveToast('Could not build the PDF — check your signal'); return; }
+  if(act==='pdf'){ saveBlobFile(r.blob, r.name); showSaveToast('Downloaded'); }
+  if(act==='share'){ await coShare(r,d); showSaveToast(''); }
+}
+// On-screen preview (scaled A4), then Download / Share
+async function coPreview(){
+  const d=CO_DRAFT; if(!d) return;
+  showSaveToast('Building the preview…');
+  const shots=[]; try{ for(let i=0;i<(d.photos||[]).length;i++){ const u=await wkPrepPhoto(d.photos[i].url); if(u) shots.push(u); } }catch(e){}
+  showSaveToast('');
+  const p1=coPage1Html(d); const p2=shots.length?coPhotosPageHtml(d,shots):'';
+  const pageWrap=function(inner,lbl){ return `<div style="max-width:794px;margin:0 auto 6px;color:#E8E6DF;font-size:11px;font-weight:700;letter-spacing:1px">${lbl}</div><div class="co-pwrap" style="width:100%;max-width:794px;margin:0 auto 22px"><div class="co-paper" style="width:794px;min-height:1123px;background:#fff;padding:40px 40px 64px;box-sizing:border-box;position:relative;transform-origin:top left;box-shadow:0 8px 30px rgba(0,0,0,.45)">${inner}</div></div>`; };
+  let ov=document.getElementById('coPreviewOv'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='coPreviewOv';
+  ov.style.cssText='position:fixed;inset:0;z-index:1500;background:#4A4A4A;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  ov.innerHTML='<div style="position:sticky;top:0;z-index:2;background:#1A1A1A;padding:10px 12px;display:flex;flex-direction:column;gap:9px">'
+    +'<div style="display:flex;align-items:center;gap:10px"><button onclick="coClosePreview()" style="background:#fff;color:#1A1A1A;border:none;border-radius:22px;padding:10px 18px;font-size:13.5px;font-weight:800;font-family:inherit;cursor:pointer">← Edit</button><div style="color:#fff;font-size:13px;font-weight:700">Preview — Completion Report</div></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+      +'<button onclick="coPreviewAct(\'pdf\')" style="background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">⬇ Create PDF</button>'
+      +'<button onclick="coPreviewAct(\'share\')" style="background:#2c5f8a;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📤 Share</button>'
+    +'</div></div>'
+    +'<div style="padding:18px 10px 48px">'+pageWrap(p1,'PAGE 1')+(p2?pageWrap(p2,'PAGE 2 — PHOTOS'):'')+'</div>';
+  document.body.appendChild(ov);
+  const fit=function(){ ov.querySelectorAll('.co-pwrap').forEach(function(wrap){ const paper=wrap.querySelector('.co-paper'); if(!paper) return; const avail=wrap.clientWidth||Math.min(794,(window.innerWidth||800)-24); const scale=Math.min(1,Math.max(0.1,avail/794)); paper.style.transform='scale('+scale+')'; wrap.style.height=(paper.offsetHeight*scale)+'px'; }); };
+  const imgs=Array.from(ov.querySelectorAll('img')); Promise.all(imgs.map(function(im){ return im.complete?null:new Promise(function(r){ im.onload=r; im.onerror=r; }); })).then(function(){ setTimeout(fit,30); });
+  setTimeout(fit,50); CO_PREV_FIT=fit; window.addEventListener('resize',fit);
+}
+function coClosePreview(){ const ov=document.getElementById('coPreviewOv'); if(ov) ov.remove(); if(CO_PREV_FIT){ window.removeEventListener('resize',CO_PREV_FIT); CO_PREV_FIT=null; } }
+async function coPreviewAct(act){ await coAction(act); }
+
 function duLeaderSites(leaderKey){
   return DU_SITELIST.filter(function(s){ return s.team_leader === leaderKey; })
     .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
@@ -7760,6 +7966,7 @@ function paintSiteSummaryBody(){
         <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
         <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
         <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
+        <button onclick="openSiteCompletion('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🏁 Completion Report</button>
         <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
       </div>
     </div>
