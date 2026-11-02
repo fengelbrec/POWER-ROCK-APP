@@ -858,7 +858,7 @@ const NAV = [
   {id:'vat', label:'VAT & SARS', icon:'⊞'},
   {id:'calendar', label:'Calendar', icon:'📅'},
   {id:'quotations', label:'Quotations', icon:'✎'},
-  {id:'leads', label:'Leads & Letters', icon:'📍'},
+  {id:'ebar', label:'EBAR', icon:'🏢'},
   {id:'invoiceinbox', label:'Supplier Invoices', icon:'📥'},
   {id:'foundation', label:'Foundation', icon:'✦'},
   {id:'marketing', label:'Marketing', icon:'◎'},
@@ -1324,7 +1324,7 @@ function paintDoor(id){
     overview: renderOverview, dailyupdates: renderDailyUpdates,
     sites: renderHenkSites, financials: renderFinancials, income: renderIncome,
     splitengine: renderSplitEngine, vat: renderVAT, calendar: renderCalendar, teams: renderTeams,
-    quotations: renderQuotations, leads: renderLeads, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
+    quotations: renderQuotations, ebar: renderEbar, leads: renderLeads, invoiceinbox: renderInvoiceInbox, foundation: renderFoundation, marketing: renderMarketing, settings: renderSettings,
   };
   (renderers[id] || renderEmpty)();
 }
@@ -10196,6 +10196,337 @@ async function spotCloudPull(){
   });
   spotSaveAll(list);
 }
+
+// ═══════════════════════════════════════════
+// EBAR INSPECTIONS — phone form for the on-site inspection (replaces the Leads & Letters tab).
+// Follows the 12 sections of the EBAR report. Local-first: every keystroke saves on this phone,
+// photos wait in IndexedDB, and everything uploads when there is signal (table ebar_jobs + site-files).
+// Nothing is ever rejected: missing items are only flagged on the coverage board.
+// ═══════════════════════════════════════════
+const EB_KEY='pr_ebar_jobs';
+const EB_SECTIONS=[
+  {n:1,t:'Executive summary',v:'summary',who:'Lead'},{n:2,t:'The property & how we inspected it',v:'property',who:'Lead'},
+  {n:3,t:'Condition at a glance',v:'cond',who:'Lead',per:1},{n:4,t:'Test results & quality checks',v:'tests',who:'Assistant',per:1},
+  {n:5,t:'Key findings & root causes',v:'findings',who:'Lead'},{n:6,t:'Recommended specification',v:'spec',who:'Lead'},
+  {n:7,t:'Detailed specification: repairs',v:'repairs',who:'Assistant'},{n:8,t:'Detailed specification: coatings',v:'spec',who:'Lead'},
+  {n:9,t:'Bill of Quantities',v:'measure',who:'Assistant',per:1},{n:10,t:'Suggested budget',v:'budget',who:'Lead'},
+  {n:11,t:'Budget phasing & maintenance',v:'phasing',who:'Lead'},{n:12,t:'Getting quotes & our role',v:'limits',who:'Lead'}
+];
+const EB_ELEMENTS=['External walls','Damp wall bases','Parapets & flat tops','Windows & reveals','Cracks & expansion joints','Soffits & ceilings','Concrete edges, balconies, stairs','Steelwork, balustrades, pergolas','Roof covering & fixings','Gutters, outlets, valley gullies','Flat roofs & waterproofing','External doors','Boundary walls & palisades','Paving, parking & markings'];
+const EB_SIDES=['North','East','South','West','Other'];
+const EB_OTHER=[['Soffits & exterior ceilings','m²'],['Steel: handrails & balustrades','m²'],['Steel: awnings & pergolas','m²'],['Roof: metal sheet','m²'],['Roof: flat / concrete','m²'],['Torch-on waterproofing','m²'],['Parapets & flat tops','m²'],['External doors','m²'],['Boundary walls','m²'],['Palisades / fencing','m²'],['Parking markings & paving','m²']];
+const EB_DRAIN=['Gutters (metres)','Downpipes','Flat-roof outlets','Valley gullies'];
+const EB_REPAIRS=[['Hairline cracks, up to 1 mm','m'],['Plaster cracks, 1–5 mm','m'],['Structural / movement cracks, over 5 mm','m'],['Spalling concrete','m'],['Expansion joints to re-cut & seal','m'],['Window frames to seal','no.'],['Sills to re-grout','no.'],['Damp wall bases to treat','m²'],['Hollow / loose plaster to replace','m²']];
+const EB_SURFACES=['Plastered walls','Damp & friable areas','Parapets & flat tops','Soffits & ceilings','Steelwork','Metal roofs','Flat roofs & gutters','Timber doors','Paving & markings'];
+const EB_EQUIP=['Moisture meter tested, batteries','Film thickness gauge & marker','Crack width gauge','Laser distance meter & long tape','Camera / phone charged, power bank','Ladder, torch, binoculars','Hard hat, boots, vest, harness'];
+const EB_ARRIVE=['Signed in; met the site contact','Agreed where we may go, and roof access','Client OK for small film thickness test marks','Client OK for photos','Safety: ladder held, 2 people for roof work','Rain or wet walls noted (affects damp readings)'];
+const EB_ALSO=['Boundary walls','Palisades / fencing','Gates','Guard house','Parking & paving','Outbuildings','Carports / pergolas','Signage structures'];
+const EB_LOOK=['Old repairs that have cracked again','Paint bubbling or crumbling plaster at wall bases','Missing sealant at window frames and sills','Loose or spalling concrete overhead (barricade)','Rust at steel edges, joints and fixings','Blocked or too few gutter and roof outlets','Chalky or weathered roof coating','Exposed torch-on waterproofing'];
+const EB_BUDGET=['Access: ladders only','Access: scaffolding','Access: cherry picker / rope access','Fragile roof / walkway boards needed','Occupied building (school or patient hours)','Water and power available on site','Rubble removal / skip space','Security or site induction required'];
+const EB_MAINT=['Who cleans the gutters now, and how often?','When it was last painted','Client’s budget or deadline noted','Maintenance problems to warn about noted'];
+const EB_GATE=['Sheets filled in for every building','Assistant’s readings checked by the Lead','Nothing blank or unclear','Photos clear, nothing missing','Client told about urgent and safety items','Report date confirmed with the client'];
+const EB_CONFIRM=['New system is compatible with the existing paint','Colour or colour-change wishes noted','Any previous warranty on the building checked','Water source found for each damp area'];
+let EB={job:null,view:'home',b:0};
+let EB_SYNC_T=null, EB_SYNCING=false;
+
+// ── storage ──
+function ebLoad(){ try{ return JSON.parse(localStorage.getItem(EB_KEY))||[]; }catch(e){ return []; } }
+function ebSaveAll(list){
+  try{ localStorage.setItem(EB_KEY, JSON.stringify(list)); return true; }
+  catch(e){ showSaveToast('Phone storage is full. Connect to the internet to back up.'); return false; }
+}
+function ebJob(){ return ebLoad().find(function(j){ return j.id===EB.job; })||null; }
+function ebPut(job){
+  const list=ebLoad(); const i=list.findIndex(function(j){ return j.id===job.id; });
+  job.updated=new Date().toISOString(); job.dirty=true;
+  if(i>=0) list[i]=job; else list.push(job);
+  ebSaveAll(list); ebQueueSync();
+}
+function ebGet(o,path){ return String(path).split('.').reduce(function(a,k){ return a==null?undefined:a[k]; },o); }
+function ebSet(o,path,val){
+  const ks=String(path).split('.'); let c=o;
+  for(let i=0;i<ks.length-1;i++){ if(c[ks[i]]==null||typeof c[ks[i]]!=='object') c[ks[i]]={}; c=c[ks[i]]; }
+  c[ks[ks.length-1]]=val;
+}
+function ebNewJob(){ return { id:uid(), created:invToday(), updated:new Date().toISOString(), dirty:true, status:'Inspecting', site:'', client:'', date:invToday(), buildings:[], findings:[], limits:[] }; }
+function ebNewBuilding(n){ return { id:uid(), name:n, moist:[], dft:[], cracks:[] }; }
+
+// photos wait in IndexedDB until they have uploaded
+function ebDb(){ return new Promise(function(res,rej){ const q=indexedDB.open('pr_ebar',1); q.onupgradeneeded=function(){ q.result.createObjectStore('photos'); }; q.onsuccess=function(){ res(q.result); }; q.onerror=function(){ rej(q.error); }; }); }
+async function ebPhotoPut(id,blob){ const d=await ebDb(); return new Promise(function(res,rej){ const t=d.transaction('photos','readwrite'); t.objectStore('photos').put(blob,id); t.oncomplete=function(){ res(true); }; t.onerror=function(){ rej(t.error); }; }); }
+async function ebPhotoGet(id){ const d=await ebDb(); return new Promise(function(res){ const q=d.transaction('photos').objectStore('photos').get(id); q.onsuccess=function(){ res(q.result||null); }; q.onerror=function(){ res(null); }; }); }
+async function ebPhotoDel(id){ try{ const d=await ebDb(); d.transaction('photos','readwrite').objectStore('photos').delete(id); }catch(e){} }
+function ebAllPhotos(o,out){ out=out||[]; if(Array.isArray(o)){ o.forEach(function(x){ ebAllPhotos(x,out); }); } else if(o&&typeof o==='object'){ Object.keys(o).forEach(function(k){ if(k==='photos'&&Array.isArray(o[k])) o[k].forEach(function(p){ out.push(p); }); else ebAllPhotos(o[k],out); }); } return out; }
+
+// ── calculations ──
+function ebNums(a){ return (a||[]).map(function(x){ return parseFloat(x); }).filter(function(x){ return !isNaN(x); }); }
+function ebAvg(a){ const n=ebNums(a); return n.length?Math.round(n.reduce(function(x,y){return x+y;},0)/n.length*10)/10:null; }
+function ebBand(v){ return v==null?'':v<12?'Dry':v<25?'Elevated':'Wet'; }
+function ebCrackBand(w){ const v=parseFloat(w); return isNaN(v)?'':v<=1?'Hairline':v<=5?'Plaster':'Structural'; }
+function ebDftResult(r){ const a=ebAvg(r.t), q=parseFloat(r.req); return a==null||isNaN(q)?'':a>=q?'Pass':'Fail'; }
+function ebGross(w){ const l=parseFloat(w&&w.l), h=parseFloat(w&&w.h); return isNaN(l)||isNaN(h)?null:Math.round(l*h*10)/10; }
+function ebNet(w){ const g=ebGross(w); return g==null?null:Math.round((g-(parseFloat(w.o)||0))*10)/10; }
+function ebWallTotal(b){ return Math.round(EB_SIDES.reduce(function(s,x){ const n=ebNet((b.walls||{})[x]); return s+(n||0); },0)*10)/10; }
+function ebCalcText(kind,job,path){
+  const r=ebGet(job,path)||{};
+  if(kind==='mavg'){ const a=ebAvg(r.r); return a==null?'–':a+'% · '+ebBand(a); }
+  if(kind==='davg'){ const a=ebAvg(r.t); const x=ebDftResult(r); return a==null?'–':a+' µm'+(x?' · '+x:''); }
+  if(kind==='crack'){ return ebCrackBand(r.w)||'–'; }
+  if(kind==='net'){ const n=ebNet(r); return n==null?'–':n+' m²'; }
+  if(kind==='total'){ return ebWallTotal(r)+' m²'; }
+  return '';
+}
+function ebCalcRefresh(job){ document.querySelectorAll('[data-calc]').forEach(function(el){ const p=el.getAttribute('data-calc').split('|'); el.textContent=ebCalcText(p[0],job,p[1]); }); }
+
+// ── coverage board: flags what is missing, never blocks ──
+function ebCover(j){
+  const B=j.buildings||[], M={}; EB_SECTIONS.forEach(function(s){ M[s.n]=[]; });
+  const bn=function(b){ return b.name||'Unnamed building'; };
+  if(!(j.summary&&j.summary.overall)) M[1].push('Overall condition');
+  if(!(j.summary&&j.summary.timing)) M[1].push('Timing');
+  if(!(j.findings||[]).length) M[1].push('Top findings (from section 5)');
+  if(!B.length) M[2].push('Add the buildings');
+  B.forEach(function(b){ const s=b.sides||{}; ['North','East','South','West','Roof'].forEach(function(x){ if(!s[x]) M[2].push(bn(b)+': '+x+' not walked'); }); });
+  if(!Object.values(j.testsUsed||{}).some(Boolean)) M[2].push('Tests used');
+  B.forEach(function(b){ const c=b.cond||{}; const left=EB_ELEMENTS.filter(function(e,i){ return !(c[i]&&c[i].rate); }).length; if(left) M[3].push(bn(b)+': '+left+' elements not rated'); });
+  if(!B.length) M[3].push('No buildings yet');
+  B.forEach(function(b){
+    if(!(b.moist||[]).length) M[4].push(bn(b)+': no moisture test');
+    (b.moist||[]).forEach(function(r,i){ if(ebNums(r.r).length<6) M[4].push(bn(b)+': moisture '+(i+1)+' has under 6 readings'); if(!(r.photos||[]).length) M[4].push(bn(b)+': moisture '+(i+1)+' no photo'); });
+    if(!(b.dft||[]).length) M[4].push(bn(b)+': no film thickness test');
+    (b.dft||[]).forEach(function(r,i){ if(ebNums(r.t).length<3) M[4].push(bn(b)+': film thickness '+(i+1)+' has under 3 tests'); if(!(r.photos||[]).length) M[4].push(bn(b)+': film thickness '+(i+1)+' no photo'); });
+    if(!(b.cracks||[]).length&&!b.noCracks) M[4].push(bn(b)+': cracks not logged');
+    (b.cracks||[]).forEach(function(r,i){ if(!(r.photos||[]).length) M[4].push(bn(b)+': crack '+(i+1)+' no photo'); });
+  });
+  if(!B.length) M[4].push('No buildings yet');
+  if(!(j.findings||[]).length) M[5].push('No findings yet');
+  (j.findings||[]).forEach(function(f,i){ const n='Finding '+(i+1)+': '; if(!f.found) M[5].push(n+'what we found'); if(!f.why) M[5].push(n+'why it happens'); if(!f.fix) M[5].push(n+'the fix'); if(!f.pri) M[5].push(n+'priority'); if((f.photos||[]).length<2) M[5].push(n+'needs 2 photos'); });
+  EB_SURFACES.forEach(function(s,i){ const x=(j.spec||{})[i]||{}; if(!x.na&&!x.sys) M[6].push(s+': suggested system'); if(!x.na&&!x.coat) M[8].push(s+': existing coating'); if(!x.na&&!x.prep) M[8].push(s+': preparation'); });
+  EB_REPAIRS.forEach(function(r,i){ const x=(j.repairs||{})[i]||{}; if(x.qty===undefined||x.qty==='') M[7].push(r[0]); });
+  B.forEach(function(b){ if(!EB_SIDES.some(function(x){ return ebNet((b.walls||{})[x])!=null; })) M[9].push(bn(b)+': walls not measured'); EB_OTHER.forEach(function(o,i){ const x=(b.other||{})[i]||{}; if(!x.na&&(x.qty===undefined||x.qty==='')) M[9].push(bn(b)+': '+o[0]); }); EB_DRAIN.forEach(function(o,i){ const x=(b.drain||{})[i]||{}; if(x.n===undefined||x.n==='') M[9].push(bn(b)+': '+o); }); });
+  if(!B.length) M[9].push('No buildings yet');
+  if(!Object.values((j.budget||{}).ticks||{}).some(Boolean)&&!(j.budget||{}).height) M[10].push('Access and working height');
+  if(!(j.phases&&(j.phases.quick||j.phases.p1||j.phases.p2||j.phases.p3))) M[11].push('Place the problems in phases');
+  if(!j.limitsNone&&!(j.limits||[]).length) M[12].push('Areas not reached (or tick "reached everything")');
+  if(!j.engineerDecided) M[12].push('Structural engineer decision');
+  return EB_SECTIONS.map(function(s){ return {n:s.n,t:s.t,v:s.v,who:s.who,per:s.per,miss:M[s.n]}; });
+}
+
+// ── form helpers ──
+const EB_LBL='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+function ebInput(el){
+  const job=ebJob(); if(!job) return;
+  ebSet(job,el.getAttribute('data-eb'), el.type==='checkbox'?el.checked:el.value);
+  ebPut(job); ebCalcRefresh(job);
+}
+function ebF(label,path,job,opt){
+  opt=opt||{}; const v=ebGet(job,path); const a=opt.num?'inputmode="decimal"':'';
+  return `<div style="margin-bottom:${opt.mb==null?10:opt.mb}px;${opt.flex?'flex:'+opt.flex+';min-width:0':''}">${label?`<label style="${EB_LBL}">${label}</label>`:''}`
+    +(opt.area?`<textarea class="f-input" rows="${opt.area}" style="margin:0" data-eb="${path}" oninput="ebInput(this)" placeholder="${esc(opt.ph||'')}">${esc(v==null?'':v)}</textarea>`
+    :`<input class="f-input" style="margin:0" ${a} data-eb="${path}" oninput="ebInput(this)" value="${esc(v==null?'':v)}" placeholder="${esc(opt.ph||'')}"${opt.type?` type="${opt.type}"`:''}/>`)+`</div>`;
+}
+function ebTick(label,path,job){
+  return `<label style="display:flex;gap:10px;align-items:center;min-height:38px;font-size:13px;color:#1A1A1A;cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto;accent-color:#8B1A1A" data-eb="${path}" onchange="ebInput(this)"${ebGet(job,path)?' checked':''}/><span>${esc(label)}</span></label>`;
+}
+function ebChips(path,opts,job){
+  const v=ebGet(job,path);
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">`+opts.map(function(o){ const on=v===o; return `<button type="button" onclick="ebPick('${path}','${o}')" style="flex:1 1 auto;min-height:40px;padding:0 10px;border-radius:9px;border:1px solid ${on?'#1A1A1A':'#DDD8CC'};background:${on?'#1A1A1A':'#fff'};color:${on?'#fff':'#1A1A1A'};font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">${o}</button>`; }).join('')+`</div>`;
+}
+function ebPick(path,val){ const job=ebJob(); if(!job) return; ebSet(job,path, ebGet(job,path)===val?'':val); ebPut(job); ebPaint(); }
+function ebH(t,sub){ return `<div style="font-size:11px;font-weight:800;color:#8B1A1A;letter-spacing:.4px;text-transform:uppercase;margin:16px 0 8px;padding-bottom:5px;border-bottom:1px solid #EFECE3">${t}${sub?`<span style="display:block;text-transform:none;letter-spacing:0;font-weight:600;color:#8A8470;margin-top:2px">${sub}</span>`:''}</div>`; }
+function ebCard(inner){ return `<div class="ledger-card" style="padding:12px;margin-bottom:10px">${inner}</div>`; }
+function ebRowDel(path,i,what){ return `<button type="button" onclick="ebDel('${path}',${i},'${what}')" style="background:none;border:none;color:#B2342A;font-weight:800;font-size:12px;font-family:inherit;cursor:pointer;padding:6px 0">🗑 Remove</button>`; }
+function ebAdd(path,tpl){ const job=ebJob(); if(!job) return; let a=ebGet(job,path); if(!Array.isArray(a)){ a=[]; ebSet(job,path,a); } a.push(tpl==='r'?{r:[]}:tpl==='t'?{t:[]}:{}); ebPut(job); ebPaint(); }
+function ebDel(path,i,what){ if(!confirm('Remove this '+what+'?')) return; const job=ebJob(); const a=ebGet(job,path); if(!Array.isArray(a)) return; const gone=a.splice(i,1)[0]; ebAllPhotos(gone).forEach(function(p){ ebPhotoDel(p.id); }); ebPut(job); ebPaint(); }
+function ebPhotos(path,job){
+  const a=ebGet(job,path)||[]; const iid='ebp_'+path.replace(/\./g,'_');
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">`
+    +a.map(function(p,i){ return `<div style="position:relative;width:64px;height:64px;border-radius:8px;background:#EFECE3;overflow:hidden"><img data-ph="${p.id}" data-url="${esc(p.url||'')}" style="width:100%;height:100%;object-fit:cover"/><button type="button" onclick="ebPhotoRemove('${path}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:12px;cursor:pointer">✕</button></div>`; }).join('')
+    +`<input type="file" id="${iid}" accept="image/*" capture="environment" style="display:none" onchange="ebPhotoChosen('${path}',this)"/><button type="button" onclick="document.getElementById('${iid}').click()" style="height:64px;min-width:78px;padding:0 10px;border-radius:8px;border:1px dashed #A39E8C;background:#fff;color:#1A1A1A;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer">📷 Photo${a.length?' ('+a.length+')':''}</button></div>`;
+}
+async function ebPhotoChosen(path,input){
+  const f=input.files&&input.files[0]; if(!f) return; input.value='';
+  showSaveToast('Saving photo…');
+  try{
+    const blob=await shrinkImageFile(f,1600,0.8); const id=uid();
+    await ebPhotoPut(id,blob);
+    const job=ebJob(); if(!job) return; let a=ebGet(job,path); if(!Array.isArray(a)){ a=[]; ebSet(job,path,a); }
+    a.push({id:id,url:'',at:new Date().toISOString()}); ebPut(job); ebPaint(); showSaveToast('Photo saved');
+  }catch(e){ showSaveToast('Could not save that photo. Please take it again.'); }
+}
+function ebPhotoRemove(path,i){ if(!confirm('Remove this photo?')) return; const job=ebJob(); const a=ebGet(job,path)||[]; const g=a.splice(i,1)[0]; if(g) ebPhotoDel(g.id); ebPut(job); ebPaint(); }
+async function ebPaintThumbs(){ const els=document.querySelectorAll('img[data-ph]:not([src])'); for(let i=0;i<els.length;i++){ const b=await ebPhotoGet(els[i].getAttribute('data-ph')); if(b) els[i].src=URL.createObjectURL(b); else if(els[i].getAttribute('data-url')) els[i].src=els[i].getAttribute('data-url'); } }
+
+// ── sync: photos first, then the job ──
+function ebQueueSync(){ clearTimeout(EB_SYNC_T); EB_SYNC_T=setTimeout(ebSyncAll,5000); }
+async function ebSyncAll(){
+  if(EB_SYNCING) return; EB_SYNCING=true;
+  try{
+    const ids=ebLoad().filter(function(j){ return j.dirty; }).map(function(j){ return j.id; });
+    for(let k=0;k<ids.length;k++){
+      const job=ebLoad().find(function(j){ return j.id===ids[k]; }); if(!job) continue;
+      const stamp=job.updated;
+      const ph=ebAllPhotos(job).filter(function(p){ return !p.url; }); const done={};
+      for(let i=0;i<ph.length;i++){ const b=await ebPhotoGet(ph[i].id); if(!b) continue; const u=await sbUploadFile('ebar/'+job.id+'/'+ph[i].id+'.jpg', b); if(u) done[ph[i].id]=u; }
+      const list=ebLoad(); const cur=list.find(function(j){ return j.id===ids[k]; }); if(!cur) continue;
+      ebAllPhotos(cur).forEach(function(p){ if(done[p.id]) p.url=done[p.id]; });
+      ebSaveAll(list);
+      const allUp=!ebAllPhotos(cur).some(function(p){ return !p.url; });
+      const data=JSON.parse(JSON.stringify(cur)); delete data.dirty;
+      const ok=await sbUpsert('ebar_jobs',{ id:cur.id, site:cur.site||'', status:cur.status||'', updated_at:cur.updated, data:data });
+      if(ok&&allUp){ const l2=ebLoad(); const c2=l2.find(function(j){ return j.id===ids[k]; }); if(c2&&c2.updated===stamp){ c2.dirty=false; ebSaveAll(l2); } }
+    }
+  }catch(e){}
+  EB_SYNCING=false; const s=$('ebSyncState'); if(s) s.innerHTML=ebSyncText(ebJob());
+}
+function ebSyncText(j){ if(!j) return ''; const w=ebAllPhotos(j).filter(function(p){ return !p.url; }).length; return j.dirty?`📱 Saved on this phone${w?' · '+w+' photo'+(w!==1?'s':'')+' waiting to upload':''}`:'☁ Backed up'; }
+async function ebCloudPull(){
+  const rows=await sbGetRows('ebar_jobs','select=id,updated_at,data&order=updated_at.desc');
+  if(!Array.isArray(rows)||!rows.length) return;
+  const list=ebLoad();
+  rows.forEach(function(r){ if(!r.data) return; const i=list.findIndex(function(j){ return j.id===r.id; }); const d=Object.assign({},r.data,{dirty:false});
+    if(i<0) list.push(d); else if(!list[i].dirty&&String(r.updated_at)>String(list[i].updated)) list[i]=d; });
+  ebSaveAll(list);
+}
+
+// ── screens ──
+async function renderEbar(){ if(!EB.job){ try{ await ebCloudPull(); }catch(e){} } ebSyncAll(); ebPaint(); }
+function ebGo(view,b){ EB.view=view; if(b!=null) EB.b=b; ebPaint(); window.scrollTo(0,0); }
+function ebOpen(id){ EB.job=id; EB.view='home'; ebPaint(); window.scrollTo(0,0); }
+function ebClose(){ EB.job=null; EB.view='home'; ebPaint(); window.scrollTo(0,0); }
+function ebStart(){ const j=ebNewJob(); ebPut(j); ebOpen(j.id); }
+function ebDeleteJob(){ const j=ebJob(); if(!j) return; if(!confirm('Delete this whole inspection for '+(j.site||'this site')+'? This cannot be undone.')) return; ebAllPhotos(j).forEach(function(p){ ebPhotoDel(p.id); }); ebSaveAll(ebLoad().filter(function(x){ return x.id!==j.id; })); try{ sbDelete('ebar_jobs','id=eq.'+encodeURIComponent(j.id)); }catch(e){} ebClose(); }
+function ebPaint(){
+  const y=window.scrollY; const job=EB.job?ebJob():null; if(EB.job&&!job){ EB.job=null; }
+  const V={home:ebHome,property:ebProperty,cond:ebCond,tests:ebTests,measure:ebMeasure,findings:ebFindings,spec:ebSpec,repairs:ebRepairs,summary:ebSummary,budget:ebBudget,phasing:ebPhasing,limits:ebLimits,finish:ebFinish};
+  $('pageBody').innerHTML=job?(V[EB.view]||ebHome)(job):ebList();
+  window.scrollTo(0,y); ebPaintThumbs();
+}
+function ebList(){
+  const all=ebLoad().slice().sort(function(a,b){ return String(b.updated||'').localeCompare(String(a.updated||'')); });
+  let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title" style="margin:0 0 6px">EBAR inspections</div>
+  <div class="snap-meta" style="margin-bottom:12px">Fill in the inspection on site. Everything saves on your phone as you type, even without signal, and covers all 12 sections of the report.</div>
+  <button class="cta-btn" style="height:56px;font-size:16px;margin-bottom:14px" onclick="ebStart()">＋ New inspection</button>`;
+  if(!all.length) return h+`<div style="text-align:center;padding:34px;color:#A39E8C">No inspections yet.</div>`;
+  return h+all.map(function(j){ const c=ebCover(j); const ok=c.filter(function(x){ return !x.miss.length; }).length;
+    return `<div class="ledger-card" style="padding:12px 14px;margin-bottom:10px;cursor:pointer" onclick="ebOpen('${j.id}')"><div style="display:flex;justify-content:space-between;gap:10px"><div style="min-width:0"><div style="font-size:14px;font-weight:800;color:#1A1A1A">${esc(j.site||'(no site name yet)')}</div><div style="font-size:11.5px;color:#8A8470;margin-top:2px">${esc(j.client||'')}${j.client?' · ':''}${esc(j.date||'')} · ${(j.buildings||[]).length} building${(j.buildings||[]).length!==1?'s':''}</div></div><div style="flex:0 0 auto;font-size:13px;font-weight:800;color:${ok===12?'#3F5A4C':'#8B1A1A'}">${ok}/12</div></div><div style="font-size:11px;color:#8A8470;margin-top:6px">${esc(j.status||'')} · ${ebSyncText(j)}</div></div>`; }).join('');
+}
+function ebTop(t,sub,back){ return `<button onclick="${back||"ebGo('home')"}" style="background:#EFECE3;border:none;border-radius:9px;min-height:40px;padding:0 14px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer;margin-bottom:10px">← Back</button><div class="page-title" style="margin:0;font-size:22px">${t}</div><div class="snap-meta" style="margin-bottom:10px">${sub||''}</div>`; }
+function ebDone(){ return `<button class="cta-btn" style="margin-top:14px" onclick="ebGo('home')">Done: back to the board</button>`; }
+function ebPickB(job,view){ const B=job.buildings||[]; if(B.length<2) return ''; return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px">`+B.map(function(b,i){ const on=i===EB.b; return `<button onclick="ebGo('${view}',${i})" style="flex:0 0 auto;min-height:40px;padding:0 13px;border-radius:9px;border:none;background:${on?'#1A1A1A':'#EFECE3'};color:${on?'#fff':'#1A1A1A'};font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">${esc(b.name||'Building '+(i+1))}</button>`; }).join('')+`</div>`; }
+function ebNeedB(job,t){ if((job.buildings||[]).length) return ''; return ebTop(t,'')+`<div style="padding:20px;text-align:center;color:#8A8470">Add the buildings first.</div><button class="cta-btn" onclick="ebGo('property')">Add buildings</button>`; }
+function ebHome(j){
+  const c=ebCover(j); const ok=c.filter(function(x){ return !x.miss.length; }).length;
+  let h=ebTop(esc(j.site||'New inspection'),`<span id="ebSyncState">${ebSyncText(j)}</span>`,'ebClose()');
+  h+=ebCard(ebF('Site / property','site',j)+ebF('Client','client',j)+`<div style="display:flex;gap:8px">${ebF('Contact on site','contact',j,{flex:1})}${ebF('Phone','phone',j,{flex:1,type:'tel'})}</div><div style="display:flex;gap:8px">${ebF('Date','date',j,{flex:1,type:'date'})}${ebF('Report no.','reportNo',j,{flex:1})}</div><div style="display:flex;gap:8px">${ebF('Lead','lead',j,{flex:1})}${ebF('Assistant','assistant',j,{flex:1})}</div>`+ebF('Weather today / rain in last 48 hours','weather',j,{mb:0}));
+  h+=ebH('Coverage board: '+ok+' of 12 complete','Tap a section to fill it in. Red lists what is still missing.');
+  h+=c.map(function(s){ const done=!s.miss.length;
+    return `<div class="ledger-card" style="padding:0;margin-bottom:8px;overflow:hidden"><div onclick="ebGo('${s.v}')" style="display:flex;gap:10px;align-items:center;padding:11px 12px;cursor:pointer"><div style="flex:0 0 30px;height:30px;border-radius:50%;background:${done?'#3F5A4C':'#EFECE3'};color:${done?'#fff':'#1A1A1A'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12.5px">${done?'✓':s.n}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:800">${esc(s.t)}</div><div style="font-size:11px;color:#8A8470">${s.who}${s.per?' · per building':''}</div></div><div style="color:#A39E8C">›</div></div>${done?'':`<div style="padding:0 12px 9px 52px;font-size:11px;color:#B2342A;line-height:1.4">${esc(s.miss.slice(0,3).join(' · '))}${s.miss.length>3?' · and '+(s.miss.length-3)+' more':''}</div>`}<div style="padding:0 12px 6px 52px">${ebTick('Lead checked','check.'+s.n,j)}</div></div>`; }).join('');
+  h+=`<button class="cta-btn" style="margin-top:8px" onclick="ebGo('finish')">Finish the inspection →</button>`;
+  h+=`<button class="cta-btn ghost" style="margin-top:8px;color:#B2342A" onclick="ebDeleteJob()">🗑 Delete this inspection</button>`;
+  return h;
+}
+function ebProperty(j){
+  let h=ebTop('The property','Section 2: buildings, sides walked and the tests used');
+  h+=ebH('Before you start')+ebCard(EB_EQUIP.map(function(e,i){ return ebTick(e,'equip.'+i,j); }).join('')+'<div style="height:6px"></div>'+EB_ARRIVE.map(function(e,i){ return ebTick(e,'arrive.'+i,j); }).join(''));
+  h+=ebH('Buildings','Each building gets its own ratings, tests and measurements.');
+  h+=(j.buildings||[]).map(function(b,i){ const p='buildings.'+i;
+    return ebCard(ebF('Block / building name',p+'.name',j)+`<div style="display:flex;gap:8px">${ebF('Use',p+'.use',j,{flex:2})}${ebF('Storeys',p+'.storeys',j,{flex:1,num:1})}</div><div style="display:flex;gap:8px">${ebF('Wall type',p+'.wall',j,{flex:1})}${ebF('Roof type',p+'.roof',j,{flex:1})}</div>`+ebF('Access needed',p+'.access',j)
+      +`<label style="${EB_LBL}">Sides walked and photographed</label>`+['North','East','South','West','Roof','Overview photo'].map(function(s){ const k=s==='Overview photo'?'Overview':s; return ebTick(s,p+'.sides.'+k,j); }).join('')+ebF('Could not reach',p+'.sides.reach',j,{mb:4})+ebPhotos(p+'.photos',j)+'<div>'+ebRowDel('buildings',i,'building and all its readings')+'</div>'); }).join('');
+  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="ebAddBuilding()">＋ Add a building</button>`;
+  h+=ebH('Also on site')+ebCard(EB_ALSO.map(function(e,i){ return ebTick(e,'also.'+i,j); }).join('')+ebF('Other','alsoOther',j,{mb:0}));
+  h+=ebH('Tests used')+ebCard(['Visual survey & photos','Moisture meter','Crack width gauge','Film thickness (DFT)'].map(function(e,i){ return ebTick(e,'testsUsed.'+i,j); }).join(''));
+  h+=ebH('Site photos & sketch','A photo of a sketch of the site, showing north and where the tests were done.')+ebCard(ebPhotos('sitePhotos',j));
+  return h+ebDone();
+}
+function ebAddBuilding(){ const j=ebJob(); j.buildings=j.buildings||[]; j.buildings.push(ebNewBuilding('Block '+String.fromCharCode(65+j.buildings.length))); ebPut(j); ebPaint(); }
+function ebCond(j){
+  const miss=ebNeedB(j,'Condition at a glance'); if(miss) return miss; if(!j.buildings[EB.b]) EB.b=0;
+  const p='buildings.'+EB.b; const b=j.buildings[EB.b];
+  let h=ebTop('Condition at a glance','Section 3: rate every line. Good = sound. Fair = worn, plan the work. Poor = failing, act soon.')+ebPickB(j,'cond');
+  h+=EB_ELEMENTS.map(function(e,i){ const q=p+'.cond.'+i; const c=(b.cond||{})[i]||{};
+    return ebCard(`<div style="font-size:13px;font-weight:800;margin-bottom:6px">${esc(e)}</div>`+ebChips(q+'.rate',['Good','Fair','Poor','N/A'],j)+(c.rate&&c.rate!=='N/A'&&c.rate!=='Good'?ebF('Main defect',q+'.defect',j)+ebF('Surface / material',q+'.surface',j)+`<label style="${EB_LBL}">Priority</label>`+ebChips(q+'.pri',['High','Safety','Medium','Low'],j)+ebPhotos(q+'.photos',j):'')); }).join('');
+  h+=ebH('Look out for')+ebCard(EB_LOOK.map(function(e,i){ return ebTick(e,p+'.look.'+i,j); }).join(''));
+  return h+ebDone();
+}
+function ebTests(j){
+  const miss=ebNeedB(j,'Test results'); if(miss) return miss; if(!j.buildings[EB.b]) EB.b=0;
+  const p='buildings.'+EB.b; const b=j.buildings[EB.b];
+  let h=ebTop('Test results','Section 4: photograph every reading, with the display in the photo.')+ebPickB(j,'tests');
+  h+=ebH('Moisture','6 readings per location. Dry 0–12% WME · Elevated 12–25% · Wet 25%+');
+  h+=(b.moist||[]).map(function(r,i){ const q=p+'.moist.'+i; let g=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">`; for(let n=0;n<6;n++){ g+=ebF('',q+'.r.'+n,j,{num:1,mb:0,ph:'% '+(n+1)}); } g+='</div>';
+    return ebCard(ebF('Location & side',q+'.loc',j,{ph:'e.g. South wall base'})+g+`<div style="display:flex;gap:8px;align-items:flex-end">${ebF('REL reading',q+'.rel',j,{flex:1,num:1,mb:0})}<div style="flex:1;font-size:13px;font-weight:800;padding-bottom:10px" data-calc="mavg|${q}">${ebCalcText('mavg',j,q)}</div></div>`+ebPhotos(q+'.photos',j)+'<div>'+ebRowDel(p+'.moist',i,'reading')+'</div>'); }).join('');
+  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="ebAdd('${p}.moist','r')">＋ Add moisture location</button>`;
+  h+=ebH('Paint film thickness (DFT)','3 tests per location, in microns (µm). Lead fills in Required if unknown.');
+  h+=(b.dft||[]).map(function(r,i){ const q=p+'.dft.'+i; let g=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">`; for(let n=0;n<3;n++){ g+=ebF('',q+'.t.'+n,j,{num:1,mb:0,ph:'Test '+(n+1)}); } g+='</div>';
+    return ebCard(ebF('Location & side',q+'.loc',j)+ebF('Coating / product',q+'.coat',j)+g+`<div style="display:flex;gap:8px;align-items:flex-end">${ebF('Required µm',q+'.req',j,{flex:1,num:1,mb:0})}<div style="flex:1;font-size:13px;font-weight:800;padding-bottom:10px" data-calc="davg|${q}">${ebCalcText('davg',j,q)}</div></div>`+ebPhotos(q+'.photos',j)+'<div>'+ebRowDel(p+'.dft',i,'test')+'</div>'); }).join('');
+  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="ebAdd('${p}.dft','t')">＋ Add film thickness location</button>`;
+  h+=ebH('Cracks','Photograph the gauge against the crack.');
+  h+=(b.cracks||[]).map(function(r,i){ const q=p+'.cracks.'+i;
+    return ebCard(ebF('Location & side',q+'.loc',j)+`<div style="display:flex;gap:8px;align-items:flex-end">${ebF('Width mm',q+'.w',j,{flex:1,num:1,mb:0})}${ebF('Length m',q+'.l',j,{flex:1,num:1,mb:0})}<div style="flex:1;font-size:13px;font-weight:800;padding-bottom:10px" data-calc="crack|${q}">${ebCalcText('crack',j,q)}</div></div><div style="height:6px"></div>`+ebTick('Old repair that reopened',q+'.old',j)+ebTick('Show the Lead',q+'.lead',j)+ebPhotos(q+'.photos',j)+'<div>'+ebRowDel(p+'.cracks',i,'crack')+'</div>'); }).join('');
+  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="ebAdd('${p}.cracks')">＋ Add a crack</button>`+ebTick('No cracks on this building',p+'.noCracks',j);
+  return h+ebDone();
+}
+function ebMeasure(j){
+  const miss=ebNeedB(j,'Measurements'); if(miss) return miss; if(!j.buildings[EB.b]) EB.b=0;
+  const p='buildings.'+EB.b;
+  let h=ebTop('Measurements','Section 9: within 5%. Write “estimated” in the note if you could not reach it.')+ebPickB(j,'measure');
+  h+=ebH('Walls by side','Length × height, less windows and doors. Include parapets.');
+  h+=EB_SIDES.map(function(s){ const q=p+'.walls.'+s; return ebCard(`<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;margin-bottom:6px"><span>${s}</span><span data-calc="net|${q}">${ebCalcText('net',j,q)}</span></div><div style="display:flex;gap:6px">${ebF('Length m',q+'.l',j,{flex:1,num:1,mb:6})}${ebF('Height m',q+'.h',j,{flex:1,num:1,mb:6})}${ebF('Openings m²',q+'.o',j,{flex:1,num:1,mb:6})}</div>`+ebF('Note',q+'.note',j,{mb:0})); }).join('');
+  h+=`<div class="ledger-card" style="padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;font-weight:800;font-size:14px"><span>Total walls</span><span data-calc="total|${p}">${ebCalcText('total',j,p)}</span></div>`;
+  h+=ebH('Other surfaces')+EB_OTHER.map(function(o,i){ const q=p+'.other.'+i; return ebCard(`<div style="display:flex;gap:8px;align-items:flex-end">${ebF(esc(o[0])+' ('+o[1]+')',q+'.qty',j,{flex:2,num:1,mb:0})}<div style="flex:1">${ebTick('N/A',q+'.na',j)}</div></div>`+ebF('How worked out',q+'.how',j,{mb:0})); }).join('');
+  h+=ebH('Drainage count')+EB_DRAIN.map(function(o,i){ const q=p+'.drain.'+i; return ebCard(`<div style="display:flex;gap:8px;align-items:flex-end">${ebF(esc(o),q+'.n',j,{flex:1,num:1,mb:0})}<div style="flex:1">${ebTick('Blocked',q+'.blocked',j)}</div></div>`+ebF('Extra needed / note',q+'.extra',j,{mb:0})); }).join('');
+  return h+ebDone();
+}
+function ebFindings(j){
+  let h=ebTop('Key findings','Section 5: what we found, why it happens, the fix. At least 2 clear photos each.');
+  h+=(j.findings||[]).map(function(f,i){ const q='findings.'+i; return ebCard(`<div style="font-size:11px;font-weight:800;color:#8B1A1A;margin-bottom:6px">FINDING ${i+1}</div>`+ebF('Title',q+'.title',j)+ebF('Where',q+'.where',j)+`<label style="${EB_LBL}">Priority</label>`+ebChips(q+'.pri',['High','Safety','Medium','Low'],j)+ebF('What we found',q+'.found',j,{area:3})+ebF('Why it happens',q+'.why',j,{area:3})+ebF('The fix',q+'.fix',j,{area:3})+ebTick('Client told on site',q+'.told',j)+ebPhotos(q+'.photos',j)+'<div>'+ebRowDel('findings',i,'finding')+'</div>'); }).join('');
+  return h+`<button class="cta-btn ghost" onclick="ebAdd('findings')">＋ Add a finding</button>`+ebDone();
+}
+function ebSpec(j){
+  let h=ebTop('Specification & coatings','Sections 6 and 8: for each surface. Tick N/A if the building does not have it.');
+  h+=EB_SURFACES.map(function(s,i){ const q='spec.'+i; const x=(j.spec||{})[i]||{}; return ebCard(`<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:13px;font-weight:800">${esc(s)}</div><div>${ebTick('N/A',q+'.na',j)}</div></div>`+(x.na?'':ebF('Existing coating',q+'.coat',j)+ebChips(q+'.state',['Sound','Chalky','Flaking'],j)+ebF('Preparation needed',q+'.prep',j)+ebF('Suggested system',q+'.sys',j,{mb:0}))); }).join('');
+  h+=ebH('Also confirm')+ebCard(EB_CONFIRM.map(function(e,i){ return ebTick(e,'confirm.'+i,j); }).join(''));
+  return h+ebDone();
+}
+function ebRepairs(j){
+  let h=ebTop('Repairs','Section 7: whole site. Enter 0 if there are none.');
+  h+=EB_REPAIRS.map(function(r,i){ const q='repairs.'+i; return ebCard(ebF(esc(r[0])+' ('+r[1]+')',q+'.qty',j,{num:1,mb:6})+ebF('Where / note',q+'.note',j,{mb:0})); }).join('');
+  return h+ebDone();
+}
+function ebSummary(j){
+  let h=ebTop('Executive summary','Section 1: the Lead’s overall view.');
+  h+=ebCard(`<label style="${EB_LBL}">Overall site condition</label>`+ebChips('summary.overall',['Good','Fair','Poor'],j)+`<label style="${EB_LBL}">Timing</label>`+ebChips('summary.timing',['Urgent','Before rains','Within 12 months'],j)+ebF('Main message for the client','summary.message',j,{area:3,mb:0}));
+  h+=ebH('Top findings','Taken from section 5.');
+  h+=(j.findings||[]).length?ebCard((j.findings||[]).map(function(f,i){ return `<div style="font-size:13px;padding:5px 0;border-bottom:1px solid #EFECE3"><b>${i+1}.</b> ${esc(f.title||'(no title)')} <span style="color:#8A8470">${esc(f.pri||'')}</span></div>`; }).join('')):`<button class="cta-btn ghost" onclick="ebGo('findings')">Add findings</button>`;
+  return h+ebDone();
+}
+function ebBudget(j){
+  return ebTop('What affects the budget','Section 10: access and anything that changes the price.')+ebCard(EB_BUDGET.map(function(e,i){ return ebTick(e,'budget.ticks.'+i,j); }).join('')+'<div style="height:8px"></div>'+ebF('Highest working height (m)','budget.height',j,{num:1})+ebF('Work hours limited to','budget.hours',j)+ebF('Other notes','budget.note',j,{area:2,mb:0}))+ebDone();
+}
+function ebPhasing(j){
+  return ebTop('Phasing & maintenance','Section 11: use finding numbers or element names.')+ebCard(ebF('Quick wins: this month','phases.quick',j,{area:2})+ebF('Phase 1: before the rains','phases.p1',j,{area:2})+ebF('Phase 2: within 12 months','phases.p2',j,{area:2})+ebF('Phase 3: when budget allows','phases.p3',j,{area:2,mb:0}))+ebH('Maintenance')+ebCard(EB_MAINT.map(function(e,i){ return ebTick(e,'maint.'+i,j); }).join('')+ebF('Notes','maintNote',j,{area:2,mb:0}))+ebDone();
+}
+function ebLimits(j){
+  let h=ebTop('Limits & our role','Section 12: be clear about what was not reached.');
+  h+=ebH('Areas not reached')+(j.limits||[]).map(function(l,i){ const q='limits.'+i; return ebCard(ebF('Area, and why',q+'.area',j)+ebF('Assessed from where instead',q+'.from',j,{mb:0})+ebRowDel('limits',i,'area')); }).join('');
+  h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="ebAdd('limits')">＋ Add an area</button>`+ebTick('We reached everything',  'limitsNone',j);
+  h+=ebH('Engineer & quotes')+ebCard(ebTick('Structural engineer decision made','engineerDecided',j)+ebTick('Structural engineer needed','engineer',j)+ebF('If yes: where','engineerWhere',j)+ebTick('Client would like us to quote too','quoteToo',j)+ebTick('Before photos taken from good, repeatable spots','beforePhotos',j)+ebF('Who gets the report, and which pages','reportTo',j,{mb:0}));
+  return h+ebDone();
+}
+function ebFinish(j){
+  const c=ebCover(j); const open=c.filter(function(x){ return x.miss.length; });
+  let h=ebTop('Before anyone leaves site','Tick every box. Anything missing is listed, but it never stops you saving.');
+  h+=open.length?`<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:12.5px;color:#6b5a2b"><b>${open.length} section${open.length!==1?'s':''} still missing something:</b> ${open.map(function(x){ return x.n; }).join(', ')}. See the board.</div>`:`<div style="background:#E2F0D9;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:12.5px;color:#2E5A2E"><b>All 12 sections are covered.</b></div>`;
+  h+=ebCard(EB_GATE.map(function(e,i){ return ebTick(e,'gate.'+i,j); }).join('')+ebTick('Photos have finished uploading, or will upload when there is signal','gate.photos',j));
+  h+=ebCard(`<label style="${EB_LBL}">Status</label>`+ebChips('status',['Inspecting','Ready for report','Report done'],j)+ebF('Report date promised','reportDate',j,{type:'date',mb:0}));
+  h+=`<div style="font-size:12px;color:#8A8470;margin:0 0 10px"><span id="ebSyncState">${ebSyncText(j)}</span></div>`;
+  h+=`<button class="cta-btn" onclick="ebSyncNow()">☁ Back up now</button><button class="cta-btn ghost" style="margin-top:8px" onclick="ebDownload()">⬇ Download job file</button>`;
+  return h+`<button class="cta-btn ghost" style="margin-top:8px" onclick="ebGo('home')">← Back to the board</button>`;
+}
+async function ebSyncNow(){ showSaveToast('Backing up…'); await ebSyncAll(); const j=ebJob(); showSaveToast(j&&!j.dirty?'Backed up':'Saved on this phone. It will upload later.'); }
+function ebDownload(){ const j=ebJob(); if(!j) return; const name='EBAR job - '+String(j.site||'site').replace(/[^A-Za-z0-9 ]+/g,' ').trim()+'.json'; saveBlobFile(new Blob([JSON.stringify(j,null,2)],{type:'application/json'}),name); }
+window.addEventListener('online',function(){ try{ ebSyncAll(); }catch(e){} });
 
 function renderEmpty(){
   $('pageBody').innerHTML = `<div class="empty-state"><div class="empty-state-ico">◆</div><div class="empty-state-txt">Section under construction.</div></div>`;
