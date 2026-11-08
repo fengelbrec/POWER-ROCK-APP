@@ -7071,9 +7071,8 @@ async function renderHenkOverview(){
 
   h += todaysReportsBoxesHtml(active, todays);
 
-  // Four teams — today's profit per day, days on site, net profit, margin.
-  // Labour comes off the blocks; tap a block for the full detail.
-  h += `<div class="section-lbl">The four teams — today's profit per day</div>`;
+  // Four teams — where each is today (no profit/net/margin for Henk).
+  h += `<div class="section-lbl">The four teams — where they are today</div>`;
   h += `<div class="sites-grid">`;
   LEADER_META.forEach(function(lm){
     const mine = active.filter(function(s){ return s.team_leader === lm.key && !siteNotStarted(s); })
@@ -7088,15 +7087,11 @@ async function renderHenkOverview(){
     }
     const s = mine[0];
     const extra = mine.length > 1 ? ` · +${mine.length-1} more` : '';
-    const p = henkSiteProfit(s);
-    const ppdCol = p.dailyProfit >= 0 ? '#fff' : '#FFC9C4';
     h += `<div class="site-block" style="background:${lm.colour};border:2.5px solid #1A1A1A;box-shadow:0 2px 6px rgba(0,0,0,0.12)" onclick="openSiteSummary('${s.id}')">
       <div class="leader-tag">${lm.name}</div>
       <div class="sb-name" style="color:#fff">${s.name}</div>
-      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">Day ${p.days} on site${extra}</div>
-      <div class="sb-ppd-lbl" style="color:rgba(255,255,255,0.65)">Profit / day</div>
-      <div class="sb-ppd disp" style="color:${ppdCol}">${R(p.dailyProfit)}</div>
-      <div class="sb-days" style="color:rgba(255,255,255,0.6)">Net ${R(p.net)} · ${p.margin.toFixed(0)}%</div>
+      <div class="sb-meta" style="color:rgba(255,255,255,0.65)">${s.client||'No client'}</div>
+      <div class="sb-days disp" style="color:#fff;font-weight:800;margin-top:8px;font-size:15px">Day ${henkDays(s)} on site${extra}</div>
     </div>`;
   });
   h += `</div>`;
@@ -7926,6 +7921,7 @@ function paintSiteSummaryBody(){
   const dailyProfit    = days > 0 ? netProfit / days : 0;
   const leaderName     = henkLeaderName(s.team_leader);
   const pos            = netProfit >= 0;
+  const owner          = (CURRENT_ROLE === 'owner');   // Henk & leaders never see profit, margin, overheads, invoicing or complete
 
   let h = '';
 
@@ -7941,31 +7937,18 @@ function paintSiteSummaryBody(){
   h += `<div style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
       <div class="disp" style="font-size:21px;font-weight:800;color:#1A1A1A;line-height:1.2">${s.name}</div>
-      <button onclick="openSiteInfo('${s.id}', true, true)" style="flex:0 0 auto;background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">✎ Edit details</button>
+      ${owner ? `<button onclick="openSiteInfo('${s.id}', true, true)" style="flex:0 0 auto;background:#1A1A1A;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">✎ Edit details</button>` : ''}
     </div>
     <div style="font-size:12px;color:#8A8470;margin-top:3px">${s.client||'No client'} · ${leaderName}</div>
     <div style="font-size:11.5px;color:#8A8470;margin-top:2px">${datesLine}</div>
     ${s.status!=='done' ? `<button onclick="siteToggleUpcoming('${s.id}',${notStarted?'false':'true'})" style="margin-top:8px;background:${notStarted?'#1FA24C':'#F0EEE6'};color:${notStarted?'#fff':'#5C5748'};border:none;border-radius:8px;padding:7px 13px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer">${notStarted?'▶ Start this site now':'⏸ Mark as not started (upcoming)'}</button>` : ''}
     ${(function(){ const dd=s.details||{}; const poN=(dd.purchase_orders||[]).length, invN=(dd.invoices||[]).length;
       const bits=[]; if(dd.quote_url) bits.push('quotation ✓'); if(poN) bits.push(poN+' purchase order'+(poN!==1?'s':'')); if(invN) bits.push(invN+' invoice'+(invN!==1?'s':''));
-      return bits.length ? `<div style="font-size:11px;color:#1A7A4A;font-weight:800;margin-top:5px">🧾 On file for invoicing: ${bits.join(' · ')} — tap “💵 Invoice client”</div>` : ''; })()}
+      return (owner && bits.length) ? `<div style="font-size:11px;color:#1A7A4A;font-weight:800;margin-top:5px">🧾 On file for invoicing: ${bits.join(' · ')} — tap “💵 Invoice client”</div>` : ''; })()}
   </div>`;
 
-  // ── LIVE SNAPSHOT HEADLINE ──
-  h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
-    <div style="margin-bottom:10px">
-      <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase;margin-bottom:10px">Live snapshot — profit per day on site</div>
-      <div style="display:flex;gap:7px;flex-wrap:wrap">
-        <button onclick="openSitePOs('${s.id}')" style="background:rgba(26,122,74,0.28);color:#fff;border:1px solid rgba(120,220,160,0.5);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">💵 Invoice client${sitePOs(s).length?' ('+sitePOs(s).length+' PO)':''}</button>
-        <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Supplier invoices</button>
-        <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
-        <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
-        <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
-        <button onclick="openSiteCompletion('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🏁 Completion Report</button>
-        <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
-      </div>
-    </div>
-    ${notStarted
+  // ── LIVE SNAPSHOT HEADLINE ──  (profit/net/margin/targets/complete = OWNER ONLY; Henk sees a plain status)
+  const midOwner = `${notStarted
       ? (futureStart
           ? `<div class="disp" style="font-size:23px;font-weight:800;color:#E5B96B;line-height:1.15">Starts ${startTxt}</div>
              <div style="font-size:11.5px;color:rgba(255,255,255,0.6);margin-top:5px">Team starts in ${untilStart} day${untilStart!==1?'s':''} — no days or costs are counted until then.</div>`
@@ -7995,13 +7978,33 @@ function paintSiteSummaryBody(){
         : `<div style="margin-top:14px">
           <div style="font-size:11.5px;font-weight:700;color:rgba(255,255,255,0.65);margin-bottom:9px">Started ${s.started?fd(s.started):'—'} → still running</div>
           <button onclick="openCompleteProject('${s.id}')" style="width:100%;background:#B2342A;color:#fff;border:none;border-radius:10px;padding:13px;font-size:13.5px;font-weight:800;letter-spacing:0.4px;cursor:pointer;font-family:inherit">✓ PROJECT COMPLETE</button>
-        </div>`)}
+        </div>`)}`;
+  const midHenk = `<div style="margin-top:2px">
+      <div class="disp" style="font-size:22px;font-weight:800;color:#fff;line-height:1.15">${notStarted ? (futureStart ? ('Starts '+startTxt) : 'Upcoming — not started') : (s.status==='done' ? 'Completed' : ('Day '+days+' on site'))}</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.65);margin-top:6px">${s.status==='done' ? ('Started '+(s.started?fd(s.started):'—')+' → Completed '+(s.end_date?fd(s.end_date):'—')) : (notStarted ? (futureStart?('Team starts in '+untilStart+' day'+(untilStart!==1?'s':'')):'Not started yet') : ('Started '+(s.started?fd(s.started):'—')+' · still running'))}</div>
+    </div>`;
+  const invBtn = owner ? `<button onclick="openSitePOs('${s.id}')" style="background:rgba(26,122,74,0.28);color:#fff;border:1px solid rgba(120,220,160,0.5);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">💵 Invoice client${sitePOs(s).length?' ('+sitePOs(s).length+' PO)':''}</button>` : '';
+  h += `<div style="background:#242424;border-radius:14px;padding:18px;margin-bottom:16px;color:#fff">
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:rgba(255,255,255,0.5);text-transform:uppercase;margin-bottom:10px">${owner ? 'Live snapshot — profit per day on site' : 'Site snapshot'}</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        ${invBtn}
+        <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Supplier invoices</button>
+        <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
+        <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
+        <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
+        <button onclick="openSiteCompletion('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🏁 Completion Report</button>
+        <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
+      </div>
+    </div>
+    ${owner ? midOwner : midHenk}
   </div>`;
 
   // ── SITE PROFIT SHEET — one clickable list, no repeated blocks ──
   const overLabour = labourAgreed > 0 && labourPaid > labourAgreed;
   const overMat    = materialActual > materialBudget;
-  h += `<div class="section-lbl">Site profit sheet</div>
+  if(owner){
+    h += `<div class="section-lbl">Site profit sheet</div>
     <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
       ${profitRow({ label:'Total quote (ex-VAT)', val:quote, bg:'#E4F3E8', strong:true, sub:'the income for this job' })}
       ${profitRow({ label:'Total site overheads', val:totalExpenses, sign:'–', bg:'#FCEBD8', strong:true, sub:'every cost below, added together' })}
@@ -8029,6 +8032,19 @@ function paintSiteSummaryBody(){
         <span class="disp" style="font-weight:800;color:${pos?'#3F5A4C':'#B2342A'}">${R(dailyProfit)} / day</span></div>
       <div style="font-size:10.5px;color:#A39E8C;margin:8px 2px 4px">Tap any line to open or edit it. Every figure is live — change labour, add an invoice or another day passes, and this recalculates.</div>
     </div>`;
+  } else {
+    // Henk & leaders: material + labour only — no quote, overheads, profit, margin or profit/day.
+    h += `<div class="section-lbl">Material &amp; labour</div>
+    <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
+      ${profitRow({ label:'Labour (agreed team total)', val:labourAgreed,
+        sub: labourAgreed>0 ? (`paid ${R(labourPaid)} · ${R(labourAgreed-labourPaid)} still to pay · tap to submit a labour amount`) : 'tap to set the agreed labour total',
+        onclick:`openLabourEditor('${s.id}')` })}
+      ${profitRow({ label:'Material actual', val:materialActual, over:overMat,
+        sub:`tap for the ${data.invoices.length} supplier invoice${data.invoices.length!==1?'s':''}`,
+        onclick:`summaryInvoices('${s.id}')` })}
+      <div style="font-size:10.5px;color:#A39E8C;margin:8px 2px 4px">Tap labour to submit an amount; tap material to see or add the supplier invoices.</div>
+    </div>`;
+  }
 
   // Stock sheet removed — products now come only from the 📦 Products button
   // (built from the invoice line items, so they line up with the invoices exactly).
