@@ -223,41 +223,8 @@ table.cmp{border-collapse:collapse;width:100%}
       <div class="chk" data-surf="roof" onclick="tSurf(this)"><span class="box">✓</span> Roof</div>
     </div>
 
-    <div class="card" id="measureCard" style="display:none">
-      <div class="step">📍 Measure your house — for an exact price (optional)</div>
-      <div class="q" style="font-weight:600;color:#41505f;font-size:13px;line-height:1.5">Type your address and shape the outline over your roof. We'll use your <b>exact</b> roof, ceiling &amp; outside-wall size. Inside walls still use the quick estimate below.</div>
-      <button class="cta2" id="measureBtn" onclick="openMeasure()" style="margin-top:10px">📍 Measure my house</button>
-      <div id="measureWrap" style="display:none;margin-top:12px">
-        <div id="pcAcbox" class="acbox"></div>
-        <button class="locbtn2" onclick="pcUseLocation()">📍 Or use my current location (stand at your house)</button>
-        <div id="pcMap"></div>
-        <div class="mlive" id="pcLiveArea">📐 Tap the corners of your roof to measure…</div>
-        <div class="hint" id="pcTip">👆 <b>Tap each corner of your roof</b>, going around the outside.</div>
-        <div class="mbtns" id="pcDrawBtns">
-          <button class="locbtn2" onclick="pcUndo()" style="background:#5a6b7b">↩ Undo last corner</button>
-          <button class="locbtn2" onclick="pcDone()" style="background:#37c07a">✓ Done tracing</button>
-        </div>
-        <button class="locbtn2" id="pcStartOverBtn" onclick="pcStartOver()" style="background:#5a6b7b;display:none">↺ Start over</button>
-        <div class="mrow">
-          <div class="mseg"><div class="mlbl">Roof type</div><div class="mopts">
-            <div class="mopt sel" id="pcRoofTiled" onclick="pcSetRoof('tiled')">Tiled</div>
-            <div class="mopt" id="pcRoofCorr" onclick="pcSetRoof('corrugated')">Corrugated</div>
-          </div></div>
-          <div class="mseg"><div class="mlbl">Storeys</div><div class="mopts">
-            <div class="mopt sel" id="pcStoreySingle" onclick="pcSetStorey(false)">Single</div>
-            <div class="mopt" id="pcStoreyDouble" onclick="pcSetStorey(true)">Double</div>
-          </div></div>
-        </div>
-        <div class="mres">
-          <div class="mbox g"><div class="mk">Roof to paint</div><div class="mv" id="pcRoofA">—</div></div>
-          <div class="mbox"><div class="mk">Outside walls</div><div class="mv" id="pcWallA">—</div></div>
-        </div>
-        <div class="mdone" id="pcNote">✓ Measured. <b>Outside walls</b> = perimeter × wall height, <b>less 15% for windows</b> — no paint is allowed or included for painting the windows themselves. <b>Ceilings</b> ≈ <span id="pcCeilA">—</span>. Inside walls still use your home-size estimate below.</div>
-      </div>
-    </div>
-
     <div class="card">
-      <div class="step">Step 2 · Your home (no measuring)</div>
+      <div class="step">Step 2 · Your home</div>
       <div class="q">Home size</div>
       <div class="opts" id="homeOpts">
         <div class="opt q4" data-home="1bed" onclick="tHome(this)">1-bed</div>
@@ -276,7 +243,13 @@ table.cmp{border-collapse:collapse;width:100%}
         <div class="opt sel" data-bath="1" onclick="tBath(this)">1</div>
         <div class="opt" data-bath="2plus" onclick="tBath(this)">2 or more</div>
       </div>
-      <div class="chk" data-extra="storey" id="storeyChk" onclick="tExtra(this)" style="margin-top:12px;display:none"><span class="box">✓</span> Double storey (more outside wall)</div>
+      <div id="storeyQ" style="display:none">
+        <div class="q" style="margin-top:14px">Storeys</div>
+        <div class="opts" id="storeyOpts">
+          <div class="opt sel" data-storey="single" onclick="tStorey(this)">Single</div>
+          <div class="opt" data-storey="double" onclick="tStorey(this)">Double</div>
+        </div>
+      </div>
     </div>
 
     <div class="card cond" id="wallCard">
@@ -302,6 +275,29 @@ table.cmp{border-collapse:collapse;width:100%}
       </div>
       <div class="hint" id="roofHint">Unpainted tiles drink up to 3× the paint (about 40–50 m² per 20L, one thick coat). Metal covers much further.</div>
       <div class="chk" data-extra="rust" onclick="tExtra(this)" id="rustChk" style="margin-top:12px;display:none"><span class="box">✓</span> There is rust on the roof</div>
+    </div>
+
+    <div class="card" id="measureCard" style="display:none">
+      <div class="step">📐 Want an exact price? <span style="color:#8494a3;font-weight:600;text-transform:none;letter-spacing:0">(optional)</span></div>
+      <div class="q" style="font-weight:600;color:#41505f;font-size:13px;line-height:1.5">The quick estimate above is used by default. For a <b>precise</b> roof, ceiling &amp; outside-wall size, trace your roof on the map.</div>
+      <button class="cta2" id="measureBtn" onclick="openMeasure()" style="margin-top:10px">📍 Measure my house</button>
+      <div id="measureWrap" style="display:none;margin-top:12px">
+        <div id="pcAcbox" class="acbox"></div>
+        <button class="locbtn2" onclick="pcUseLocation()">📍 Or use my current location (stand at your house)</button>
+        <div id="pcMap"></div>
+        <div class="mlive" id="pcLiveArea">📐 Tap the corners of your roof to measure…</div>
+        <div class="hint" id="pcTip">👆 <b>Tap each corner of your roof</b>, going around the outside.</div>
+        <div class="mbtns" id="pcDrawBtns">
+          <button class="locbtn2" onclick="pcUndo()" style="background:#5a6b7b">↩ Undo last corner</button>
+          <button class="locbtn2" onclick="pcDone()" style="background:#37c07a">✓ Done tracing</button>
+        </div>
+        <button class="locbtn2" id="pcStartOverBtn" onclick="pcStartOver()" style="background:#5a6b7b;display:none">↺ Start over</button>
+        <div class="mres">
+          <div class="mbox g"><div class="mk">Roof to paint</div><div class="mv" id="pcRoofA">—</div></div>
+          <div class="mbox"><div class="mk">Outside walls</div><div class="mv" id="pcWallA">—</div></div>
+        </div>
+        <div class="mdone" id="pcNote">✓ Measured. <b>Outside walls</b> = perimeter × wall height, <b>less 15% for windows</b>. <b>Ceilings</b> ≈ <span id="pcCeilA">—</span>. Inside walls use your home-size estimate.</div>
+      </div>
     </div>
 
     <button class="cta" onclick="calc()">Show me the fair price →</button>
@@ -543,10 +539,9 @@ function syncCards(){
   document.getElementById('wallCard').classList.toggle('show', state.surf.interior||state.surf.exterior);
   document.getElementById('roofCard').classList.toggle('show', state.surf.roof);
   document.getElementById('measureCard').style.display = (state.surf.roof||state.surf.exterior||state.surf.ceiling) ? 'block' : 'none';
-  // double storey only affects outside walls
-  const sc=document.getElementById('storeyChk');
-  sc.style.display = state.surf.exterior ? 'flex' : 'none';
+  document.getElementById('storeyQ').style.display = (state.surf.exterior||state.surf.roof||state.surf.ceiling) ? 'block' : 'none';
 }
+function tStorey(el){ document.querySelectorAll('#storeyOpts .opt').forEach(o=>o.classList.remove('sel')); el.classList.add('sel'); state.storey = el.dataset.storey==='double'; if(pcGoogleReady) pcRecompute(); }
 
 // ── Measure my house (Google Maps — tap each corner) ───────────
 const PC_GOOGLE_KEY = 'AIzaSyDtTS0nnGQEYf0_Kmr2Sqop3Iaoa6E3wTc';
@@ -650,21 +645,6 @@ function pcRecompute(){
   if(lv) lv.innerHTML = has
     ? ('📐 Area measured: <b>'+state.measuredFootprint+' m²</b>' + (pcMode==='draw' ? ' &nbsp;·&nbsp; tap the green start-dot or ✓ Done to close' : ''))
     : '📐 Tap the corners of your roof to measure…';
-}
-function pcSetRoof(t){
-  state.roof = t;
-  document.getElementById('pcRoofTiled').classList.toggle('sel', t==='tiled');
-  document.getElementById('pcRoofCorr').classList.toggle('sel', t==='corrugated');
-  document.querySelectorAll('#roofOpts .opt').forEach(o=>o.classList.toggle('sel', o.dataset.roof===t));
-  const rc=document.getElementById('rustChk'); if(rc) rc.style.display = t==='corrugated' ? 'flex' : 'none';
-  pcRecompute();
-}
-function pcSetStorey(v){
-  state.storey = v;
-  document.getElementById('pcStoreySingle').classList.toggle('sel', !v);
-  document.getElementById('pcStoreyDouble').classList.toggle('sel', v);
-  const sc=document.getElementById('storeyChk'); if(sc) sc.classList.toggle('sel', v);
-  pcRecompute();
 }
 function pcUseLocation(){
   if(!navigator.geolocation) return;
