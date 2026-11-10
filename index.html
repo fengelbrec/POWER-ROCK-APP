@@ -9351,12 +9351,31 @@ function openIncomeNewInvoice(){
     <div style="font-size:10.5px;color:#A39E8C;margin:-2px 0 12px;padding-left:2px">A job that hasn't started yet and you have the PO. Add it here (upload the PO, set a future start date), then invoice the deposit. Days &amp; costs only start counting once the team starts.</div>
     <button class="cta-btn" style="margin-bottom:6px;background:#5C5748" onclick="incomeGoInvoice('site_general_oneoff')">➕ Once-off invoice (no project site)</button>
     <div style="font-size:10.5px;color:#A39E8C;margin:-2px 0 14px;padding-left:2px">For supply-only / pass-through jobs with no site — type the client &amp; amount.</div>`;
+  // Search box — type a few letters to filter the list (it's getting long).
+  h+=`<input id="invSiteSearch" type="text" inputmode="search" autocomplete="off" placeholder="🔍 Search sites — type a few letters" oninput="invSiteFilter()" style="width:100%;box-sizing:border-box;height:46px;border:1.5px solid #D8D3C6;border-radius:10px;padding:0 14px;font-size:15px;font-family:inherit;margin-bottom:12px;background:#FBFAF6"/>`;
+  h+=`<div id="invSiteList">`;
   if(!sites.length){ h+=`<div style="color:#A39E8C;padding:10px 0">No sites yet.</div>`; }
   sites.forEach(function(s){
-    h+=`<button class="cta-btn ghost" style="margin-bottom:8px" onclick="incomeGoInvoice('${s.id}')">${esc(s.name||'(unnamed site)')}</button>`;
+    const nm=s.name||'(unnamed site)';
+    h+=`<button class="cta-btn ghost invSiteBtn" data-name="${esc(nm.toLowerCase())}" style="margin-bottom:8px" onclick="incomeGoInvoice('${s.id}')">${esc(nm)}</button>`;
   });
+  h+=`<div id="invSiteNone" style="display:none;color:#A39E8C;padding:14px 2px;font-size:12.5px">No site matches that. Check the spelling, or use “New site” above.</div>`;
+  h+=`</div>`;
   h+=`<button class="cta-btn ghost" style="margin-top:6px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
   $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+// Live-filter the invoice site list as you type.
+function invSiteFilter(){
+  const inp=$('invSiteSearch'); if(!inp) return;
+  const q=inp.value.trim().toLowerCase();
+  const btns=document.querySelectorAll('#invSiteList .invSiteBtn');
+  let shown=0;
+  btns.forEach(function(b){
+    const match=!q || (b.getAttribute('data-name')||'').indexOf(q)>-1;
+    b.style.display=match?'':'none';
+    if(match) shown++;
+  });
+  const none=$('invSiteNone'); if(none) none.style.display=(btns.length&&shown===0)?'block':'none';
 }
 // From the Invoice section: register a brand-new (not-yet-started) site, then jump straight to invoicing its deposit.
 function incomeNewSiteInvoice(){
