@@ -9531,23 +9531,55 @@ const QUOTE_AREAS = [
       {desc:'Preparation & painting of ceilings x 2 coats {product}', product:'Prominent Paint Wall & Ceiling', lump:false} ] },
   { key:'ext_plaster', label:'Exterior Plastered Surfaces', lines:[
       {desc:'High Pressure Wash all plastered walls & repair damaged plaster work to match existing', product:'', lump:false},
-      {desc:'Preparation & painting of plastered surfaces x 2 coats {product} (colour of choice)', product:'Prominent Paint Select Sheen', lump:false} ] },
+      {desc:'Preparation & painting of plastered surfaces x 2 coats {product} (colour of choice)', product:'Prominent Paint Select Sheen', lump:false} ],
+    scope:[
+      'High pressure wash all plastered surfaces & remove all flaky / failing paint coatings',
+      'Chip off badly damaged, previously plastered areas',
+      'Chip open cracks bigger than 3mm and replaster',
+      'Replaster affected areas with a cement mixture of plaster sand, cement, Plasterkey (adhesion) & cement additive (waterproofing)',
+      'Float newly plastered areas to match the current plastered finish',
+      'Apply 1 x complete coat Prominent Paint Dampcure to all bare & newly plastered areas',
+      'Apply Prominent Paint Fibreseal to hairline cracks & horizontal areas for waterproofing',
+      'Seal current expansion joints with polyurethane sealer',
+      'Apply Den Breven acrylic sealant in all gaps between aluminium & plastered surfaces',
+      'Apply 2 x coats Prominent Paint Select Sheen to all plastered exterior surfaces (colour of choice)' ] },
   { key:'ext_steel', label:'Exterior Steel Surfaces', lines:[
       {desc:'Clean / degrease all steel surfaces & patch prime affected areas with {product}', product:'Prominent Paint Rust Primer', lump:false},
       {desc:'Recoat complete surface - {product} (colour of choice)', product:'Prominent Paint Premium Gloss Enamel', lump:false} ] },
   { key:'ext_ceilings', label:'Exterior Ceiling Surfaces', lines:[
       {desc:'Prepare exterior ceilings / soffits & spot prime', product:'', lump:false},
-      {desc:'Preparation & painting of exterior ceilings x 2 coats {product}', product:'Prominent Paint Wall & Ceiling', lump:false} ] },
+      {desc:'Preparation & painting of exterior ceilings x 2 coats {product}', product:'Prominent Paint Wall & Ceiling', lump:false} ],
+    scope:[
+      'High pressure wash / clean all ceiling surfaces & remove all flaky / failing paint coatings',
+      'Scrape & sand all loose & flaking areas back to a sound surface',
+      'Fill & repair cracks & damaged areas to match the existing finish',
+      'Spot prime all bare, repaired & water-stained areas',
+      'Apply 2 x coats Prominent Paint Wall & Ceiling to all ceiling surfaces (colour of choice)' ] },
   { key:'roof_corr', label:'Roof Surfaces - Corrugated', lines:[
       {desc:'High pressure wash & degrease complete roof surface - {product}', product:'Prominent Paint Etch Cleaner', lump:false},
       {desc:'Application of 1 x complete coat - {product} (bare / rusted metal)', product:'Prominent Paint Rust Primer', lump:false},
-      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ] },
+      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ],
+    scope:[
+      'High pressure wash & degrease the complete roof surface with Prominent Paint Etch Cleaner & rinse with clean water',
+      'Degrease & clean all steel surfaces with Prominent Paint Etch Cleaner',
+      'Patch / spot prime all affected & rusted areas with 1 x full coat Prominent Paint Rust Primer',
+      'Apply 1 x full coat primer - Prominent Paint Ultraprime to the complete roof surface',
+      'Apply 2 x full coats Prominent Paint Premium Roof Paint to the complete roof surface (colour of choice)' ] },
   { key:'roof_chromadek', label:'Roof Surfaces - Chromodek', lines:[
       {desc:'High pressure wash & degrease complete roof surface - {product}', product:'Prominent Paint Etch Cleaner', lump:false},
-      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ] },
+      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ],
+    scope:[
+      'High pressure wash & degrease the complete Chromadek roof surface with Prominent Paint Etch Cleaner & rinse with clean water',
+      'Patch / spot prime any affected & rusted areas with Prominent Paint Rust Primer',
+      'Apply 1 x full coat primer - Prominent Paint Ultraprime to the complete roof surface',
+      'Apply 2 x full coats Prominent Paint Premium Roof Paint to the complete roof surface (colour of choice)' ] },
   { key:'roof_tiles', label:'Roof Surfaces - Tiles', lines:[
       {desc:'High pressure wash & treat complete tiled roof surface', product:'', lump:false},
-      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ] },
+      {desc:'Application of 2 x complete coatings - {product}', product:'Prominent Paint Premium Roof Paint', lump:false} ],
+    scope:[
+      'High pressure wash & treat the complete tiled roof surface & allow to dry',
+      'Apply 1 x full coat primer - Prominent Paint Ultraprime to the complete roof surface',
+      'Apply 2 x full coats Prominent Paint Premium Roof Paint to the complete roof surface (colour of choice)' ] },
   { key:'gutters', label:'Gutters & Down Pipes', lines:[
       {desc:'Apply 1 x coat on complete gutter: {product}', product:'Aquagard Rust & Etch Cleaner (spray)', lump:false},
       {desc:'Apply 1 x coat on complete gutter - {product}', product:'Aquagard Bitumen Primer', lump:false},
@@ -9706,9 +9738,25 @@ function renderQuotePhotos(){
 function qeAddArea(key){ const t=quoteAreaByKey(key); if(!t) return;
   QE.areas.push({ key:t.key, label:t.label, heading:t.label.toUpperCase(),
     lines:t.lines.map(function(l){ return { desc:l.desc, product:l.product||'', area:0, rate:0, amount:0, lump:!!l.lump }; }) });
-  renderQuotePricing();
+  renderQuotePricing(); qeSyncScope();
 }
-function qeRemoveArea(ai){ QE.areas.splice(ai,1); renderQuotePricing(); }
+function qeRemoveArea(ai){ QE.areas.splice(ai,1); renderQuotePricing(); qeSyncScope(); }
+// Detailed scope-of-works bullets for an area (null if it has none, e.g. Travel / Scaffolding).
+function qeScopeForArea(a){ const t=quoteAreaByKey(a.key); return (t && Array.isArray(t.scope)) ? t.scope.slice() : null; }
+// Auto-fill the Scope-of-works box from the areas chosen — each scope-bearing area adds its block.
+function qeSyncScope(){
+  const ta=$('q_scope'); if(!ta) return;
+  let count=0; QE.areas.forEach(function(a){ if(qeScopeForArea(a)) count++; });
+  if(!count) return;                               // nothing to drive it — leave the box as-is
+  const out=[];
+  QE.areas.forEach(function(a){
+    const sc=qeScopeForArea(a); if(!sc) return;
+    if(count>1) out.push((a.heading||a.label||'').toUpperCase());   // sub-heading only when >1 area
+    sc.forEach(function(l){ out.push(l); });
+    if(count>1) out.push('');
+  });
+  ta.value = out.join('\n').replace(/\n+$/,'');
+}
 function qeAddLine(ai){ QE.areas[ai].lines.push({desc:'',product:'',area:0,rate:0,amount:0,lump:false}); renderQuotePricing(); }
 function qeRemoveLine(ai,li){ QE.areas[ai].lines.splice(li,1); renderQuotePricing(); }
 function qeHeadingSet(ai,v){ QE.areas[ai].heading=v; }
@@ -9934,7 +9982,13 @@ function quoteInnerHtml(q){
     ${cover}
     ${quotePricingTableHtml(q)}
     ${(function(){
-      const bul=function(t){ return String(t==null?'':t).split('\n').map(function(x){return x.trim();}).filter(Boolean).map(function(x){return '<div style="display:flex;margin:0 0 4px"><div style="width:16px;flex:0 0 16px">&bull;</div><div style="flex:1">'+e(x)+'</div></div>';}).join(''); };
+      const bul=function(t){ return String(t==null?'':t).split('\n').map(function(x){return x.trim();}).filter(Boolean).map(function(x){
+        const letters=x.replace(/[^A-Za-z]/g,'');
+        if(letters.length>1 && x===x.toUpperCase() && x.length<60){   // an all-caps line = an area sub-heading
+          return '<div style="font-weight:bold;text-decoration:underline;margin:10px 0 5px;font-size:10.5pt">'+e(x)+'</div>';
+        }
+        return '<div style="display:flex;margin:0 0 4px"><div style="width:16px;flex:0 0 16px">&bull;</div><div style="flex:1">'+e(x)+'</div></div>';
+      }).join(''); };
       const scope = q.scope!=null ? q.scope : QUOTE_SCOPE_DEFAULT;
       const terms = q.terms!=null ? q.terms : QUOTE_TERMS_DEFAULT;
       let o='';
