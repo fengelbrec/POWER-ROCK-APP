@@ -9643,9 +9643,14 @@ function renderQuoteEditor(editId){
   } else {
     QE = { areas:[], photos:[], discount:0 };
   }
-  // Scope & terms as editable line arrays (each line = its own row you can edit / remove).
-  QE.scope = String(existing && existing.scope!=null ? existing.scope : QUOTE_SCOPE_DEFAULT).split('\n');
+  // Terms (GENERAL) as editable line rows.
   QE.terms = String(existing && existing.terms!=null ? existing.terms : QUOTE_TERMS_DEFAULT).split('\n');
+  // Make sure every chosen surface carries its own scope list + photos (migrate older quotes).
+  (QE.areas||[]).forEach(function(a){
+    if(!Array.isArray(a.scope)){ const t=quoteAreaByKey(a.key); if(t && Array.isArray(t.scope)) a.scope=t.scope.slice(); }
+    if(!Array.isArray(a.photos)) a.photos=[];
+    a.noPics=!!a.noPics;
+  });
   const numStr = existing ? existing.number_str : quoteNumStr(nextQuoteNumber());
   const gk = existing ? (existing.group_key||'none') : 'none';
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
@@ -9696,11 +9701,11 @@ function renderQuoteEditor(editId){
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>VAT 15%</span><span class="disp" id="q_pv_vat">R 0.00</span></div>
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="q_pv_tot">R 0.00</span></div>
     </div>
-    ${sec('Scope of works & terms (edit if needed)')}
-    <label style="${lbl}">Scope of works — edit any line, remove with ×, or add a line</label>
-    <div id="q_scope_rows" style="margin-bottom:4px"></div>
-    <button class="cta-btn ghost" style="height:36px;font-size:11.5px;margin:2px 0 14px" onclick="qeScopeAdd()">＋ Add scope line</button>
-    <label style="${lbl}">Terms &amp; inclusions — edit any line, remove with ×, or add a line</label>
+    ${sec('Scope of works — per surface (photos + method)')}
+    <div style="font-size:10.5px;color:#A39E8C;margin:-2px 0 10px">Each surface you added above gets its own scope &amp; photos — just like your real quotes. Photos print the same size, 3 per row.</div>
+    <div id="q_surfaces"></div>
+    ${sec('General — terms &amp; inclusions')}
+    <label style="${lbl}">Edit any line, remove with ×, or add a line</label>
     <div id="q_terms_rows" style="margin-bottom:4px"></div>
     <button class="cta-btn ghost" style="height:36px;font-size:11.5px;margin:2px 0 14px" onclick="qeTermsAdd()">＋ Add terms line</button>
 
@@ -9709,7 +9714,7 @@ function renderQuoteEditor(editId){
   $('siteDetailContent').innerHTML=h;
   renderQuotePhotos();
   renderQuotePricing();
-  renderQuoteScope();
+  renderQuoteSurfaces();
   renderQuoteTerms();
 }
 
@@ -9744,25 +9749,13 @@ function renderQuotePhotos(){
 // ── Pricing areas & lines ──
 function qeAddArea(key){ const t=quoteAreaByKey(key); if(!t) return;
   QE.areas.push({ key:t.key, label:t.label, heading:t.label.toUpperCase(),
-    lines:t.lines.map(function(l){ return { desc:l.desc, product:l.product||'', area:0, rate:0, amount:0, lump:!!l.lump }; }) });
-  renderQuotePricing(); qeSyncScope();
+    lines:t.lines.map(function(l){ return { desc:l.desc, product:l.product||'', area:0, rate:0, amount:0, lump:!!l.lump }; }),
+    scope:(Array.isArray(t.scope)?t.scope.slice():undefined), photos:[], noPics:false });
+  renderQuotePricing(); renderQuoteSurfaces();
 }
-function qeRemoveArea(ai){ QE.areas.splice(ai,1); renderQuotePricing(); qeSyncScope(); }
-// Detailed scope-of-works bullets for an area (null if it has none, e.g. Travel / Scaffolding).
-function qeScopeForArea(a){ const t=quoteAreaByKey(a.key); return (t && Array.isArray(t.scope)) ? t.scope.slice() : null; }
-// Auto-fill the Scope-of-works lines from the areas chosen — each scope-bearing area adds its block.
-function qeSyncScope(){
-  if(!QE) return;
-  let count=0; QE.areas.forEach(function(a){ if(qeScopeForArea(a)) count++; });
-  if(!count) return;                               // nothing to drive it — leave the lines as-is
-  const out=[];
-  QE.areas.forEach(function(a){
-    const sc=qeScopeForArea(a); if(!sc) return;
-    if(count>1) out.push((a.heading||a.label||'').toUpperCase());   // sub-heading only when >1 area
-    sc.forEach(function(l){ out.push(l); });
-  });
-  QE.scope = out; renderQuoteScope();
-}
+function qeRemoveArea(ai){ QE.areas.splice(ai,1); renderQuotePricing(); renderQuoteSurfaces(); }
+// A surface shows in the Scope-of-works section when it carries a scope list (plastered / ceiling / roof).
+function qeAreaHasScope(a){ return a && Array.isArray(a.scope); }
 // ── Editable line rows for Scope of works & Terms ──
 function qeLineRowHtml(val, i, setFn, rmFn){
   const v=String(val==null?'':val);
@@ -9772,14 +9765,51 @@ function qeLineRowHtml(val, i, setFn, rmFn){
     <button onclick="${rmFn}(${i})" title="remove this line" style="background:none;border:1px solid #E9C2BE;color:#B2342A;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto;width:34px;height:38px;border-radius:8px;line-height:1">×</button>
   </div>`;
 }
-function renderQuoteScope(){ const box=$('q_scope_rows'); if(!box) return;
-  box.innerHTML = (QE.scope&&QE.scope.length) ? QE.scope.map(function(v,i){ return qeLineRowHtml(v,i,'qeScopeSet','qeScopeRemove'); }).join('')
-    : '<div style="font-size:11.5px;color:#A39E8C;padding:2px 0 6px">No scope lines yet — pick an area above, or add a line.</div>';
+// ── Scope of works, per surface (each surface = heading + its own photos + method bullets) ──
+function renderQuoteSurfaces(){
+  const box=$('q_surfaces'); if(!box) return;
+  if(!QE.areas.some(qeAreaHasScope)){ box.innerHTML='<div style="font-size:11.5px;color:#A39E8C;padding:2px 0 8px">Pick a surface above (Plastered / Ceiling / Roof…) — its scope &amp; photos appear here.</div>'; return; }
+  box.innerHTML = QE.areas.map(function(a,ai){ return qeAreaHasScope(a) ? qeSurfaceEditorHtml(a,ai) : ''; }).join('');
 }
-function qeScopeSet(i,v){ if(QE.scope) QE.scope[i]=v; }
-function qeScopeRemove(i){ QE.scope.splice(i,1); renderQuoteScope(); }
-function qeScopeAdd(){ if(!QE.scope) QE.scope=[]; QE.scope.push(''); renderQuoteScope();
-  setTimeout(function(){ const b=$('q_scope_rows'); if(b){ const ins=b.querySelectorAll('input'); if(ins.length) ins[ins.length-1].focus(); } },0); }
+function qeSurfaceEditorHtml(a,ai){
+  const lbl='font-size:10px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
+  let pics;
+  if(a.noPics){ pics='<div style="font-size:11.5px;color:#8A8470;padding:3px 0 2px">🚫 No photos for this surface.</div>'; }
+  else if(a.photos&&a.photos.length){ pics='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">'+a.photos.map(function(u,pi){
+      return '<div style="position:relative;width:70px"><img src="'+u+'" style="width:70px;height:52px;object-fit:cover;border-radius:6px;border:1px solid #E6E2D8;display:block"/><button onclick="qeAreaRemovePhoto('+ai+','+pi+')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#8B1A1A;color:#fff;font-size:11px;font-weight:800;line-height:18px;padding:0;cursor:pointer">×</button></div>'; }).join('')+'</div>'; }
+  else { pics='<div style="font-size:11px;color:#A39E8C;padding:2px 0 6px">No photos added yet.</div>'; }
+  const photoBtns='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
+    (a.noPics
+      ? '<button class="cta-btn ghost" style="height:34px;font-size:11px;margin:0;padding:0 12px;width:auto" onclick="qeAreaToggleNoPics('+ai+')">↩ Allow photos</button>'
+      : '<label class="cta-btn ghost" style="height:34px;font-size:11px;margin:0;padding:0 12px;width:auto;display:inline-flex;align-items:center;cursor:pointer">📷 Add photos<input type="file" accept="image/*" multiple style="display:none" onchange="qeAreaAddPhotos('+ai+',this)"/></label>'+
+        '<button class="cta-btn ghost" style="height:34px;font-size:11px;margin:0;padding:0 12px;width:auto" onclick="qeAreaToggleNoPics('+ai+')">🚫 No pics</button>')+
+    '</div>';
+  const rows=(a.scope&&a.scope.length)? a.scope.map(function(v,i){ return qeAreaScopeRowHtml(ai,v,i); }).join('')
+    : '<div style="font-size:11px;color:#A39E8C;padding:2px 0 6px">No scope lines — add one below.</div>';
+  return '<div class="ledger-card" style="padding:12px 14px;margin-bottom:10px">'+
+    '<div style="font-weight:800;font-size:12.5px;color:#8B1A1A;margin-bottom:8px">'+esc(a.heading||a.label||'')+'</div>'+
+    '<label style="'+lbl+'">Photos — print the same size, 3 per row</label>'+pics+photoBtns+
+    '<label style="'+lbl+'">Scope of works — edit, remove ×, or add a line</label>'+rows+
+    '<button class="cta-btn ghost" style="height:34px;font-size:11px;margin:4px 0 0" onclick="qeAreaScopeAddLine('+ai+')">＋ Add scope line</button>'+
+    '</div>';
+}
+function qeAreaScopeRowHtml(ai,val,i){
+  const v=String(val==null?'':val);
+  return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'+
+    '<input class="f-input" value="'+esc(v)+'" style="margin:0;height:38px;font-size:12px;flex:1" oninput="qeAreaScopeSet('+ai+','+i+',this.value)"/>'+
+    '<button onclick="qeAreaScopeRemove('+ai+','+i+')" title="remove this line" style="background:none;border:1px solid #E9C2BE;color:#B2342A;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto;width:34px;height:38px;border-radius:8px;line-height:1">×</button>'+
+    '</div>';
+}
+function qeAreaScopeSet(ai,i,v){ if(QE.areas[ai]&&QE.areas[ai].scope) QE.areas[ai].scope[i]=v; }
+function qeAreaScopeRemove(ai,i){ QE.areas[ai].scope.splice(i,1); renderQuoteSurfaces(); }
+function qeAreaScopeAddLine(ai){ if(!QE.areas[ai].scope) QE.areas[ai].scope=[]; QE.areas[ai].scope.push(''); renderQuoteSurfaces();
+  setTimeout(function(){ const b=$('q_surfaces'); if(b){ const ins=b.querySelectorAll('input'); if(ins.length) ins[ins.length-1].focus(); } },0); }
+async function qeAreaAddPhotos(ai,input){ const files=input.files?Array.from(input.files):[]; input.value='';
+  const a=QE.areas[ai]; if(!a) return; if(!Array.isArray(a.photos)) a.photos=[];
+  for(let i=0;i<files.length;i++){ if(a.photos.length>=9){ showSaveToast('Max 9 photos per surface'); break; } const u=await qeShrinkPhoto(files[i]); if(u) a.photos.push(u); }
+  a.noPics=false; renderQuoteSurfaces(); }
+function qeAreaRemovePhoto(ai,pi){ QE.areas[ai].photos.splice(pi,1); renderQuoteSurfaces(); }
+function qeAreaToggleNoPics(ai){ const a=QE.areas[ai]; a.noPics=!a.noPics; if(a.noPics) a.photos=[]; renderQuoteSurfaces(); }
 function renderQuoteTerms(){ const box=$('q_terms_rows'); if(!box) return;
   box.innerHTML = (QE.terms&&QE.terms.length) ? QE.terms.map(function(v,i){ return qeLineRowHtml(v,i,'qeTermsSet','qeTermsRemove'); }).join('')
     : '<div style="font-size:11.5px;color:#A39E8C;padding:2px 0 6px">No terms lines yet — add a line.</div>';
@@ -9861,7 +9891,7 @@ async function saveQuote(editId){
   const fields={ number_str:numStr, number:numN,
     attention:attention, re:(($('q_re')||{}).value||'').trim(), from_name:g('q_from')||'Ferdi Engelbrecht',
     title:title, group_key:gk, notes:(($('q_notes')||{}).value||'').trim(),
-    scope:(QE.scope||[]).join('\n'), terms:(QE.terms||[]).join('\n'),
+    scope:'', terms:(QE.terms||[]).join('\n'),
     photos:(QE.photos||[]).slice(), site_photo:(QE.photos&&QE.photos[0])||'',
     areas: JSON.parse(JSON.stringify(QE.areas||[])),
     client_name:client, project_ref:title, client_group:'',
@@ -10013,18 +10043,31 @@ function quoteInnerHtml(q){
     ${cover}
     ${quotePricingTableHtml(q)}
     ${(function(){
-      const bul=function(t){ return String(t==null?'':t).split('\n').map(function(x){return x.trim();}).filter(Boolean).map(function(x){
-        const letters=x.replace(/[^A-Za-z]/g,'');
-        if(letters.length>1 && x===x.toUpperCase() && x.length<60){   // an all-caps line = an area sub-heading
-          return '<div style="font-weight:bold;text-decoration:underline;margin:10px 0 5px;font-size:10.5pt">'+e(x)+'</div>';
-        }
+      const bul=function(arr){ return (Array.isArray(arr)?arr:String(arr||'').split('\n')).map(function(x){return String(x).trim();}).filter(Boolean).map(function(x){
         return '<div style="display:flex;margin:0 0 4px"><div style="width:16px;flex:0 0 16px">&bull;</div><div style="flex:1">'+e(x)+'</div></div>';
       }).join(''); };
-      const scope = q.scope!=null ? q.scope : QUOTE_SCOPE_DEFAULT;
+      const boxHead=function(t){ return '<div style="background:#efefef;border-bottom:1px solid #333;text-align:center;font-weight:bold;font-size:11pt;padding:9px 10px">'+e(t)+'</div>'; };
+      const photoGrid=function(ph){ if(!(ph&&ph.length)) return '';
+        return '<div style="margin-bottom:10px;font-size:0;line-height:0">'+ph.map(function(u){
+          return '<img src="'+u+'" style="width:210px;height:140px;object-fit:cover;border:1px solid #999;display:inline-block;margin:0 6px 6px 0;vertical-align:top"/>';
+        }).join('')+'</div>'; };
+      const areas = Array.isArray(q.areas)?q.areas:[];
+      const scopeAreas = areas.filter(function(a){ return Array.isArray(a.scope) && a.scope.length; });
       const terms = q.terms!=null ? q.terms : QUOTE_TERMS_DEFAULT;
       let o='';
-      if(String(scope).trim()) o+='<div style="margin-top:22px"><div style="font-weight:bold;text-decoration:underline;margin-bottom:7px;font-size:11pt">SCOPE OF WORKS</div><div style="font-size:10pt;line-height:1.45">'+bul(scope)+'</div></div>';
-      if(String(terms).trim()) o+='<div style="margin-top:18px"><div style="font-weight:bold;text-decoration:underline;margin-bottom:7px;font-size:11pt">TERMS &amp; CONDITIONS</div><div style="font-size:10pt;line-height:1.45">'+bul(terms)+'</div></div>';
+      if(scopeAreas.length){
+        o+='<h3 style="text-align:center;margin:26px 0 10px">SCOPE OF WORKS</h3>';
+        scopeAreas.forEach(function(a){
+          o+='<div style="border:1px solid #333;margin:0 0 14px">'+boxHead(a.heading||a.label||'')+
+             '<div style="padding:12px 14px">'+((!a.noPics)?photoGrid(a.photos):'')+
+             '<div style="font-size:10pt;line-height:1.45">'+bul(a.scope)+'</div></div></div>';
+        });
+      } else if(String(q.scope||'').trim()){   // older quotes (single combined scope)
+        o+='<div style="margin-top:22px"><div style="font-weight:bold;text-decoration:underline;margin-bottom:7px;font-size:11pt">SCOPE OF WORKS</div><div style="font-size:10pt;line-height:1.45">'+bul(q.scope)+'</div></div>';
+      }
+      if(String(terms).trim()){
+        o+='<div style="border:1px solid #333;margin:16px 0 0">'+boxHead('GENERAL')+'<div style="padding:12px 14px;font-size:10pt;line-height:1.45">'+bul(terms)+'</div></div>';
+      }
       return o;
     })()}
     <div style="margin-top:16px"><u><b>BANKING DETAILS:</b></u><br/>
