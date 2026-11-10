@@ -9679,10 +9679,10 @@ function renderQuoteEditor(editId){
     <div style="margin-bottom:10px"><label style="${lbl}">Property group (its logo shows under the photo)</label>
       <select class="f-input" id="q_group_pick" style="margin:0">${grpOpts}</select></div>
 
-    ${sec('Photos — up to 10 (from your site visit)')}
+    ${sec('Front page — photo of the building')}
     <div id="q_photos"></div>
-    <label class="cta-btn ghost" style="height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 0 4px">📷 Add photos<input id="q_photo_input" type="file" accept="image/*" multiple style="display:none" onchange="qeAddPhotos(this)"/></label>
-    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:4px">The first photo is used on the front page.</div>
+    <label class="cta-btn ghost" style="height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 0 4px">📷 Choose pic for front page<input id="q_photo_input" type="file" accept="image/*" multiple style="display:none" onchange="qeAddPhotos(this)"/></label>
+    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:4px">This picture goes on the front page of the quote. (Surface photos are added lower down, per surface.)</div>
 
     ${sec('Pricing — choose the areas to quote')}
     <div style="margin-bottom:10px"><label style="${lbl}">Notes above the table (optional)</label>
