@@ -9643,6 +9643,9 @@ function renderQuoteEditor(editId){
   } else {
     QE = { areas:[], photos:[], discount:0 };
   }
+  // Scope & terms as editable line arrays (each line = its own row you can edit / remove).
+  QE.scope = String(existing && existing.scope!=null ? existing.scope : QUOTE_SCOPE_DEFAULT).split('\n');
+  QE.terms = String(existing && existing.terms!=null ? existing.terms : QUOTE_TERMS_DEFAULT).split('\n');
   const numStr = existing ? existing.number_str : quoteNumStr(nextQuoteNumber());
   const gk = existing ? (existing.group_key||'none') : 'none';
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
@@ -9694,16 +9697,20 @@ function renderQuoteEditor(editId){
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0 0;border-top:1px solid #EFECE3;margin-top:4px"><span>Total (incl VAT)</span><span class="disp" id="q_pv_tot">R 0.00</span></div>
     </div>
     ${sec('Scope of works & terms (edit if needed)')}
-    <div style="margin-bottom:10px"><label style="${lbl}">Scope of works — detailed method (one line each)</label>
-      <textarea class="f-input" id="q_scope" rows="8" style="margin:0;font-size:12.5px">${esc(existing && existing.scope!=null ? existing.scope : QUOTE_SCOPE_DEFAULT)}</textarea></div>
-    <div style="margin-bottom:14px"><label style="${lbl}">Terms &amp; inclusions (one line each)</label>
-      <textarea class="f-input" id="q_terms" rows="8" style="margin:0;font-size:12.5px">${esc(existing && existing.terms!=null ? existing.terms : QUOTE_TERMS_DEFAULT)}</textarea></div>
+    <label style="${lbl}">Scope of works — edit any line, remove with ×, or add a line</label>
+    <div id="q_scope_rows" style="margin-bottom:4px"></div>
+    <button class="cta-btn ghost" style="height:36px;font-size:11.5px;margin:2px 0 14px" onclick="qeScopeAdd()">＋ Add scope line</button>
+    <label style="${lbl}">Terms &amp; inclusions — edit any line, remove with ×, or add a line</label>
+    <div id="q_terms_rows" style="margin-bottom:4px"></div>
+    <button class="cta-btn ghost" style="height:36px;font-size:11.5px;margin:2px 0 14px" onclick="qeTermsAdd()">＋ Add terms line</button>
 
     <button class="cta-btn" onclick="saveQuote(${existing?`'${existing.id}'`:'null'})">${existing?'Save changes &amp; open PDF':'Save quotation &amp; open PDF'}</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Cancel</button>`;
   $('siteDetailContent').innerHTML=h;
   renderQuotePhotos();
   renderQuotePricing();
+  renderQuoteScope();
+  renderQuoteTerms();
 }
 
 // ── Photos (up to 10) ──
@@ -9743,20 +9750,44 @@ function qeAddArea(key){ const t=quoteAreaByKey(key); if(!t) return;
 function qeRemoveArea(ai){ QE.areas.splice(ai,1); renderQuotePricing(); qeSyncScope(); }
 // Detailed scope-of-works bullets for an area (null if it has none, e.g. Travel / Scaffolding).
 function qeScopeForArea(a){ const t=quoteAreaByKey(a.key); return (t && Array.isArray(t.scope)) ? t.scope.slice() : null; }
-// Auto-fill the Scope-of-works box from the areas chosen — each scope-bearing area adds its block.
+// Auto-fill the Scope-of-works lines from the areas chosen — each scope-bearing area adds its block.
 function qeSyncScope(){
-  const ta=$('q_scope'); if(!ta) return;
+  if(!QE) return;
   let count=0; QE.areas.forEach(function(a){ if(qeScopeForArea(a)) count++; });
-  if(!count) return;                               // nothing to drive it — leave the box as-is
+  if(!count) return;                               // nothing to drive it — leave the lines as-is
   const out=[];
   QE.areas.forEach(function(a){
     const sc=qeScopeForArea(a); if(!sc) return;
     if(count>1) out.push((a.heading||a.label||'').toUpperCase());   // sub-heading only when >1 area
     sc.forEach(function(l){ out.push(l); });
-    if(count>1) out.push('');
   });
-  ta.value = out.join('\n').replace(/\n+$/,'');
+  QE.scope = out; renderQuoteScope();
 }
+// ── Editable line rows for Scope of works & Terms ──
+function qeLineRowHtml(val, i, setFn, rmFn){
+  const v=String(val==null?'':val);
+  const isHead = /[A-Za-z]/.test(v) && v===v.toUpperCase() && v.trim().length>1 && v.length<60;
+  return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+    <input class="f-input" value="${esc(v)}" style="margin:0;height:38px;font-size:12px;flex:1${isHead?';font-weight:800':''}" oninput="${setFn}(${i},this.value)"/>
+    <button onclick="${rmFn}(${i})" title="remove this line" style="background:none;border:1px solid #E9C2BE;color:#B2342A;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto;width:34px;height:38px;border-radius:8px;line-height:1">×</button>
+  </div>`;
+}
+function renderQuoteScope(){ const box=$('q_scope_rows'); if(!box) return;
+  box.innerHTML = (QE.scope&&QE.scope.length) ? QE.scope.map(function(v,i){ return qeLineRowHtml(v,i,'qeScopeSet','qeScopeRemove'); }).join('')
+    : '<div style="font-size:11.5px;color:#A39E8C;padding:2px 0 6px">No scope lines yet — pick an area above, or add a line.</div>';
+}
+function qeScopeSet(i,v){ if(QE.scope) QE.scope[i]=v; }
+function qeScopeRemove(i){ QE.scope.splice(i,1); renderQuoteScope(); }
+function qeScopeAdd(){ if(!QE.scope) QE.scope=[]; QE.scope.push(''); renderQuoteScope();
+  setTimeout(function(){ const b=$('q_scope_rows'); if(b){ const ins=b.querySelectorAll('input'); if(ins.length) ins[ins.length-1].focus(); } },0); }
+function renderQuoteTerms(){ const box=$('q_terms_rows'); if(!box) return;
+  box.innerHTML = (QE.terms&&QE.terms.length) ? QE.terms.map(function(v,i){ return qeLineRowHtml(v,i,'qeTermsSet','qeTermsRemove'); }).join('')
+    : '<div style="font-size:11.5px;color:#A39E8C;padding:2px 0 6px">No terms lines yet — add a line.</div>';
+}
+function qeTermsSet(i,v){ if(QE.terms) QE.terms[i]=v; }
+function qeTermsRemove(i){ QE.terms.splice(i,1); renderQuoteTerms(); }
+function qeTermsAdd(){ if(!QE.terms) QE.terms=[]; QE.terms.push(''); renderQuoteTerms();
+  setTimeout(function(){ const b=$('q_terms_rows'); if(b){ const ins=b.querySelectorAll('input'); if(ins.length) ins[ins.length-1].focus(); } },0); }
 function qeAddLine(ai){ QE.areas[ai].lines.push({desc:'',product:'',area:0,rate:0,amount:0,lump:false}); renderQuotePricing(); }
 function qeRemoveLine(ai,li){ QE.areas[ai].lines.splice(li,1); renderQuotePricing(); }
 function qeHeadingSet(ai,v){ QE.areas[ai].heading=v; }
@@ -9830,7 +9861,7 @@ async function saveQuote(editId){
   const fields={ number_str:numStr, number:numN,
     attention:attention, re:(($('q_re')||{}).value||'').trim(), from_name:g('q_from')||'Ferdi Engelbrecht',
     title:title, group_key:gk, notes:(($('q_notes')||{}).value||'').trim(),
-    scope:(($('q_scope')||{}).value||''), terms:(($('q_terms')||{}).value||''),
+    scope:(QE.scope||[]).join('\n'), terms:(QE.terms||[]).join('\n'),
     photos:(QE.photos||[]).slice(), site_photo:(QE.photos&&QE.photos[0])||'',
     areas: JSON.parse(JSON.stringify(QE.areas||[])),
     client_name:client, project_ref:title, client_group:'',
