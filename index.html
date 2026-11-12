@@ -4101,10 +4101,14 @@ async function extractQuoteTotalFromPdf(file){
   const pdf = await window.pdfjsLib.getDocument({data:buf}).promise;
   let text='';
   for(let i=1;i<=pdf.numPages;i++){ const pg=await pdf.getPage(i); const c=await pg.getTextContent(); text += c.items.map(function(it){return it.str;}).join(' ')+'\n'; }
+  // A discount on the quote, e.g. "DISCOUNT: 10%" — so the contract value is the AFTER-discount figure.
+  let discountPct=0;
+  const dm=/discount[^0-9%]{0,15}([0-9]{1,2}(?:\.[0-9]+)?)\s*%/i.exec(text);
+  if(dm){ const dp=parseFloat(dm[1]); if(dp>0 && dp<100) discountPct=dp; }
   let m=/total[^0-9]{0,25}excl[^0-9]{0,25}(?:15\s*%?\s*)?(?:vat)?[^0-9]{0,25}([0-9][0-9 .,]{3,})/i.exec(text);
-  if(m){ const v=parseZAR(m[1]); if(v>0) return {value:v, basis:'excl'}; }
+  if(m){ const v=parseZAR(m[1]); if(v>0) return {value:v, basis:'excl', discountPct:discountPct}; }
   m=/total[^0-9]{0,25}incl[^0-9]{0,40}([0-9][0-9 .,]{3,})/i.exec(text);
-  if(m){ const v=parseZAR(m[1]); if(v>0) return {value:Math.round(v/1.15*100)/100, basis:'incl'}; }
+  if(m){ const v=parseZAR(m[1]); if(v>0) return {value:Math.round(v/1.15*100)/100, basis:'incl', discountPct:discountPct}; }
   return null;
 }
 async function handleQuoteFile(input){
@@ -4122,10 +4126,16 @@ async function handleQuoteFile(input){
     if(r && r.value>0){
       const val = Math.round(r.value*100)/100;
       if(PENDING_QUOTE) PENDING_QUOTE.total = val;
+      // Quote has a discount → fill the Discount % so the contract value is the after-discount figure.
+      const dEl = $('as_discount');
+      if(dEl && r.discountPct>0 && !(parseFloat(dEl.value)>0)){ dEl.value = r.discountPct; if(typeof recalcQuoteTotal==='function') recalcQuoteTotal(); }
       const summed = refreshQuotedValue();
+      const net = r.discountPct>0 ? Math.round(val*(1-r.discountPct/100)*100)/100 : val;
       note.textContent = PENDING_QUOTE_EXTRA.some(function(q){ return q.total>0; })
         ? '✓ '+f.name+' — read '+R(val)+' (excl VAT). Combined quoted value is now '+R(summed)+'.'
-        : '✓ '+f.name+' — read Total (excl VAT) '+R(val)+' from the quote. Please check it’s right.';
+        : (r.discountPct>0
+            ? '✓ '+f.name+' — read '+R(val)+' less '+r.discountPct+'% discount = contract value '+R(net)+' (excl VAT). Please check it’s right.'
+            : '✓ '+f.name+' — read Total (excl VAT) '+R(val)+' from the quote. Please check it’s right.');
     } else {
       note.textContent = '✓ '+f.name+' — couldn’t read the total automatically; please type the Total quoted value above.';
     }
