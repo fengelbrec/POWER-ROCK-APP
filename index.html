@@ -491,6 +491,7 @@ input[type=password]{letter-spacing:5px}
       <label class="f-label">Upload the actual quote (PDF or photo)</label>
       <input type="file" id="as_quotefile" accept=".pdf,image/*" onchange="handleQuoteFile(this)" style="margin-bottom:8px;font-size:13px;width:100%"/>
       <div id="as_quotefile_note" style="font-size:11px;color:#8A8470;margin-bottom:8px">Small files are saved inside the app. Large PDFs — the name is saved and you keep the file in your site folder.</div>
+      <button type="button" id="as_quote_remove" onclick="removeMainQuote()" style="display:none;background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:8px 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:10px">✕ Remove this quote (wrong file)</button>
 
       <div id="as_extra_quotes"></div>
       <button type="button" onclick="addAnotherQuote()" style="width:100%;background:#F4F2EC;border:1.5px dashed #C9BFA8;border-radius:10px;padding:11px;font-size:13px;font-weight:800;color:#6B5A2B;font-family:inherit;cursor:pointer;margin-bottom:6px">＋ Add another quote</button>
@@ -3423,7 +3424,7 @@ function duSiteInfoTab(s){
       ${bullet('Site address', addressTxt)}
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
       ${bullet('Started', s.started ? fd(s.started) : '')}
-      ${owner ? bullet('Quote (ex-VAT)', s.quote_value ? (R(parseFloat(s.quote_value)) + (d.discount_pct>0 ? ` <span style="color:#8A8470;font-size:11px">(${R(parseFloat(d.quote_gross||0))} less ${d.discount_pct}% discount)</span>` : '')) : '') : ''}
+      ${bullet(owner ? 'Quote (ex-VAT)' : 'Contract value', s.quote_value ? (R(parseFloat(s.quote_value)) + (owner && d.discount_pct>0 ? ` <span style="color:#8A8470;font-size:11px">(${R(parseFloat(d.quote_gross||0))} less ${d.discount_pct}% discount)</span>` : '')) : '')}
       ${bullet('Surfaces', surfacesTxt)}
       ${bullet('Approved colours', coloursTxt)}
     </div>
@@ -4108,6 +4109,7 @@ async function extractQuoteTotalFromPdf(file){
 }
 async function handleQuoteFile(input){
   const f = input.files && input.files[0];
+  const rmBtn = $('as_quote_remove'); if(rmBtn) rmBtn.style.display = f ? 'inline-block' : 'none';
   if(!f){ PENDING_QUOTE = null; refreshQuotedValue(); return; }
   PENDING_QUOTE = { name:f.name, file:f, total:0 };
   const note = $('as_quotefile_note');
@@ -4132,6 +4134,14 @@ async function handleQuoteFile(input){
   }
 }
 
+// Remove the main uploaded quote (wrong file chosen) — clears it and re-totals.
+function removeMainQuote(){
+  PENDING_QUOTE = null;
+  const inp = $('as_quotefile'); if(inp) inp.value = '';
+  const note = $('as_quotefile_note'); if(note) note.textContent = 'Quote removed. Choose another file if you have one, or just type the Total quoted value above.';
+  const btn = $('as_quote_remove'); if(btn) btn.style.display = 'none';
+  refreshQuotedValue();
+}
 // Total quoted value = the main quote + every extra quote's total, ADDED together.
 // We only overwrite the field while it still holds a value WE auto-filled — never a number the user typed.
 function refreshQuotedValue(){
@@ -7662,7 +7672,7 @@ function openSiteInfo(siteId, canEdit, editing){
       ${bullet('Site address', addressTxt)}
       ${bullet('Team leader', henkLeaderName(s.team_leader))}
       ${bullet('Started', s.started ? fd(s.started) : '')}
-      ${owner ? bullet('Quote (ex-VAT)', s.quote_value ? (R(parseFloat(s.quote_value)) + (d.discount_pct>0 ? ` <span style="color:#8A8470;font-size:11px">(${R(parseFloat(d.quote_gross||0))} less ${d.discount_pct}% discount)</span>` : '')) : '') : ''}
+      ${bullet(owner ? 'Quote (ex-VAT)' : 'Contract value', s.quote_value ? (R(parseFloat(s.quote_value)) + (owner && d.discount_pct>0 ? ` <span style="color:#8A8470;font-size:11px">(${R(parseFloat(d.quote_gross||0))} less ${d.discount_pct}% discount)</span>` : '')) : '')}
       ${bullet('Surfaces', surfacesTxt)}
       ${bullet('Approved colours', coloursTxt)}
     </div>
@@ -8035,8 +8045,13 @@ function paintSiteSummaryBody(){
       <div style="font-size:10.5px;color:#A39E8C;margin:8px 2px 4px">Tap any line to open or edit it. Every figure is live — change labour, add an invoice or another day passes, and this recalculates.</div>
     </div>`;
   } else {
-    // Henk & leaders: material + labour only — no quote, overheads, profit, margin or profit/day.
-    h += `<div class="section-lbl">Material &amp; labour</div>
+    // Henk & leaders: contract value + material + labour only — no overheads, profit, margin or profit/day.
+    h += `<div class="section-lbl">Contract value</div>
+    <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
+      ${profitRow({ label:'Contract value', val:quote, strong:true, bg:'#EEF5EE',
+        sub:'the agreed quote total for this site' })}
+    </div>
+    <div class="section-lbl">Material &amp; labour</div>
     <div class="ledger-card" style="padding:6px 16px;margin-bottom:16px">
       ${profitRow({ label:'Labour (agreed team total)', val:labourAgreed,
         sub: labourAgreed>0 ? (`paid ${R(labourPaid)} · ${R(labourAgreed-labourPaid)} still to pay · tap to submit a labour amount`) : 'tap to set the agreed labour total',
