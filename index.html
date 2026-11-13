@@ -8856,6 +8856,7 @@ function nextInvoiceNumber(){
 }
 
 let INV_PO=null;
+let INV_LINES=[];   // extra invoice line items (add-ons / credits)
 // poId optional. With a PO → fields pre-filled from it & its invoiced% is tracked.
 // Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
 function createManualInvoice(siteId){ renderInvoiceEditor(siteId, null, null, true); }
@@ -8870,6 +8871,10 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
   if(existing && !poId && existing.po_id) poId = existing.po_id;   // keep the PO link when editing
   const po=poId ? sitePOs(s).find(function(x){ return x.id===poId; }) : null;
   INV_PO=po;
+  // Extra line items (add-ons = +, credits = −). Editable, added to the invoice total.
+  INV_LINES = (existing && Array.isArray(existing.extra_lines))
+    ? existing.extra_lines.map(function(l){ return { desc:String(l.desc||''), amount:parseFloat(l.amount)||0 }; })
+    : [];
   // Edit → fill from the saved invoice. New → from the PO, but fall back to the most
   // recent invoice already raised for this site, so a recurring client's name, address,
   // VAT & reg carry over automatically and only the % needs to change.
@@ -8900,9 +8905,11 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
       });
   // The project value the % works off: the PO total, but if the PO never captured it,
   // work it back from the last invoice (amount ÷ its %), then the site quote.
-  const lastInvBasis = (lastInv && parseFloat(lastInv.pct)>0) ? Math.round(parseFloat(lastInv.amount_ex)/(parseFloat(lastInv.pct)/100)*100)/100 : 0;
+  // The main-line amount (the % line), ignoring any extra add-ons/credits.
+  const baseExOf = function(x){ return parseFloat(x && x.base_ex!=null ? x.base_ex : (x?x.amount_ex:0))||0; };
+  const lastInvBasis = (lastInv && parseFloat(lastInv.pct)>0) ? Math.round(baseExOf(lastInv)/(parseFloat(lastInv.pct)/100)*100)/100 : 0;
   let basis = existing
-      ? (parseFloat(existing.pct)>0 ? Math.round(existing.amount_ex/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
+      ? (parseFloat(existing.pct)>0 ? Math.round(baseExOf(existing)/(existing.pct/100)*100)/100 : (po?(parseFloat(po.po_total)||0):(siteQuoteValue(s)||parseFloat(s.quote_value)||0)))
       : (po ? ((parseFloat(po.po_total)||0) || lastInvBasis || (siteQuoteValue(s)||parseFloat(s.quote_value)||0))
             : ((siteQuoteValue(s)||parseFloat(s.quote_value)||0) || lastInvBasis));
   if(manual && !existing) basis = 0;   // manual invoice: no % basis — type the amount directly
@@ -8913,7 +8920,7 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
                 : (po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
                       : 'Preparation & Paint as per quotation');
   const startPct = existing ? (parseFloat(existing.pct)||0) : ((manual||isClone) ? '' : (po ? (remaining>0?remaining:100) : 100));
-  const startAmt = existing ? (parseFloat(existing.amount_ex)||0) : ((manual||isClone) ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100);
+  const startAmt = existing ? baseExOf(existing) : ((manual||isClone) ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100);
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
@@ -8948,6 +8955,13 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
       <div style="flex:1;min-width:0"><label style="${lbl}">% of total</label><input class="f-input" id="inv_pct" type="number" step="0.01" value="${startPct}" oninput="invPctToAmt()" style="margin:0"/></div>
       <div style="flex:1;min-width:0"><label style="${lbl}">Amount (ex-VAT, R)</label><input class="f-input" id="inv_amt" type="number" step="0.01" value="${startAmt||''}" oninput="invAmtToPct()" style="margin:0"/></div>
     </div>
+    <label style="${lbl}">Extra line items — add-ons (＋) or credits (−)</label>
+    <div id="inv_lines" style="margin-bottom:4px"></div>
+    <div style="display:flex;gap:8px;margin:2px 0 6px">
+      <button type="button" class="cta-btn ghost" style="height:38px;font-size:12px;margin:0;flex:1" onclick="invAddLine(0)">＋ Add-on</button>
+      <button type="button" class="cta-btn ghost" style="height:38px;font-size:12px;margin:0;flex:1" onclick="invAddLine(-1)">＋ Credit (−)</button>
+    </div>
+    <div style="font-size:10.5px;color:#A39E8C;margin-bottom:12px">Each line has its own description &amp; amount. A credit is just a minus amount — it’s subtracted from the total. Leave blank lines out.</div>
     <div style="margin-bottom:12px"><label style="${lbl}">Invoice date</label><input class="f-input" id="inv_date" type="date" value="${existing&&existing.date?existing.date:invToday()}" style="margin:0"/></div>
     <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Sub total (ex-VAT)</span><span class="disp" id="inv_pv_sub">${R(startAmt)}</span></div>
@@ -8957,20 +8971,48 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
     <button class="cta-btn" onclick="saveInvoice('${s.id}',${po?`'${po.id}'`:'null'},${existing?`'${existing.id}'`:'null'})">${existing?'Save changes &amp; download PDF':'Save invoice &amp; download PDF'}</button>
     <button class="cta-btn ghost" style="margin-top:8px" onclick="refreshSitePOs()">← Back</button>`;
   $('siteDetailContent').innerHTML=h;
+  renderInvLines();
+  invPreview();
 }
 function invBase(){ return parseFloat(($('inv_base')||{}).value)||0; }
 function invPctToAmt(){ const t=invBase(); const pct=parseFloat(($('inv_pct')||{}).value)||0; if($('inv_amt')&&t>0) $('inv_amt').value=(Math.round(t*pct)/100).toFixed(2); invPreview(); }
 function invAmtToPct(){ const t=invBase(); const amt=parseFloat(($('inv_amt')||{}).value)||0; if($('inv_pct')&&t>0) $('inv_pct').value=(amt/t*100).toFixed(2); invPreview(); }
-function invPreview(){ const amt=parseFloat(($('inv_amt')||{}).value)||0; if($('inv_pv_sub'))$('inv_pv_sub').textContent=R(amt); if($('inv_pv_vat'))$('inv_pv_vat').textContent=R(amt*0.15); if($('inv_pv_tot'))$('inv_pv_tot').textContent=R(amt*1.15); }
+// Extra line items (add-ons / credits) ----------------------------------------
+function invLinesSum(){ return (INV_LINES||[]).reduce(function(a,l){ return a + (parseFloat(l.amount)||0); }, 0); }
+function renderInvLines(){
+  const box=$('inv_lines'); if(!box) return;
+  box.innerHTML = (INV_LINES&&INV_LINES.length) ? INV_LINES.map(function(l,i){
+    return '<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:6px">'+
+      '<input class="f-input" value="'+esc(l.desc||'')+'" placeholder="Description (e.g. Extra gate / Credit for..." style="margin:0;flex:1;min-width:0;height:40px;font-size:12.5px" oninput="invLineSet('+i+',\'desc\',this.value)"/>'+
+      '<input class="f-input" type="number" step="0.01" value="'+(l.amount!==0&&l.amount!=null&&l.amount!==''?l.amount:'')+'" placeholder="Amount (− for credit)" style="margin:0;width:120px;flex:0 0 auto;height:40px;font-size:12.5px" oninput="invLineSet('+i+',\'amount\',this.value)"/>'+
+      '<button type="button" onclick="invLineRemove('+i+')" title="remove" style="background:none;border:1px solid #E9C2BE;color:#B2342A;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;flex:0 0 auto;width:34px;height:40px;border-radius:8px;line-height:1">×</button>'+
+    '</div>';
+  }).join('') : '';
+}
+function invAddLine(sign){ if(!Array.isArray(INV_LINES)) INV_LINES=[]; INV_LINES.push({ desc:'', amount:0 }); renderInvLines(); invPreview();
+  setTimeout(function(){ const b=$('inv_lines'); if(b){ const ins=b.querySelectorAll('input'); if(ins.length) ins[ins.length-2].focus(); } },0); }
+function invLineSet(i,field,val){ if(!INV_LINES[i]) return; INV_LINES[i][field] = (field==='amount') ? (parseFloat(val)||0) : val; invPreview(); }
+function invLineRemove(i){ INV_LINES.splice(i,1); renderInvLines(); invPreview(); }
+function invPreview(){
+  const amt=parseFloat(($('inv_amt')||{}).value)||0;
+  const sub=Math.round((amt + invLinesSum())*100)/100;
+  if($('inv_pv_sub'))$('inv_pv_sub').textContent=R(sub);
+  if($('inv_pv_vat'))$('inv_pv_vat').textContent=R(Math.round(sub*15)/100);
+  if($('inv_pv_tot'))$('inv_pv_tot').textContent=R(Math.round(sub*115)/100);
+}
 
 async function saveInvoice(siteId, poId, editId){
   const s=(SUMMARY && SUMMARY.site); if(!s) return;
-  const amt=parseFloat(($('inv_amt')||{}).value)||0;
+  const base=parseFloat(($('inv_amt')||{}).value)||0;         // the main % line
+  const extraLines=(INV_LINES||[]).map(function(l){ return { desc:String(l.desc||'').trim(), amount:Math.round((parseFloat(l.amount)||0)*100)/100 }; })
+                                  .filter(function(l){ return l.desc!=='' || l.amount!==0; });
+  const linesSum=extraLines.reduce(function(a,l){ return a + l.amount; }, 0);
+  const amt=Math.round((base + linesSum)*100)/100;            // invoice ex-VAT total (main + add-ons − credits)
   const pct=parseFloat(($('inv_pct')||{}).value)||0;
   const desc=(($('inv_desc')||{}).value||'').trim();
   const date=($('inv_date')||{}).value||invToday();
   const g=function(id){ return (($(id)||{}).value||'').trim(); };
-  if(amt<=0){ alert('Please enter an amount (or a % with a total).'); return; }
+  if(amt<=0){ alert('The invoice total must be more than R0. Check the amount and any credits.'); return; }
   const d=Object.assign({}, s.details||{});
   if(!Array.isArray(d.invoices)) d.invoices=[];
   if(!Array.isArray(d.purchase_orders)) d.purchase_orders=[];
@@ -8986,7 +9028,8 @@ async function saveInvoice(siteId, poId, editId){
     client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'), client_reg: g('inv_reg'),
     client_group: (($('inv_group')||{}).value||'').trim(),
     order_nr: g('inv_order'), project_ref: g('inv_ref'), heading: g('inv_heading'),
-    description:desc, pct:pct, amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:date };
+    description:desc, pct:pct, base_ex:base, extra_lines:extraLines,
+    amount_ex:amt, vat:Math.round(amt*15)/100, total_incl:Math.round(amt*115)/100, date:date };
   let inv;
   if(editId){
     inv=(d.invoices||[]).find(function(x){ return x.id===editId; });
@@ -9063,18 +9106,31 @@ function invoiceInnerHtml(inv){
       <tr><td><u><b>INVOICE NR:</b></u></td><td>${e(inv.number_str)}</td></tr>
     </table>
     <h3 style="text-align:center;margin:20px 0 10px">TAX INVOICE</h3>
-    <table style="width:100%;border-collapse:collapse" border="1">
+    ${(function(){
+      const lines = Array.isArray(inv.extra_lines) ? inv.extra_lines.filter(function(l){ return (String(l.desc||'').trim()!=='') || (parseFloat(l.amount)||0)!==0; }) : [];
+      const base = (inv.base_ex!=null) ? (parseFloat(inv.base_ex)||0) : (parseFloat(inv.amount_ex)||0);
+      const mainH = lines.length ? 70 : 120;   // shrink the main row when extra lines follow
+      let rows = `<tr>
+        <td style="width:34px;text-align:center;vertical-align:middle">1</td>
+        <td style="height:${mainH}px;vertical-align:middle;padding:12px 12px;white-space:pre-line">${e(inv.description)}</td>
+        <td style="text-align:right;vertical-align:middle;font-weight:bold;padding:12px 12px">${m(base)}</td>
+      </tr>`;
+      lines.forEach(function(l,i){
+        const amt=parseFloat(l.amount)||0;
+        const amtTxt = amt<0 ? ('− '+m(Math.abs(amt))) : m(amt);
+        rows += `<tr>
+          <td style="width:34px;text-align:center;vertical-align:middle">${i+2}</td>
+          <td style="vertical-align:middle;padding:10px 12px;white-space:pre-line">${e(l.desc)}</td>
+          <td style="text-align:right;vertical-align:middle;font-weight:bold;padding:10px 12px">${amtTxt}</td>
+        </tr>`;
+      });
+      return `<table style="width:100%;border-collapse:collapse" border="1">
       <tr>
         <td style="width:34px"></td>
         <td style="text-align:center;vertical-align:middle;font-weight:bold;padding:12px 10px">${e(inv.heading||inv.project_ref||'')}</td>
         <td style="text-align:center;vertical-align:middle;font-weight:bold;width:150px;padding:12px 10px">AMOUNT</td>
-      </tr>
-      <tr>
-        <td style="width:34px;text-align:center;vertical-align:middle">1</td>
-        <td style="height:120px;vertical-align:middle;padding:12px 12px;white-space:pre-line">${e(inv.description)}</td>
-        <td style="text-align:right;vertical-align:middle;font-weight:bold;padding:12px 12px">${m(inv.amount_ex)}</td>
-      </tr>
-    </table>
+      </tr>${rows}</table>`;
+    })()}
     <table style="width:100%;border-collapse:collapse;margin-top:10px">
       <tr><td style="text-align:right;padding:7px 10px">SUB TOTAL</td><td style="text-align:right;width:150px;padding:7px 10px">${m(inv.amount_ex)}</td></tr>
       <tr><td style="text-align:right;padding:7px 10px">VAT 15%</td><td style="text-align:right;padding:7px 10px">${m(inv.vat)}</td></tr>
