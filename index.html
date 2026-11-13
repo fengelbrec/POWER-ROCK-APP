@@ -3221,13 +3221,17 @@ function coPage1Html(r){
     </div>`:''}
   </div>${coFooter(r)}`;
 }
+// How many photos per row: even count → 2 per row, odd → 3 per row (1 → 1).
+// So 3→3, 4→2×2, 6→2×3, 9→3×3 — always full, in-line rows.
+function coPhotoCols(n){ if(n<=1) return 1; return (n%2===0) ? 2 : 3; }
 function coPhotosPageHtml(r, shots){
-  // 3 per row, up to 3 rows (9 photos). Source photos are already cropped 4:5, so width:100% keeps them neat.
+  // Fixed-size photos (slightly smaller than full-bleed), centred, with a black frame & a roomy gap.
+  const cols=coPhotoCols(shots.length);
   const cells=shots.map(function(u){ return `<img src="${u}" style="width:100%;height:auto;display:block;border:3px solid #000;box-sizing:border-box"/>`; }).join('');
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A">
     ${wkBar('SITE PHOTOGRAPHS')}
     <div style="font-size:12px;color:#5C5748;margin:-6px 0 12px">${esc(r.site)} · Completion Report · ${wkFmtDate(r.end)}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:start">${cells}</div>
+    <div style="display:grid;grid-template-columns:repeat(${cols},205px);gap:18px;justify-content:center;align-items:start">${cells}</div>
   </div>${coFooter(r)}`;
 }
 async function coBuildPdf(r){
