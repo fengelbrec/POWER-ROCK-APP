@@ -3273,7 +3273,9 @@ async function coPreview(){
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
       +'<button onclick="coPreviewAct(\'pdf\')" style="background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">⬇ Create PDF</button>'
       +'<button onclick="coPreviewAct(\'share\')" style="background:#2c5f8a;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📤 Share</button>'
-    +'</div></div>'
+    +'</div>'
+    +'<button onclick="coDonePreview()" style="background:#1FA24C;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;width:100%">✓ Done — back to the site</button>'
+    +'</div>'
     +'<div style="padding:18px 10px 48px">'+pageWrap(p1,'PAGE 1')+(p2?pageWrap(p2,'PAGE 2 — PHOTOS'):'')+'</div>';
   document.body.appendChild(ov);
   const fit=function(){ ov.querySelectorAll('.co-pwrap').forEach(function(wrap){ const paper=wrap.querySelector('.co-paper'); if(!paper) return; const avail=wrap.clientWidth||Math.min(794,(window.innerWidth||800)-24); const scale=Math.min(1,Math.max(0.1,avail/794)); paper.style.transform='scale('+scale+')'; wrap.style.height=(paper.offsetHeight*scale)+'px'; }); };
@@ -3281,6 +3283,8 @@ async function coPreview(){
   setTimeout(fit,50); CO_PREV_FIT=fit; window.addEventListener('resize',fit);
 }
 function coClosePreview(){ const ov=document.getElementById('coPreviewOv'); if(ov) ov.remove(); if(CO_PREV_FIT){ window.removeEventListener('resize',CO_PREV_FIT); CO_PREV_FIT=null; } }
+// Finish the report: close the preview AND the editor, back to the site. (The draft stays saved.)
+function coDonePreview(){ coClosePreview(); if(typeof closeModal==='function') closeModal('modalSiteDetail'); }
 async function coPreviewAct(act){ await coAction(act); }
 
 function duLeaderSites(leaderKey){
