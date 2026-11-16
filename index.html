@@ -3364,6 +3364,7 @@ async function coPreviewAct(act){ await coAction(act); }
 // ═══════════════════════════════════════════
 function openSiteDocs(siteId){
   const s=coSiteById(siteId); if(!s) return;
+  const owner=(CURRENT_ROLE==='owner');   // Henk/leaders don't see client invoices or the quote
   const row=function(icon,label,sub,onclick){ return `<div onclick="${onclick}" style="display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid #EFECE3;cursor:pointer">
     <div style="font-size:19px;width:26px;flex:0 0 26px;text-align:center">${icon}</div>
     <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:800;color:#1A1A1A">${label}</div><div style="font-size:11px;color:#A39E8C">${sub}</div></div>
@@ -3377,50 +3378,59 @@ function openSiteDocs(siteId){
       ${row('📅','Weekly report','Client weekly update',`${close}openSiteWeekly('${s.id}')`)}
       ${row('🏁','Completion Report','Client project-completion report',`openSiteCompletion('${s.id}')`)}
       ${row('✉️','Completion Letter','To Prominent — request the warranty certificate',`openSiteCompletionLetter('${s.id}')`)}
-      ${row('🛡️','Warranty certificate','Prominent warranty — view or upload',`openSiteWarranty('${s.id}')`)}
+      ${owner ? row('💵','Tax invoices','Client invoices raised for this site',`openSitePOs('${s.id}')`) : ''}
+      ${owner ? row('✎','Quotation','The quote / contract on file — view or upload',`openSiteFileDoc('${s.id}','quote')`) : ''}
+      ${row('📑','Specification','Prominent spec (ESW) — view or upload',`openSiteFileDoc('${s.id}','spec')`)}
+      ${row('🛡️','Warranty certificate','Prominent warranty — view or upload',`openSiteFileDoc('${s.id}','guarantee')`)}
       ${row('📦','Products &amp; colours','What was used on site',`openSiteProducts('${s.id}')`)}
       ${row('ⓘ','Site info','Client, quote &amp; documents',`openSiteInfo('${s.id}', true, false)`)}
     </div>
     <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
   $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
 }
-// Warranty certificate (the Prominent-issued doc) — view or upload. Reuses the site 'guarantee' slot.
-function openSiteWarranty(siteId){
+// A stored site document (Specification / Quotation / Warranty certificate) — view or upload.
+function siteDocMeta(which){
+  if(which==='spec')  return { label:'Specification', blurb:'the Prominent Paints specification (ESW) for this project.', verb:'the specification' };
+  if(which==='quote') return { label:'Quotation', blurb:'the quotation / contract on file for this project.', verb:'the quotation' };
+  return { label:'Warranty certificate', blurb:'the Prominent Paints warranty certificate. You receive this from Prominent after they inspect; upload it here to keep it on the site.', verb:'the warranty certificate' };
+}
+function openSiteFileDoc(siteId, which){
   const s=coSiteById(siteId); if(!s) return; const d=s.details||{};
-  const url=d.guarantee_url, name=d.guarantee_name;
+  const m=siteDocMeta(which); const url=d[which+'_url'], name=d[which+'_name'];
   const h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
-    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Warranty certificate</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — the Prominent Paints warranty certificate. You receive this from Prominent after they inspect; upload it here to keep it on the site.</div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${m.label}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — ${m.blurb}</div>
     <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
       ${url ? `<div style="font-size:12.5px;font-weight:700;margin-bottom:10px">On file${name?` · <span style="font-weight:400;color:#8A8470">${esc(name)}</span>`:''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800">Open</a>
-        <label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800;cursor:pointer">Replace<input type="file" accept="application/pdf,image/*" style="display:none" onchange="warrantyUpload('${siteId}',this)"/></label>
-        <button onclick="warrantyRemove('${siteId}')" style="background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">Remove</button></div>`
-      : `<div style="font-size:12.5px;color:#8A8470;margin-bottom:10px">No warranty certificate on file yet.</div>
-        <label style="display:block;background:#8B1A1A;color:#fff;border-radius:9px;padding:12px;font-size:13px;font-weight:800;text-align:center;cursor:pointer">📎 Upload the warranty certificate<input type="file" accept="application/pdf,image/*" style="display:none" onchange="warrantyUpload('${siteId}',this)"/></label>`}
+        <label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800;cursor:pointer">Replace<input type="file" accept="application/pdf,image/*" style="display:none" onchange="siteFileDocUpload('${siteId}','${which}',this)"/></label>
+        <button onclick="siteFileDocRemove('${siteId}','${which}')" style="background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">Remove</button></div>`
+      : `<div style="font-size:12.5px;color:#8A8470;margin-bottom:10px">No ${esc(m.label.toLowerCase())} on file yet.</div>
+        <label style="display:block;background:#8B1A1A;color:#fff;border-radius:9px;padding:12px;font-size:13px;font-weight:800;text-align:center;cursor:pointer">📎 Upload ${esc(m.verb)}<input type="file" accept="application/pdf,image/*" style="display:none" onchange="siteFileDocUpload('${siteId}','${which}',this)"/></label>`}
     </div>
     <button class="cta-btn ghost" onclick="openSiteDocs('${siteId}')">← Back to Documents</button>`;
   $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
 }
-async function warrantyUpload(siteId, input){
+async function siteFileDocUpload(siteId, which, input){
   const f=input.files&&input.files[0]; if(!f) return;
   showSaveToast('Uploading…');
-  const url=await sbUploadFile(siteId+'/guarantee-'+Date.now()+'-'+f.name, f);
+  const url=await sbUploadFile(siteId+'/'+which+'-'+Date.now()+'-'+f.name, f);
   if(!url){ showSaveToast('Upload failed — check your signal'); return; }
   const s=coSiteById(siteId)||{}; const d=Object.assign({}, s.details||{});
-  d.guarantee_url=url; d.guarantee_name=f.name;
+  d[which+'_url']=url; d[which+'_name']=f.name;
   const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
-  if(ok){ s.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast('Warranty certificate uploaded'); openSiteWarranty(siteId); }
+  if(ok){ s.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast(siteDocMeta(which).label+' uploaded'); openSiteFileDoc(siteId,which); }
   else showSaveToast('Saved the file but could not link it — try again');
 }
-async function warrantyRemove(siteId){
-  if(!confirm('Remove the warranty certificate from this site?')) return;
+async function siteFileDocRemove(siteId, which){
+  if(!confirm('Remove '+siteDocMeta(which).verb+' from this site?')) return;
   const s=coSiteById(siteId)||{}; const d=Object.assign({}, s.details||{});
-  d.guarantee_url=''; d.guarantee_name='';
+  d[which+'_url']=''; d[which+'_name']='';
   const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
-  if(ok){ s.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast('Removed'); openSiteWarranty(siteId); }
+  if(ok){ s.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast('Removed'); openSiteFileDoc(siteId,which); }
   else showSaveToast('Could not remove — check your signal');
 }
+function openSiteWarranty(siteId){ openSiteFileDoc(siteId,'guarantee'); }   // kept for older callers
 
 // ═══════════════════════════════════════════
 // COMPLETION LETTER — a short letter to Prominent Paints after a warranty project,
