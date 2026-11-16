@@ -1182,6 +1182,7 @@ function doorUnlockOk(door,p){ const codes=doorUnlockCodes(door); return codes.l
 // appear and which numbers are shown — Henk runs operations, so he sees
 // stock, labour and the daily reports, but not the owner financials.
 let CURRENT_ROLE = 'owner';
+let SUPPLIER_PENDING = 0;   // unallocated supplier invoices (status=pending) — shown as a nav badge
 
 // ── TEST MODE ──
 // While we are testing, a people dropdown replaces the PIN screen so Ferdi can
@@ -1288,11 +1289,14 @@ function leaderSignOut(){
 }
 
 function buildNav(){
-  $('doorNav').innerHTML = navFor().map(n=>
-    `<div class="dnitem ${n.id===CURRENT_DOOR?'sel':''}" onclick="renderDoor('${n.id}')">
-      <span>${n.icon}</span><span>${n.label}</span>
-    </div>`
-  ).join('');
+  $('doorNav').innerHTML = navFor().map(n=>{
+    const badge = (n.id==='invoiceinbox' && SUPPLIER_PENDING>0)
+      ? `<span title="Supplier invoices not allocated yet" style="display:inline-block;min-width:17px;height:17px;line-height:17px;text-align:center;background:#C0392B;color:#fff;font-size:10px;font-weight:800;border-radius:9px;padding:0 4px;margin-left:5px;vertical-align:middle">${SUPPLIER_PENDING>99?'99+':SUPPLIER_PENDING}</span>`
+      : '';
+    return `<div class="dnitem ${n.id===CURRENT_DOOR?'sel':''}" onclick="renderDoor('${n.id}')">
+      <span>${n.icon}</span><span>${n.label}${badge}</span>
+    </div>`;
+  }).join('');
 }
 
 // Tapping a section in the nav — records a step so Back returns to where you were.
@@ -1396,13 +1400,16 @@ async function loadOwnerFin(){
   const res = await Promise.all([
     sbGetRows('sites','order=started.desc'),
     sbGetRows('invoice_inbox','status=eq.confirmed'),
-    sbGetRows('site_costs','')
+    sbGetRows('site_costs',''),
+    sbGetRows('invoice_inbox','status=eq.pending&select=id')
   ]);
   OWNER.sites = (Array.isArray(res[0])?res[0]:[]).map(normSiteEnd);
   OWNER.material = {}; OWNER.costs = {};
   (Array.isArray(res[1])?res[1]:[]).forEach(function(iv){ OWNER.material[iv.site_guess]=(OWNER.material[iv.site_guess]||0)+(parseFloat(iv.total)||0); });
   (Array.isArray(res[2])?res[2]:[]).forEach(function(c){ if(!OWNER.costs[c.site_id]) OWNER.costs[c.site_id]={}; OWNER.costs[c.site_id][c.kind]=(OWNER.costs[c.site_id][c.kind]||0)+(parseFloat(c.amount)||0); });
+  SUPPLIER_PENDING = Array.isArray(res[3]) ? res[3].length : 0;   // unallocated supplier invoices → nav badge
   OWNER.loaded = true;
+  if(typeof buildNav==='function') buildNav();
 }
 function ownerDays(s){
   if(!s.started) return 1;
@@ -6130,6 +6137,7 @@ async function renderInvoiceInbox(){
   INBOX_CACHE = Array.isArray(res[0]) ? res[0] : [];
   INBOX_RECENT = Array.isArray(res[1]) ? res[1] : [];
   INBOX_SITES = (Array.isArray(res[2]) ? res[2] : []).map(normSiteEnd);
+  SUPPLIER_PENDING = INBOX_CACHE.length; buildNav();   // keep the nav badge in step with what's left to allocate
   if(CURRENT_DOOR !== 'invoiceinbox') return;   // moved on while loading
   const body = $('inboxBody'); if(!body) return;
 
