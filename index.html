@@ -3169,11 +3169,27 @@ function coTogglePhoto(idx){
   else CO_DRAFT.photos.push({ key:p.key, url:p.url });
   coPersist(); const box=$('co_photos'); if(box) box.innerHTML=coPhotosGridHtml();
 }
+function coSavedListHtml(s){
+  const list=coSaved(s).slice().sort(function(a,b){ return String(b.updated||b.created||'').localeCompare(String(a.updated||a.created||'')); });
+  if(!list.length) return '';
+  return `<div class="section-lbl" style="margin-top:0">Saved completion reports</div>
+    <div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`+
+    list.map(function(r){
+      const n=(r.photos||[]).length;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #EFECE3">
+        <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">${wkFmtDate(r.end||r.created)}</div>
+          <div style="font-size:10.5px;color:#A39E8C">${esc(r.scope||'')} · ${n} photo${n!==1?'s':''}${r.by?' · '+esc(r.by):''}</div></div>
+        ${r.pdf_url?`<a href="${r.pdf_url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:800">Open PDF</a>`:''}
+        <button onclick="coReopen('${r.id}')" style="background:#F0EEE6;border:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:800;color:#1A1A1A;cursor:pointer;font-family:inherit">Reopen</button>
+      </div>`;
+    }).join('')+`</div>`;
+}
 function coBuilderHtml(s){
   const lbl='display:block;font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:.6px;margin-bottom:4px;text-transform:uppercase';
   return `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Completion Report</div>
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — a project-completion report to send to the client.</div>
+    ${coSavedListHtml(s)}
     <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
       <label style="${lbl}">Project / Site</label><input class="f-input" value="${esc(CO_DRAFT.site)}" oninput="coSetField('site',this.value)"/>
       <label style="${lbl}">Scope of work</label><input class="f-input" value="${esc(CO_DRAFT.scope)}" oninput="coSetField('scope',this.value)" placeholder="e.g. Exterior Preparation & Paint"/>
@@ -3202,7 +3218,9 @@ function coBuilderHtml(s){
       <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="coAction('pdf')">⬇ Download</button>
       <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="coAction('share')">📤 Share</button>
     </div>
-    <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
+    <button class="cta-btn" style="margin-top:8px;background:#1FA24C" onclick="coAction('save')">💾 Save to the site</button>
+    <div style="font-size:11px;color:#A39E8C;margin:4px 2px 10px;line-height:1.6">Saved reports are kept on the site (with a PDF copy) and show in the list above — you can reopen them from any device. Download &amp; Share also save automatically.</div>
+    <button class="cta-btn ghost" style="margin-top:2px" onclick="closeModal('modalSiteDetail')">Close</button>`;
 }
 
 // ── The PDF pages ──
@@ -3256,13 +3274,59 @@ async function coShare(r, d){
   if(navigator.canShare && navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file], title:r.name, text:'Project Completion Report — '+(d.site||'')}); }catch(e){ if(!(e&&e.name==='AbortError')) saveBlobFile(r.blob,r.name); } return; }
   saveBlobFile(r.blob, r.name); showSaveToast('Sharing isn’t available on this device — saved the PDF instead');
 }
+// Saved completion reports live in sites.details.completion_reports (like weekly_reports);
+// a PDF copy goes to the site-files locker so it's kept and can be reopened from any device.
+function coSaved(s){ return (s && s.details && Array.isArray(s.details.completion_reports)) ? s.details.completion_reports : []; }
+function coSiteById(id){ if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===id) return SUMMARY.site; const o=((typeof OWNER!=='undefined'&&OWNER.sites)||[]).find(function(x){ return x.id===id; }); return o || (typeof duSiteById==='function'?duSiteById(id):null); }
+async function coSaveToSite(pdf){
+  const d=CO_DRAFT; if(!d) return null;
+  if(!d.id) d.id=uid();
+  let pdfUrl='';
+  if(pdf && pdf.blob){ try{ pdfUrl=await sbUploadFile(d.siteId+'/completion/'+String(d.site||'Site').replace(/[^A-Za-z0-9]+/g,'_')+'-'+d.id+'.pdf', pdf.blob); }catch(e){} }
+  const rows=await sbGetRows('sites','id=eq.'+encodeURIComponent(d.siteId));
+  const fresh=Array.isArray(rows)&&rows[0];
+  const s=coSiteById(d.siteId);
+  if(!fresh && !s) throw new Error('site');
+  const det=Object.assign({}, (fresh?fresh.details:s.details)||{});
+  const list=Array.isArray(det.completion_reports)?det.completion_reports.slice():[];
+  const at=list.findIndex(function(w){ return w.id===d.id; });
+  const rec={ v:1, id:d.id, site:d.site||'', scope:d.scope||'', start:d.start||'', end:d.end||'',
+    products:(d.products||[]).filter(function(p){ return String(p).trim(); }),
+    bullets:(d.bullets||[]).filter(function(b){ return String(b).trim(); }),
+    photos:(d.photos||[]).map(function(p){ return { key:p.key, url:p.url }; }),
+    pdf_url: pdfUrl || (at!==-1?list[at].pdf_url:'') || '',
+    created: at!==-1?(list[at].created||invToday()):invToday(),
+    updated:new Date().toISOString(),
+    by: CURRENT_ROLE==='henk'?'Henk':'Ferdi' };
+  if(at!==-1) list[at]=rec; else list.push(rec);
+  det.completion_reports=list;
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(d.siteId),{details:det});
+  if(!ok) throw new Error('save');
+  if(s) s.details=det;
+  if(typeof OWNER!=='undefined'&&OWNER.sites){ const os=OWNER.sites.find(function(x){ return x.id===d.siteId; }); if(os) os.details=det; }
+  if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===d.siteId) SUMMARY.site.details=det;
+  return rec;
+}
+function coRefreshBuilder(){ const s=coSiteById(CO_DRAFT&&CO_DRAFT.siteId); if(s && !document.getElementById('coPreviewOv') && $('siteDetailContent')) $('siteDetailContent').innerHTML=coBuilderHtml(s); }
+function coReopen(id){
+  const s=coSiteById(CO_DRAFT&&CO_DRAFT.siteId); if(!s) return;
+  const rec=coSaved(s).find(function(r){ return r.id===id; }); if(!rec) return;
+  CO_DRAFT={ siteId:s.id, id:rec.id, site:rec.site||s.name||'', scope:rec.scope||'', start:rec.start||'', end:rec.end||'',
+    bullets:(rec.bullets&&rec.bullets.length)?rec.bullets.slice():[''], products:(rec.products&&rec.products.length)?rec.products.slice():[''],
+    photos:(rec.photos||[]).slice() };
+  coPersist(); if($('siteDetailContent')) $('siteDetailContent').innerHTML=coBuilderHtml(s); showSaveToast('Reopened — edit, then Save or Download');
+}
 async function coAction(act){
   const d=CO_DRAFT; if(!d) return;
   if(!d.bullets.some(function(b){ return String(b).trim(); }) && !d.photos.length){ if(!confirm('This report has no line items and no photos yet. Carry on anyway?')) return; }
-  showSaveToast('Building the PDF…');
+  showSaveToast(act==='save'?'Saving to the site…':'Building the PDF…');
   let r; try{ r=await coBuildPdf(d); }catch(e){ showSaveToast('Could not build the PDF — check your signal'); return; }
-  if(act==='pdf'){ saveBlobFile(r.blob, r.name); showSaveToast('Downloaded'); }
-  if(act==='share'){ await coShare(r,d); showSaveToast(''); }
+  if(act==='pdf'){ saveBlobFile(r.blob, r.name); }
+  if(act==='share'){ await coShare(r,d); }
+  // Always keep a saved copy on the site (record + PDF) so it's never lost and can be reopened anywhere.
+  let savedOk=false; try{ await coSaveToSite(r); savedOk=true; }catch(e){}
+  showSaveToast(savedOk ? (act==='pdf'?'Downloaded & saved to the site':'Saved to the site') : (act==='pdf'?'Downloaded (couldn’t save to the site — check signal)':'Could not save — check your signal'));
+  if(savedOk) coRefreshBuilder();
 }
 // On-screen preview (scaled A4), then Download / Share
 async function coPreview(){
@@ -3281,6 +3345,7 @@ async function coPreview(){
       +'<button onclick="coPreviewAct(\'pdf\')" style="background:#8B1A1A;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">⬇ Create PDF</button>'
       +'<button onclick="coPreviewAct(\'share\')" style="background:#2c5f8a;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer">📤 Share</button>'
     +'</div>'
+    +'<button onclick="coPreviewAct(\'save\')" style="background:#3F5A4C;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;width:100%">💾 Save to the site</button>'
     +'<button onclick="coDonePreview()" style="background:#1FA24C;color:#fff;border:none;border-radius:10px;padding:12px 8px;font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;width:100%">✓ Done — back to the site</button>'
     +'</div>'
     +'<div style="padding:18px 10px 48px">'+pageWrap(p1,'PAGE 1')+(p2?pageWrap(p2,'PAGE 2 — PHOTOS'):'')+'</div>';
