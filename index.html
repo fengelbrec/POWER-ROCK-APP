@@ -3439,16 +3439,36 @@ async function openSiteCompletionLetter(siteId){
     (Array.isArray(invs)?invs:[]).forEach(function(inv){ (Array.isArray(inv.line_items)?inv.line_items:[]).forEach(function(li){ const name=String(li.product||'').trim(); if(!name||coIsConsumable(name)) return; map[name.toUpperCase()]=name.toUpperCase(); }); });
     prodNames=Object.keys(map).sort();
   }catch(e){}
+  // ESW / Warranty Agreement number — read it off the Prominent spec (or warranty) PDF if we don't have it yet.
+  let autoEsw=(d.esw||d.spec_no||'');
+  if(!autoEsw) autoEsw=await extractEswFromPdf(d.spec_url);
+  if(!autoEsw) autoEsw=await extractEswFromPdf(d.guarantee_url);
   let saved=null; try{ saved=JSON.parse(localStorage.getItem('pr_cletter_'+siteId)||'null'); }catch(e){}
   const endDate=(s.status==='done'&&(s.end_date||d.end_date))?(s.end_date||d.end_date):invToday();
   if(saved && saved.siteId===siteId){
     CLT_DRAFT=saved; CLT_DRAFT.products=Array.isArray(CLT_DRAFT.products)&&CLT_DRAFT.products.length?CLT_DRAFT.products:(prodNames.length?prodNames.slice():['']);
     if(!CLT_DRAFT.site) CLT_DRAFT.site=s.name||'';
+    if(!String(CLT_DRAFT.esw||'').trim() && autoEsw) CLT_DRAFT.esw=autoEsw;
   } else {
-    CLT_DRAFT={ siteId:siteId, site:s.name||'', esw:(d.esw||d.spec_no||''), address:(d.address||''), area:(d.area||''), areaCode:(d.area_code||''),
+    CLT_DRAFT={ siteId:siteId, site:s.name||'', esw:autoEsw, address:(d.address||''), area:(d.area||''), areaCode:(d.area_code||''),
       dear:'Francois / Jaco', start:(s.started||''), end:endDate, products:(prodNames.length?prodNames.slice():['']), date:invToday() };
   }
   cltPersist(); $('siteDetailContent').innerHTML=cltBuilderHtml(s);
+  // Remember it on the site so it's instant next time (and other docs can use it).
+  if(autoEsw && autoEsw!==(d.esw||'')){ const det=Object.assign({}, s.details||{}, {esw:autoEsw}); sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:det}).then(function(ok){ if(ok){ s.details=det; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=det; } }); }
+}
+// Pull the ESW / Warranty Agreement number off a Prominent Paint spec or warranty PDF (text PDFs only).
+async function extractEswFromPdf(url){
+  if(!url || !/^https?:/.test(url)) return '';
+  try{
+    await loadPdfJs();
+    const buf=await (await fetch(url)).arrayBuffer();
+    const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+    let text='';
+    for(let i=1;i<=Math.min(pdf.numPages,4);i++){ const pg=await pdf.getPage(i); const c=await pg.getTextContent(); text+=c.items.map(function(it){return it.str;}).join(' ')+'\n'; }
+    const m=/\bESW\s*[-–—]?\s*(\d{3,6})\b/i.exec(text);
+    return m ? m[1] : '';
+  }catch(e){ return ''; }
 }
 function cltSet(f,v){ if(CLT_DRAFT){ CLT_DRAFT[f]=v; cltPersist(); } }
 function cltProdHtml(){ return (CLT_DRAFT.products||[]).map(function(p,i){ return `<div style="display:flex;gap:8px;margin-bottom:6px"><input class="f-input" value="${esc(p)}" style="margin:0;flex:1" placeholder="Product ${i+1}" oninput="cltProdSet(${i},this.value)"/><button onclick="cltProdDel(${i})" style="width:34px;height:40px;border:1px solid #E9C2BE;border-radius:8px;background:none;color:#B2342A;font-size:15px;font-weight:800;cursor:pointer;flex:0 0 auto">×</button></div>`; }).join(''); }
