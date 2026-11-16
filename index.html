@@ -3359,6 +3359,210 @@ function coClosePreview(){ const ov=document.getElementById('coPreviewOv'); if(o
 function coDonePreview(){ coClosePreview(); if(typeof closeModal==='function') closeModal('modalSiteDetail'); }
 async function coPreviewAct(act){ await coAction(act); }
 
+// ═══════════════════════════════════════════
+// DOCUMENTS MENU — one button on the site that lists all the paperwork.
+// ═══════════════════════════════════════════
+function openSiteDocs(siteId){
+  const s=coSiteById(siteId); if(!s) return;
+  const row=function(icon,label,sub,onclick){ return `<div onclick="${onclick}" style="display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid #EFECE3;cursor:pointer">
+    <div style="font-size:19px;width:26px;flex:0 0 26px;text-align:center">${icon}</div>
+    <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:800;color:#1A1A1A">${label}</div><div style="font-size:11px;color:#A39E8C">${sub}</div></div>
+    <div style="color:#C9C5BA;font-weight:800">›</div></div>`; };
+  const close=`closeModal('modalSiteDetail');`;
+  const h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Documents</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — all the paperwork for this site.</div>
+    <div class="ledger-card" style="padding:2px 15px;margin-bottom:14px">
+      ${row('📋','Daily report','On-site daily progress',`${close}openSiteDaily('${s.id}')`)}
+      ${row('📅','Weekly report','Client weekly update',`${close}openSiteWeekly('${s.id}')`)}
+      ${row('🏁','Completion Report','Client project-completion report',`openSiteCompletion('${s.id}')`)}
+      ${row('✉️','Completion Letter','To Prominent — request the warranty certificate',`openSiteCompletionLetter('${s.id}')`)}
+      ${row('🛡️','Warranty certificate','Prominent warranty — view or upload',`openSiteWarranty('${s.id}')`)}
+      ${row('📦','Products &amp; colours','What was used on site',`openSiteProducts('${s.id}')`)}
+      ${row('ⓘ','Site info','Client, quote &amp; documents',`openSiteInfo('${s.id}', true, false)`)}
+    </div>
+    <button class="cta-btn ghost" onclick="closeModal('modalSiteDetail')">Close</button>`;
+  $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+// Warranty certificate (the Prominent-issued doc) — view or upload. Reuses the site 'guarantee' slot.
+function openSiteWarranty(siteId){
+  const s=coSiteById(siteId); if(!s) return; const d=s.details||{};
+  const url=d.guarantee_url, name=d.guarantee_name;
+  const h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Warranty certificate</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — the Prominent Paints warranty certificate. You receive this from Prominent after they inspect; upload it here to keep it on the site.</div>
+    <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
+      ${url ? `<div style="font-size:12.5px;font-weight:700;margin-bottom:10px">On file${name?` · <span style="font-weight:400;color:#8A8470">${esc(name)}</span>`:''}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800">Open</a>
+        <label style="background:#F0EEE6;color:#1A1A1A;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800;cursor:pointer">Replace<input type="file" accept="application/pdf,image/*" style="display:none" onchange="warrantyUpload('${siteId}',this)"/></label>
+        <button onclick="warrantyRemove('${siteId}')" style="background:none;border:1px solid #E9C2BE;color:#B2342A;border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">Remove</button></div>`
+      : `<div style="font-size:12.5px;color:#8A8470;margin-bottom:10px">No warranty certificate on file yet.</div>
+        <label style="display:block;background:#8B1A1A;color:#fff;border-radius:9px;padding:12px;font-size:13px;font-weight:800;text-align:center;cursor:pointer">📎 Upload the warranty certificate<input type="file" accept="application/pdf,image/*" style="display:none" onchange="warrantyUpload('${siteId}',this)"/></label>`}
+    </div>
+    <button class="cta-btn ghost" onclick="openSiteDocs('${siteId}')">← Back to Documents</button>`;
+  $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+async function warrantyUpload(siteId, input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  showSaveToast('Uploading…');
+  const url=await sbUploadFile(siteId+'/guarantee-'+Date.now()+'-'+f.name, f);
+  if(!url){ showSaveToast('Upload failed — check your signal'); return; }
+  const s=coSiteById(siteId)||{}; const d=Object.assign({}, s.details||{});
+  d.guarantee_url=url; d.guarantee_name=f.name;
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){ s.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast('Warranty certificate uploaded'); openSiteWarranty(siteId); }
+  else showSaveToast('Saved the file but could not link it — try again');
+}
+async function warrantyRemove(siteId){
+  if(!confirm('Remove the warranty certificate from this site?')) return;
+  const s=coSiteById(siteId)||{}; const d=Object.assign({}, s.details||{});
+  d.guarantee_url=''; d.guarantee_name='';
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){ s.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast('Removed'); openSiteWarranty(siteId); }
+  else showSaveToast('Could not remove — check your signal');
+}
+
+// ═══════════════════════════════════════════
+// COMPLETION LETTER — a short letter to Prominent Paints after a warranty project,
+// asking them to inspect & issue the warranty certificate. Reuses the report PDF helpers.
+// ═══════════════════════════════════════════
+let CLT_DRAFT = null;
+function cltPersist(){ try{ if(CLT_DRAFT) localStorage.setItem('pr_cletter_'+CLT_DRAFT.siteId, JSON.stringify(CLT_DRAFT)); }catch(e){} }
+async function openSiteCompletionLetter(siteId){
+  const s=coSiteById(siteId); if(!s) return;
+  $('siteDetailContent').innerHTML=`<div style="text-align:center;padding:40px;color:#8A8470">Loading…</div>`; openModal('modalSiteDetail');
+  const d=s.details||{};
+  let prodNames=[];
+  try{
+    const invs=await sbGetRows('invoice_inbox', `select=line_items&site_guess=eq.${encodeURIComponent(siteId)}&status=eq.confirmed`);
+    const map={};
+    (Array.isArray(invs)?invs:[]).forEach(function(inv){ (Array.isArray(inv.line_items)?inv.line_items:[]).forEach(function(li){ const name=String(li.product||'').trim(); if(!name||coIsConsumable(name)) return; map[name.toUpperCase()]=name.toUpperCase(); }); });
+    prodNames=Object.keys(map).sort();
+  }catch(e){}
+  let saved=null; try{ saved=JSON.parse(localStorage.getItem('pr_cletter_'+siteId)||'null'); }catch(e){}
+  const endDate=(s.status==='done'&&(s.end_date||d.end_date))?(s.end_date||d.end_date):invToday();
+  if(saved && saved.siteId===siteId){
+    CLT_DRAFT=saved; CLT_DRAFT.products=Array.isArray(CLT_DRAFT.products)&&CLT_DRAFT.products.length?CLT_DRAFT.products:(prodNames.length?prodNames.slice():['']);
+    if(!CLT_DRAFT.site) CLT_DRAFT.site=s.name||'';
+  } else {
+    CLT_DRAFT={ siteId:siteId, site:s.name||'', esw:(d.esw||d.spec_no||''), address:(d.address||''), area:(d.area||''), areaCode:(d.area_code||''),
+      dear:'Francois / Jaco', start:(s.started||''), end:endDate, products:(prodNames.length?prodNames.slice():['']), date:invToday() };
+  }
+  cltPersist(); $('siteDetailContent').innerHTML=cltBuilderHtml(s);
+}
+function cltSet(f,v){ if(CLT_DRAFT){ CLT_DRAFT[f]=v; cltPersist(); } }
+function cltProdHtml(){ return (CLT_DRAFT.products||[]).map(function(p,i){ return `<div style="display:flex;gap:8px;margin-bottom:6px"><input class="f-input" value="${esc(p)}" style="margin:0;flex:1" placeholder="Product ${i+1}" oninput="cltProdSet(${i},this.value)"/><button onclick="cltProdDel(${i})" style="width:34px;height:40px;border:1px solid #E9C2BE;border-radius:8px;background:none;color:#B2342A;font-size:15px;font-weight:800;cursor:pointer;flex:0 0 auto">×</button></div>`; }).join(''); }
+function cltProdSet(i,v){ if(CLT_DRAFT&&CLT_DRAFT.products) CLT_DRAFT.products[i]=v; cltPersist(); }
+function cltProdDel(i){ if(!CLT_DRAFT||!CLT_DRAFT.products) return; CLT_DRAFT.products.splice(i,1); if(!CLT_DRAFT.products.length) CLT_DRAFT.products.push(''); cltPersist(); const b=$('clt_prod'); if(b) b.innerHTML=cltProdHtml(); }
+function cltProdAdd(){ if(!CLT_DRAFT) return; CLT_DRAFT.products.push(''); cltPersist(); const b=$('clt_prod'); if(b){ b.innerHTML=cltProdHtml(); const t=b.querySelectorAll('input'); if(t.length) t[t.length-1].focus(); } }
+function cltBuilderHtml(s){
+  const lbl='display:block;font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:.6px;margin-bottom:4px;text-transform:uppercase';
+  const fld=function(label,f,val,ph){ return `<label style="${lbl}">${label}</label><input class="f-input" value="${esc(val==null?'':val)}" ${ph?`placeholder="${ph}"`:''} oninput="cltSet('${f}',this.value)"/>`; };
+  return `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Completion Letter</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — a letter to Prominent Paints to inspect &amp; issue the warranty certificate.</div>
+    ${cltSavedListHtml(s)}
+    <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
+      ${fld('Dear (Prominent contact)','dear',CLT_DRAFT.dear,'e.g. Francois / Jaco')}
+      ${fld('Site name','site',CLT_DRAFT.site)}
+      ${fld('Warranty / ESW number','esw',CLT_DRAFT.esw,'e.g. 7533')}
+      ${fld('Address','address',CLT_DRAFT.address)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>${fld('Area','area',CLT_DRAFT.area)}</div>
+        <div>${fld('Area code','areaCode',CLT_DRAFT.areaCode)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label style="${lbl}">Commencement date</label><input class="f-input" type="date" style="margin:0" value="${esc(CLT_DRAFT.start)}" onchange="cltSet('start',this.value)"/></div>
+        <div><label style="${lbl}">Completion date</label><input class="f-input" type="date" style="margin:0" value="${esc(CLT_DRAFT.end)}" onchange="cltSet('end',this.value)"/></div>
+      </div>
+      <label style="${lbl}">Date of letter</label><input class="f-input" type="date" style="margin:0" value="${esc(CLT_DRAFT.date)}" onchange="cltSet('date',this.value)"/>
+    </div>
+    <div class="section-lbl" style="margin-top:0">Products used (as per spec)</div>
+    <div class="ledger-card" style="padding:12px 15px;margin-bottom:14px">
+      <div style="font-size:11px;color:#8A8470;margin-bottom:8px">Pre-filled from your supplier invoices. Edit or remove any line.</div>
+      <div id="clt_prod">${cltProdHtml()}</div>
+      <button class="cta-btn ghost" style="height:42px;margin-top:4px" onclick="cltProdAdd()">＋ Add product</button>
+    </div>
+    <button class="cta-btn" onclick="cltAction('pdf')">⬇ Download letter</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="cltAction('share')">📤 Share</button>
+      <button class="cta-btn" style="margin:0;height:46px;font-size:12.5px;background:#1FA24C" onclick="cltAction('save')">💾 Save to site</button>
+    </div>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="openSiteDocs('${s.id}')">← Back to Documents</button>`;
+}
+function cltPageHtml(r){
+  const row=function(k,v){ return `<div style="display:flex;margin:0 0 5px"><div style="width:250px;flex:0 0 250px;font-weight:700">${k}</div><div style="flex:1">${esc(v)}</div></div>`; };
+  const prod=(r.products||[]).filter(function(p){ return String(p).trim(); });
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A;font-size:12.5pt;line-height:1.6">
+    ${LETTERHEAD?`<img src="${LETTERHEAD}" style="width:100%;display:block;margin:0 0 30px"/>`:`<div style="font-size:22px;font-weight:800;color:#8B1A1A;margin-bottom:30px">POWER ROCK PAINTING</div>`}
+    <div style="margin-bottom:20px">Date: ${esc(wkFmtDate(r.date))}</div>
+    <div style="margin-bottom:20px">
+      ${row('Site Name:', r.site)}
+      ${row('Warrantee Agreement Number:', r.esw)}
+      ${row('Address:', r.address)}
+      ${row('Area:', r.area)}
+      ${row('Area Code:', r.areaCode)}
+    </div>
+    <div style="margin-bottom:16px">Dear ${esc(r.dear||'')}</div>
+    <div style="margin-bottom:18px">We have completed the redecoration of ${esc(String(r.site||'').toUpperCase())}</div>
+    <div style="margin-bottom:5px">Commencement Date: ${esc(wkFmtDate(r.start))}</div>
+    <div style="margin-bottom:18px">Completion Date: ${esc(wkFmtDate(r.end))}</div>
+    <div style="margin-bottom:16px">This letter is to inform you that the project was executed according to the Prominent Paints specification WA – ESW ${esc(r.esw)}</div>
+    ${prod.length?`<div style="margin-bottom:22px">`+prod.map(function(p,i){ return `<div style="margin-bottom:2px">${i+1}. ${esc(p)}</div>`; }).join('')+`</div>`:''}
+    <div style="margin-bottom:6px">Please inspect and issue the warranty certificate.</div>
+    <div style="margin-top:36px">Kind regards</div>
+    <div style="margin-top:26px;font-weight:700">Ferdi Engelbrecht</div>
+    <div>082 253 7509</div>
+    <div>ferdi@powerrock.co.za</div>
+  </div>`;
+}
+async function cltBuildPdf(r){
+  await loadPdfLibs();
+  const pdf=new window.jspdf.jsPDF('p','mm','a4');
+  wkAddCanvas(pdf, await wkRenderCanvas(cltPageHtml(r)), true);
+  const nm=String(r.site||'Site').replace(/[^A-Za-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim()+' - Completion Letter.pdf';
+  return { blob: pdf.output('blob'), name: nm };
+}
+function cltSaved(s){ return (s&&s.details&&Array.isArray(s.details.completion_letters))?s.details.completion_letters:[]; }
+async function cltSaveToSite(pdf){
+  const d=CLT_DRAFT; if(!d) return null;
+  if(!d.id) d.id=uid();
+  let pdfUrl=''; if(pdf&&pdf.blob){ try{ pdfUrl=await sbUploadFile(d.siteId+'/completion-letter/'+String(d.site||'Site').replace(/[^A-Za-z0-9]+/g,'_')+'-'+d.id+'.pdf', pdf.blob); }catch(e){} }
+  const rows=await sbGetRows('sites','id=eq.'+encodeURIComponent(d.siteId));
+  const fresh=Array.isArray(rows)&&rows[0]; const s=coSiteById(d.siteId); if(!fresh&&!s) throw new Error('site');
+  const det=Object.assign({}, (fresh?fresh.details:s.details)||{});
+  const list=Array.isArray(det.completion_letters)?det.completion_letters.slice():[];
+  const at=list.findIndex(function(w){ return w.id===d.id; });
+  const rec={ v:1, id:d.id, site:d.site||'', esw:d.esw||'', address:d.address||'', area:d.area||'', areaCode:d.areaCode||'', dear:d.dear||'', start:d.start||'', end:d.end||'', date:d.date||invToday(),
+    products:(d.products||[]).filter(function(p){return String(p).trim();}),
+    pdf_url: pdfUrl||(at!==-1?list[at].pdf_url:'')||'', created: at!==-1?(list[at].created||invToday()):invToday(), updated:new Date().toISOString(), by: CURRENT_ROLE==='henk'?'Henk':'Ferdi' };
+  if(at!==-1) list[at]=rec; else list.push(rec);
+  det.completion_letters=list;
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(d.siteId),{details:det}); if(!ok) throw new Error('save');
+  if(s) s.details=det;
+  if(typeof OWNER!=='undefined'&&OWNER.sites){ const os=OWNER.sites.find(function(x){return x.id===d.siteId;}); if(os) os.details=det; }
+  if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===d.siteId) SUMMARY.site.details=det;
+  return rec;
+}
+function cltSavedListHtml(s){
+  const list=cltSaved(s).slice().sort(function(a,b){ return String(b.updated||b.created||'').localeCompare(String(a.updated||a.created||'')); });
+  if(!list.length) return '';
+  return `<div class="section-lbl" style="margin-top:0">Saved completion letters</div><div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`+list.map(function(r){ return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #EFECE3"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">${wkFmtDate(r.date||r.created)}</div><div style="font-size:10.5px;color:#A39E8C">ESW ${esc(r.esw||'—')}${r.by?' · '+esc(r.by):''}</div></div>${r.pdf_url?`<a href="${r.pdf_url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:800">Open PDF</a>`:''}<button onclick="cltReopen('${r.id}')" style="background:#F0EEE6;border:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:800;color:#1A1A1A;cursor:pointer;font-family:inherit">Reopen</button></div>`; }).join('')+`</div>`;
+}
+function cltReopen(id){ const s=coSiteById(CLT_DRAFT&&CLT_DRAFT.siteId); if(!s) return; const rec=cltSaved(s).find(function(r){return r.id===id;}); if(!rec) return; CLT_DRAFT=Object.assign({ siteId:s.id }, rec, { products:(rec.products&&rec.products.length)?rec.products.slice():[''] }); cltPersist(); if($('siteDetailContent')) $('siteDetailContent').innerHTML=cltBuilderHtml(s); showSaveToast('Reopened'); }
+async function cltShare(r){ const file=new File([r.blob], r.name, {type:'application/pdf'}); if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file], title:r.name}); }catch(e){ if(!(e&&e.name==='AbortError')) saveBlobFile(r.blob,r.name); } return; } saveBlobFile(r.blob,r.name); showSaveToast('Sharing isn’t available — saved the PDF instead'); }
+async function cltAction(act){
+  const d=CLT_DRAFT; if(!d) return;
+  if(!String(d.esw||'').trim()){ if(!confirm('No Warranty / ESW number yet. Carry on anyway?')) return; }
+  showSaveToast(act==='save'?'Saving to the site…':'Building the letter…');
+  let r; try{ r=await cltBuildPdf(d); }catch(e){ showSaveToast('Could not build the letter — check your signal'); return; }
+  if(act==='pdf'){ saveBlobFile(r.blob,r.name); }
+  if(act==='share'){ await cltShare(r); }
+  let ok=false; try{ await cltSaveToSite(r); ok=true; }catch(e){}
+  showSaveToast(ok?(act==='pdf'?'Downloaded & saved to the site':'Saved to the site'):(act==='pdf'?'Downloaded (couldn’t save — check signal)':'Could not save — check your signal'));
+  if(ok){ const s=coSiteById(d.siteId); if(s && $('siteDetailContent') && !document.getElementById('coPreviewOv')) $('siteDetailContent').innerHTML=cltBuilderHtml(s); }
+}
+
 function duLeaderSites(leaderKey){
   return DU_SITELIST.filter(function(s){ return s.team_leader === leaderKey; })
     .sort(function(a,b){ return new Date(b.started) - new Date(a.started); });
@@ -8093,11 +8297,7 @@ function paintSiteSummaryBody(){
       <div style="display:flex;gap:7px;flex-wrap:wrap">
         ${invBtn}
         <button onclick="summaryInvoices('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Supplier invoices</button>
-        <button onclick="openSiteProducts('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📦 Products</button>
-        <button onclick="openSiteDaily('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📋 Daily</button>
-        <button onclick="openSiteWeekly('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📅 Weekly</button>
-        <button onclick="openSiteCompletion('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🏁 Completion Report</button>
-        <button onclick="openSiteInfo('${s.id}', true, false)" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">ⓘ Info</button>
+        <button onclick="openSiteDocs('${s.id}')" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">📄 Documents</button>
       </div>
     </div>
     ${owner ? midOwner : midHenk}
