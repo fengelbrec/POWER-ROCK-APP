@@ -9116,6 +9116,7 @@ async function saveInvoice(siteId, poId, editId){
     inv=(d.invoices||[]).find(function(x){ return x.id===editId; });
     if(!inv){ showSaveToast('Invoice not found'); refreshSitePOs(); return; }
     Object.assign(inv, fields);   // keep id, paid, paid_date, created
+    delete inv.void;   // editing a parked (void) invoice into a real one un-voids it
   } else {
     inv=Object.assign({ id:uid(), paid:false, paid_date:'', created:invToday() }, fields);
     d.invoices.push(inv);
@@ -9364,7 +9365,7 @@ async function renderIncome(){
   const ageOf=function(r){ if(!r.date) return null; return Math.max(0,Math.floor((Date.now()-new Date(r.date+'T12:00:00'))/86400000)); };
   const ageCol=function(a){ return a>90?'#B2342A':a>60?'#D46A00':a>30?'#C08A00':'#1A7A4A'; };
   const stColour=function(paid){ return paid?'#3F5A4C':'#C08A00'; };
-  const unpaidAll=rows.filter(function(r){ return !r.paid; });
+  const unpaidAll=rows.filter(function(r){ return !r.paid && !r.void; });   // void (zeroed) invoices don't count as owing
   const MONTHS_S=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   let h=`<div class="page-eyebrow">Door 1 · Owner</div><div class="page-title">Income — Invoices</div>`;
@@ -9431,7 +9432,7 @@ async function renderIncome(){
       <td style="font-weight:800">${esc(r.number_str||'')}</td>
       <td class="alt">${r.date?fd(r.date):'—'}</td>
       <td>${esc(recClient(r)||r._siteName||'')}</td>
-      <td class="alt" style="font-weight:700;color:${stColour(r.paid)}">${r.paid?'PAID':'unpaid'}</td>
+      <td class="alt" style="font-weight:700;color:${r.void?'#8A8470':stColour(r.paid)}">${r.void?'void':(r.paid?'PAID':'unpaid')}</td>
       <td style="font-weight:800">${R(r.total_incl||0)}</td>
     </tr>`; }).join('')}</tbody>
     <tfoot><tr><td>TOTAL</td><td class="alt"></td><td></td><td class="alt"><span class="mini">${R(mpaid)} paid</span></td><td>${R(mtot)}</td></tr></tfoot>
@@ -9450,7 +9451,7 @@ function openInvoiceDetail(siteId, invId){
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:12px">
       <div class="disp" style="font-size:18px;font-weight:800">${esc(iv.number_str||'')}</div>
-      <div style="font-size:11px;font-weight:800;color:${iv.paid?'#1A7A4A':'#C08A00'}">${iv.paid?'PAID':'UNPAID'}</div>
+      <div style="font-size:11px;font-weight:800;color:${iv.void?'#8A8470':(iv.paid?'#1A7A4A':'#C08A00')}">${iv.void?'VOID · R0':(iv.paid?'PAID':'UNPAID')}</div>
     </div>
     <div class="ledger-card" style="padding:4px 15px;margin-bottom:14px">
       ${row('Client', esc(recClient(iv)))}
@@ -9478,9 +9479,23 @@ function openInvoiceDetail(siteId, invId){
       <button class="cta-btn ghost" style="flex:1;margin:0" onclick="incomeDownloadWord('${siteId}','${invId}')">📄 Word</button>
       <button class="cta-btn ghost" style="flex:1;margin:0" onclick="closeModal('modalSiteDetail');incomeTogglePaid('${siteId}','${invId}')">${iv.paid?'↺ Mark unpaid':'✓ Mark paid'}</button>
     </div>
+    ${iv.void ? `<div style="background:#F4F2EC;border:1px solid #E2DCCF;border-radius:9px;padding:10px 12px;font-size:11.5px;color:#6B5A2B;margin:4px 0 8px">⏸ This invoice is <b>parked at R0 (void)</b>. To reuse the number <b>${esc(iv.number_str||'')}</b>, tap <b>✎ Edit this invoice</b> below and fill in your next client &amp; amount.</div>` : ''}
     <button class="cta-btn" style="margin-top:4px" onclick="incomeEditInvoice('${siteId}','${invId}')">✎ Edit this invoice</button>
+    ${iv.void ? '' : `<button class="cta-btn ghost" style="margin-top:8px;color:#B2342A;border-color:#E9C2BE" onclick="incomeVoidInvoice('${siteId}','${invId}')">R0 · Void (zero) this invoice</button>`}
     <button class="cta-btn ghost" style="margin-top:8px" onclick="closeModal('modalSiteDetail')">Close</button>`;
   $('siteDetailContent').innerHTML=h; openModal('modalSiteDetail');
+}
+// Park an invoice at R0 (e.g. a duplicate). It stops counting and its number can be reused by editing it later.
+async function incomeVoidInvoice(siteId,invId){
+  const g=incomeInvGet(siteId,invId); if(!g) return;
+  const iv0=g.inv;
+  if(!confirm('Zero invoice '+(iv0.number_str||'')+'?\n\nIt will be set to R0 and parked (VOID) so it stops counting in your totals. You can reopen it later and Edit it into your next invoice — it keeps the number '+(iv0.number_str||'')+'.\n\nOK to zero it?')) return;
+  const d=Object.assign({}, g.site.details||{});
+  const iv=(d.invoices||[]).find(function(x){ return x.id===invId; }); if(!iv) return;
+  iv.void=true; iv.base_ex=0; iv.extra_lines=[]; iv.amount_ex=0; iv.vat=0; iv.total_incl=0; iv.pct=0; iv.paid=false; iv.paid_date='';
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(siteId),{details:d});
+  if(ok){ g.site.details=d; const os=(OWNER.sites||[]).find(function(x){ return x.id===siteId; }); if(os) os.details=d; if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===siteId) SUMMARY.site.details=d; showSaveToast('Invoice '+(iv0.number_str||'')+' zeroed (void)'); closeModal('modalSiteDetail'); renderIncome(); }
+  else showSaveToast('Could not save — check your signal');
 }
 function incomeInvGet(siteId,invId){ const s=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(!s) return null; const iv=((s.details&&s.details.invoices)||[]).find(function(x){return x.id===invId;}); return iv?{site:s,inv:iv}:null; }
 function incomeDownloadPDF(siteId,invId){ const g=incomeInvGet(siteId,invId); if(g) generateInvoicePDF(g.inv); }
