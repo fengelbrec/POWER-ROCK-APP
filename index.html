@@ -3379,6 +3379,7 @@ function openSiteDocs(siteId){
       ${row('🏁','Completion Report','Client project-completion report',`openSiteCompletion('${s.id}')`)}
       ${row('✉️','Completion Letter','To Prominent — request the warranty certificate',`openSiteCompletionLetter('${s.id}')`)}
       ${owner ? row('💵','Tax invoices','Client invoices raised for this site',`openSitePOs('${s.id}')`) : ''}
+      ${owner ? row('🧾','Monthly statement','Statement of account — invoiced, paid &amp; outstanding',`openSiteStatement('${s.id}')`) : ''}
       ${owner ? row('✎','Quotation','The quote / contract on file — view or upload',`openSiteFileDoc('${s.id}','quote')`) : ''}
       ${row('📑','Specification','Prominent spec (ESW) — view or upload',`openSiteFileDoc('${s.id}','spec')`)}
       ${row('🛡️','Warranty certificate','Prominent warranty — view or upload',`openSiteFileDoc('${s.id}','guarantee')`)}
@@ -3591,6 +3592,142 @@ async function cltAction(act){
   let ok=false; try{ await cltSaveToSite(r); ok=true; }catch(e){}
   showSaveToast(ok?(act==='pdf'?'Downloaded & saved to the site':'Saved to the site'):(act==='pdf'?'Downloaded (couldn’t save — check signal)':'Could not save — check your signal'));
   if(ok){ const s=coSiteById(d.siteId); if(s && $('siteDetailContent') && !document.getElementById('coPreviewOv')) $('siteDetailContent').innerHTML=cltBuilderHtml(s); }
+}
+
+// ═══════════════════════════════════════════
+// MONTHLY STATEMENT — a client statement of account, built automatically from the
+// site's tax invoices: every invoice (date + number), what's paid, and the balance
+// outstanding, grouped by month. Reuses the report PDF helpers + save-to-site pattern.
+// ═══════════════════════════════════════════
+let STMT_DRAFT=null;
+function stmtLines(s){
+  return siteInvoices(s).filter(function(iv){ return !iv.void; })
+    .map(function(iv){ return { date:iv.date||'', number_str:iv.number_str||'', number:parseInt(iv.number)||0, amount:parseFloat(iv.total_incl)||0, paid:!!iv.paid, heading:iv.heading||'', description:iv.description||'' }; })
+    .sort(function(a,b){ return String(a.date).localeCompare(String(b.date)) || a.number-b.number; });
+}
+function stmtTotals(lines){ let inv=0,paid=0; lines.forEach(function(l){ inv+=l.amount; if(l.paid) paid+=l.amount; }); return { invoiced:inv, paid:paid, outstanding:Math.round((inv-paid)*100)/100 }; }
+function stmtMonthLabel(mk){ const p=String(mk).split('-'); return new Date(+p[0],(+p[1]||1)-1,1).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}); }
+function openSiteStatement(siteId){
+  const s=coSiteById(siteId); if(!s) return; const d=s.details||{};
+  STMT_DRAFT={ siteId:siteId, site:s.name||'', client:(s.client||''), address:(d.address||''), date:invToday() };
+  $('siteDetailContent').innerHTML=stmtBuilderHtml(s); openModal('modalSiteDetail');
+}
+function stmtSet(f,v){ if(STMT_DRAFT){ STMT_DRAFT[f]=v; } }
+function stmtBuilderHtml(s){
+  const lbl='display:block;font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:.6px;margin-bottom:4px;text-transform:uppercase';
+  const lines=stmtLines(s); const t=stmtTotals(lines);
+  const preview=lines.length ? (function(){
+    const byMonth={}, order=[]; lines.forEach(function(l){ const mk=(l.date||'0000-00').slice(0,7); if(!byMonth[mk]){byMonth[mk]=[];order.push(mk);} byMonth[mk].push(l); });
+    return order.sort().map(function(mk){
+      return `<div style="font-size:11px;font-weight:800;color:#8B1A1A;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.4px">${stmtMonthLabel(mk)}</div>`+
+        byMonth[mk].map(function(l){ return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #EFECE3;font-size:12px">
+          <div style="min-width:0"><b>${esc(l.number_str)}</b> · ${l.date?fd(l.date):'—'}<div style="font-size:10px;color:#A39E8C">${esc(l.heading||l.description||'')}</div></div>
+          <div style="text-align:right;white-space:nowrap"><div class="disp" style="font-weight:800">${R(l.amount)}</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:${l.paid?'#3F5A4C':'#B2342A'}">${l.paid?'Paid':'Outstanding'}</div></div>
+        </div>`; }).join('');
+    }).join('');
+  })() : '<div style="font-size:12px;color:#A39E8C;padding:8px 0">No invoices raised for this site yet.</div>';
+  return `<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 14px"></div>
+    <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">Monthly statement</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — a client statement of account, built automatically from the invoices.</div>
+    ${stmtSavedListHtml(s)}
+    <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
+      <label style="${lbl}">Statement date (as at)</label><input class="f-input" type="date" style="margin:0 0 10px" value="${esc(STMT_DRAFT.date)}" onchange="stmtSet('date',this.value)"/>
+      <label style="${lbl}">To (client)</label><input class="f-input" style="margin:0 0 10px" value="${esc(STMT_DRAFT.client)}" oninput="stmtSet('client',this.value)"/>
+      <label style="${lbl}">Address</label><textarea class="f-input" rows="2" style="margin:0" oninput="stmtSet('address',this.value)">${esc(STMT_DRAFT.address)}</textarea>
+    </div>
+    <div class="ledger-card" style="padding:12px 16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0"><span>Total invoiced (incl VAT)</span><span class="disp" style="font-weight:800">${R(t.invoiced)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0"><span>Paid to date</span><span class="disp" style="font-weight:800;color:#3F5A4C">${R(t.paid)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:7px 0 0;border-top:2px solid #1A1A1A;margin-top:4px"><span>Balance outstanding</span><span class="disp" style="color:${t.outstanding>0.5?'#B2342A':'#3F5A4C'}">${R(t.outstanding)}</span></div>
+      <div style="margin-top:8px">${preview}</div>
+    </div>
+    <button class="cta-btn" onclick="stmtAction('pdf')">⬇ Download statement</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <button class="cta-btn ghost" style="margin:0;height:46px;font-size:12.5px" onclick="stmtAction('share')">📤 Share</button>
+      <button class="cta-btn" style="margin:0;height:46px;font-size:12.5px;background:#1FA24C" onclick="stmtAction('save')">💾 Save to site</button>
+    </div>
+    <button class="cta-btn ghost" style="margin-top:8px" onclick="openSiteDocs('${s.id}')">← Back to Documents</button>`;
+}
+function stmtPageHtml(r, lines){
+  const td='padding:7px 9px;border:1px solid #CFC8B8;font-size:10.5pt;vertical-align:top';
+  const th='padding:8px 9px;border:1px solid #1A1A1A;font-size:10.5pt;font-weight:bold;background:#1A1A1A;color:#fff';
+  const byMonth={}, order=[]; (lines||[]).forEach(function(l){ const mk=(l.date||'0000-00').slice(0,7); if(!byMonth[mk]){byMonth[mk]=[];order.push(mk);} byMonth[mk].push(l); });
+  let body='';
+  order.sort().forEach(function(mk){
+    body+=`<tr><td colspan="5" style="${td};background:#EFECE3;font-weight:bold">${stmtMonthLabel(mk)}</td></tr>`;
+    let mt=0;
+    byMonth[mk].forEach(function(l){ mt+=l.amount;
+      body+=`<tr><td style="${td};white-space:nowrap">${l.date?wkFmtDate(l.date):'—'}</td><td style="${td};white-space:nowrap">${esc(l.number_str)}</td><td style="${td}">${esc(l.heading||l.description||'')}</td><td style="${td};text-align:right;white-space:nowrap">${R(l.amount)}</td><td style="${td};text-align:center;white-space:nowrap;color:${l.paid?'#1A7A4A':'#B2342A'};font-weight:bold">${l.paid?'Paid':'Outstanding'}</td></tr>`;
+    });
+    body+=`<tr><td colspan="3" style="${td};text-align:right;font-style:italic">Total for ${stmtMonthLabel(mk)}</td><td style="${td};text-align:right;font-weight:bold">${R(mt)}</td><td style="${td}"></td></tr>`;
+  });
+  const t=stmtTotals(lines||[]);
+  const addr=(r.address||'').split('\n').map(esc).join('<br/>');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1A1A1A;font-size:11pt">
+    ${LETTERHEAD?`<div style="text-align:center;margin:0 0 14px"><img src="${LETTERHEAD}" style="width:100%;max-width:560px"/></div>`:`<h2 style="color:#8B1A1A">POWER ROCK PAINTING</h2>`}
+    <h3 style="text-align:center;margin:8px 0 14px;letter-spacing:1px">STATEMENT OF ACCOUNT</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:11pt;margin-bottom:14px">
+      <tr><td style="width:120px;vertical-align:top;padding:2px 0"><u><b>TO:</b></u></td><td style="padding:2px 0">${esc(r.client)}${addr?'<br/>'+addr:''}</td></tr>
+      <tr><td style="vertical-align:top;padding:2px 0"><u><b>PROJECT:</b></u></td><td style="padding:2px 0">${esc(r.site)}</td></tr>
+      <tr><td style="padding:2px 0"><u><b>STATEMENT DATE:</b></u></td><td style="padding:2px 0">${esc(wkFmtDate(r.date))}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="${th}">Date</td><td style="${th}">Invoice No</td><td style="${th}">Description</td><td style="${th};text-align:right">Amount (incl VAT)</td><td style="${th};text-align:center">Status</td></tr>
+      ${body||`<tr><td colspan="5" style="${td}">No invoices.</td></tr>`}
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin-top:12px">
+      <tr><td style="text-align:right;padding:5px 9px">Total invoiced (incl VAT)</td><td style="text-align:right;width:170px;padding:5px 9px">${R(t.invoiced)}</td></tr>
+      <tr><td style="text-align:right;padding:5px 9px">Less: paid to date</td><td style="text-align:right;padding:5px 9px">− ${R(t.paid)}</td></tr>
+      <tr><td style="text-align:right;padding:8px 9px;font-weight:bold;font-size:12pt">BALANCE OUTSTANDING</td><td style="text-align:right;padding:8px 9px;font-weight:bold;font-size:12pt;border-top:1.5px solid #1A1A1A;border-bottom:4px double #1A1A1A">${R(t.outstanding)}</td></tr>
+    </table>
+    <div style="margin-top:18px;font-size:10.5pt"><u><b>BANKING DETAILS:</b></u><br/><b>POWER ROCK.paint</b><br/>FNB WATERFALL MALL<br/>CHEQUE ACCOUNT: 62486424072<br/>BRANCH: 258055</div>
+  </div>`;
+}
+async function stmtBuildPdf(r, lines){
+  await loadPdfLibs();
+  const pdf=new window.jspdf.jsPDF('p','mm','a4');
+  wkAddCanvas(pdf, await wkRenderCanvas(stmtPageHtml(r, lines)), true);
+  const nm=String(r.site||'Site').replace(/[^A-Za-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim()+' - Statement '+String(r.date||'').slice(0,7)+'.pdf';
+  return { blob: pdf.output('blob'), name: nm };
+}
+function stmtSaved(s){ return (s&&s.details&&Array.isArray(s.details.statements))?s.details.statements:[]; }
+async function stmtSaveToSite(pdf, lines){
+  const d=STMT_DRAFT; if(!d) return null;
+  if(!d.id) d.id=uid();
+  let pdfUrl=''; if(pdf&&pdf.blob){ try{ pdfUrl=await sbUploadFile(d.siteId+'/statement/'+String(d.site||'Site').replace(/[^A-Za-z0-9]+/g,'_')+'-'+d.id+'.pdf', pdf.blob); }catch(e){} }
+  const t=stmtTotals(lines||[]);
+  const rows=await sbGetRows('sites','id=eq.'+encodeURIComponent(d.siteId));
+  const fresh=Array.isArray(rows)&&rows[0]; const s=coSiteById(d.siteId); if(!fresh&&!s) throw new Error('site');
+  const det=Object.assign({}, (fresh?fresh.details:s.details)||{});
+  const list=Array.isArray(det.statements)?det.statements.slice():[];
+  const at=list.findIndex(function(w){ return w.id===d.id; });
+  const rec={ v:1, id:d.id, site:d.site||'', client:d.client||'', address:d.address||'', date:d.date||invToday(),
+    lines:(lines||[]).slice(), invoiced:t.invoiced, paid:t.paid, outstanding:t.outstanding,
+    pdf_url: pdfUrl||(at!==-1?list[at].pdf_url:'')||'', created: at!==-1?(list[at].created||invToday()):invToday(), updated:new Date().toISOString(), by: CURRENT_ROLE==='henk'?'Henk':'Ferdi' };
+  if(at!==-1) list[at]=rec; else list.push(rec);
+  det.statements=list;
+  const ok=await sbPatch('sites','id=eq.'+encodeURIComponent(d.siteId),{details:det}); if(!ok) throw new Error('save');
+  if(s) s.details=det;
+  if(typeof OWNER!=='undefined'&&OWNER.sites){ const os=OWNER.sites.find(function(x){return x.id===d.siteId;}); if(os) os.details=det; }
+  if(SUMMARY&&SUMMARY.site&&SUMMARY.site.id===d.siteId) SUMMARY.site.details=det;
+  return rec;
+}
+function stmtSavedListHtml(s){
+  const list=stmtSaved(s).slice().sort(function(a,b){ return String(b.date||b.created||'').localeCompare(String(a.date||a.created||'')); });
+  if(!list.length) return '';
+  return `<div class="section-lbl" style="margin-top:0">Saved statements</div><div class="ledger-card" style="padding:4px 14px;margin-bottom:14px">`+list.map(function(r){ return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #EFECE3"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700">${wkFmtDate(r.date)}</div><div style="font-size:10.5px;color:#A39E8C">Outstanding ${R(r.outstanding||0)}${r.by?' · '+esc(r.by):''}</div></div>${r.pdf_url?`<a href="${r.pdf_url}" target="_blank" style="background:#8B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:800">Open PDF</a>`:''}</div>`; }).join('')+`</div>`;
+}
+async function stmtShare(r){ const file=new File([r.blob], r.name, {type:'application/pdf'}); if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file], title:r.name}); }catch(e){ if(!(e&&e.name==='AbortError')) saveBlobFile(r.blob,r.name); } return; } saveBlobFile(r.blob,r.name); showSaveToast('Sharing isn’t available — saved the PDF instead'); }
+async function stmtAction(act){
+  const d=STMT_DRAFT; if(!d) return;
+  const s=coSiteById(d.siteId); const lines=stmtLines(s||{details:{}});
+  showSaveToast(act==='save'?'Saving to the site…':'Building the statement…');
+  let r; try{ r=await stmtBuildPdf(d, lines); }catch(e){ showSaveToast('Could not build the statement — check your signal'); return; }
+  if(act==='pdf'){ saveBlobFile(r.blob,r.name); }
+  if(act==='share'){ await stmtShare(r); }
+  let ok=false; try{ await stmtSaveToSite(r, lines); ok=true; }catch(e){}
+  showSaveToast(ok?(act==='pdf'?'Downloaded & saved to the site':'Saved to the site'):(act==='pdf'?'Downloaded (couldn’t save — check signal)':'Could not save — check your signal'));
+  if(ok && s && $('siteDetailContent')) $('siteDetailContent').innerHTML=stmtBuilderHtml(s);
 }
 
 function duLeaderSites(leaderKey){
