@@ -3600,22 +3600,26 @@ async function cltAction(act){
 // outstanding, grouped by month. Reuses the report PDF helpers + save-to-site pattern.
 // ═══════════════════════════════════════════
 let STMT_DRAFT=null;
-function stmtLines(s){
-  return siteInvoices(s).filter(function(iv){ return !iv.void; })
+// Only invoices dated on or before the "as at" date appear (a statement is a point in time).
+function stmtLines(s, asAt){
+  return siteInvoices(s).filter(function(iv){ return !iv.void && (!asAt || String(iv.date||'') <= String(asAt)); })
     .map(function(iv){ return { date:iv.date||'', number_str:iv.number_str||'', number:parseInt(iv.number)||0, amount:parseFloat(iv.total_incl)||0, paid:!!iv.paid, heading:iv.heading||'', description:iv.description||'' }; })
     .sort(function(a,b){ return String(a.date).localeCompare(String(b.date)) || a.number-b.number; });
 }
 function stmtTotals(lines){ let inv=0,paid=0; lines.forEach(function(l){ inv+=l.amount; if(l.paid) paid+=l.amount; }); return { invoiced:inv, paid:paid, outstanding:Math.round((inv-paid)*100)/100 }; }
 function stmtMonthLabel(mk){ const p=String(mk).split('-'); return new Date(+p[0],(+p[1]||1)-1,1).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}); }
+// A monthly statement defaults to "as at the end of last month" (so today's new invoice isn't on it yet).
+function stmtDefaultDate(){ const n=new Date(); const d=new Date(n.getFullYear(), n.getMonth(), 0); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function openSiteStatement(siteId){
   const s=coSiteById(siteId); if(!s) return; const d=s.details||{};
-  STMT_DRAFT={ siteId:siteId, site:s.name||'', client:(s.client||''), address:(d.address||''), date:invToday() };
+  STMT_DRAFT={ siteId:siteId, site:s.name||'', client:(s.client||''), address:(d.address||''), date:stmtDefaultDate() };
   $('siteDetailContent').innerHTML=stmtBuilderHtml(s); openModal('modalSiteDetail');
 }
 function stmtSet(f,v){ if(STMT_DRAFT){ STMT_DRAFT[f]=v; } }
+function stmtSetDate(v){ if(!STMT_DRAFT) return; STMT_DRAFT.date=v; const s=coSiteById(STMT_DRAFT.siteId); if(s && $('siteDetailContent')) $('siteDetailContent').innerHTML=stmtBuilderHtml(s); }
 function stmtBuilderHtml(s){
   const lbl='display:block;font-size:10.5px;font-weight:800;color:#8A8470;letter-spacing:.6px;margin-bottom:4px;text-transform:uppercase';
-  const lines=stmtLines(s); const t=stmtTotals(lines);
+  const lines=stmtLines(s, STMT_DRAFT.date); const t=stmtTotals(lines);
   const preview=lines.length ? (function(){
     const byMonth={}, order=[]; lines.forEach(function(l){ const mk=(l.date||'0000-00').slice(0,7); if(!byMonth[mk]){byMonth[mk]=[];order.push(mk);} byMonth[mk].push(l); });
     return order.sort().map(function(mk){
@@ -3631,7 +3635,8 @@ function stmtBuilderHtml(s){
     <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${esc(s.name||'')} — a client statement of account, built automatically from the invoices.</div>
     ${stmtSavedListHtml(s)}
     <div class="ledger-card" style="padding:14px 15px;margin-bottom:14px">
-      <label style="${lbl}">Statement date (as at)</label><input class="f-input" type="date" style="margin:0 0 10px" value="${esc(STMT_DRAFT.date)}" onchange="stmtSet('date',this.value)"/>
+      <label style="${lbl}">Statement date (as at)</label><input class="f-input" type="date" style="margin:0 0 3px" value="${esc(STMT_DRAFT.date)}" onchange="stmtSetDate(this.value)"/>
+      <div style="font-size:10.5px;color:#A39E8C;margin:0 0 10px">Only invoices up to this date are shown. Move it forward to include a newer invoice.</div>
       <label style="${lbl}">To (client)</label><input class="f-input" style="margin:0 0 10px" value="${esc(STMT_DRAFT.client)}" oninput="stmtSet('client',this.value)"/>
       <label style="${lbl}">Address</label><textarea class="f-input" rows="2" style="margin:0" oninput="stmtSet('address',this.value)">${esc(STMT_DRAFT.address)}</textarea>
     </div>
@@ -3720,7 +3725,7 @@ function stmtSavedListHtml(s){
 async function stmtShare(r){ const file=new File([r.blob], r.name, {type:'application/pdf'}); if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file], title:r.name}); }catch(e){ if(!(e&&e.name==='AbortError')) saveBlobFile(r.blob,r.name); } return; } saveBlobFile(r.blob,r.name); showSaveToast('Sharing isn’t available — saved the PDF instead'); }
 async function stmtAction(act){
   const d=STMT_DRAFT; if(!d) return;
-  const s=coSiteById(d.siteId); const lines=stmtLines(s||{details:{}});
+  const s=coSiteById(d.siteId); const lines=stmtLines(s||{details:{}}, d.date);
   showSaveToast(act==='save'?'Saving to the site…':'Building the statement…');
   let r; try{ r=await stmtBuildPdf(d, lines); }catch(e){ showSaveToast('Could not build the statement — check your signal'); return; }
   if(act==='pdf'){ saveBlobFile(r.blob,r.name); }
