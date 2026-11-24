@@ -8384,6 +8384,34 @@ function paintSiteSummaryBody(){
     </div>`;
   }
 
+  // ── INVOICING — how much of the contract is invoiced, what's left, and every invoice (owner only) ──
+  if(owner){
+    const invs = siteInvoices(s).slice().sort(function(a,b){ return (parseInt(a.number)||0)-(parseInt(b.number)||0); });
+    const live = invs.filter(function(iv){ return !iv.void; });
+    const invoicedEx = live.reduce(function(a,iv){ return a+(parseFloat(iv.amount_ex)||0); }, 0);
+    const pctInv = quote>0 ? Math.round(invoicedEx/quote*100) : 0;
+    const leftEx = Math.round((quote-invoicedEx)*100)/100;
+    const pctLeft = quote>0 ? Math.max(0, 100-pctInv) : 0;
+    const row2 = function(lbl, rand, pct, col){ return `<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;padding:5px 0"><span>${lbl}</span><span style="display:flex;align-items:baseline;gap:7px"><span class="disp" style="font-weight:800;color:${col||'#1A1A1A'}">${R(rand)}</span>${pct!=null?`<span class="disp" style="font-weight:800;font-size:11px;color:${col||'#8A8470'}">${pct}%</span>`:''}</span></div>`; };
+    h += `<div class="section-lbl">Invoicing</div>
+    <div class="ledger-card" style="padding:12px 16px;margin-bottom:16px">
+      ${row2('Contract value (ex-VAT)', quote, null, '#1A1A1A')}
+      ${row2('Invoiced to date (ex-VAT)', invoicedEx, pctInv, '#1A7A4A')}
+      ${row2('Left to invoice (ex-VAT)', leftEx, pctLeft, leftEx>0.5 ? '#C08A00' : '#3F5A4C')}
+      <div style="height:8px;border-radius:999px;background:#EFECE3;overflow:hidden;margin:9px 0 4px"><div style="height:100%;width:${Math.max(0,Math.min(100,pctInv))}%;background:#1A7A4A"></div></div>
+      <div style="font-size:10.5px;color:#A39E8C">${pctInv}% of the contract invoiced · ${pctLeft}% still to invoice. Tap any invoice to open, share or download it.</div>
+      ${live.length || invs.length ? `<div style="margin-top:6px">`+invs.map(function(iv){
+        const vd=!!iv.void; const st=vd?'void':(iv.paid?'paid':'unpaid'); const stc=vd?'#8A8470':(iv.paid?'#3F5A4C':'#C08A00');
+        return `<div onclick="openInvoiceDetail('${s.id}','${iv.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-top:1px solid #EFECE3;cursor:pointer">
+          <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:800">${esc(iv.number_str||'')} <span style="color:#C9C5BA;font-weight:800">›</span></div>
+            <div style="font-size:10.5px;color:#A39E8C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${iv.date?fd(iv.date):'—'}${iv.heading||iv.description?' · '+esc(iv.heading||iv.description):''}</div></div>
+          <div style="text-align:right;flex:0 0 auto"><div class="disp" style="font-weight:800;font-size:12.5px">${R(iv.total_incl||0)}</div>
+            <div style="font-size:9px;font-weight:800;color:${stc};text-transform:uppercase;letter-spacing:.3px">${st} · incl VAT</div></div>
+        </div>`;
+      }).join('')+`</div>` : `<div style="font-size:11.5px;color:#A39E8C;padding:8px 0 2px">No invoices raised yet — tap “💵 Invoice client” above.</div>`}
+    </div>`;
+  }
+
   // Stock sheet removed — products now come only from the 📦 Products button
   // (built from the invoice line items, so they line up with the invoices exactly).
 
