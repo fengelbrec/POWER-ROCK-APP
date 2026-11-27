@@ -9340,7 +9340,9 @@ function allAppInvoices(){
 }
 function nextInvoiceNumber(){
   let mx = 1813;   // last pre-app invoice; Sept invoices are recreated from 1814
-  allAppInvoices().forEach(function(iv){ const n=parseInt(iv.number)||0; if(n>mx) mx=n; });
+  const voids = [];
+  allAppInvoices().forEach(function(iv){ const n=parseInt(iv.number)||0; if(n>mx) mx=n; if(iv.void && n>0) voids.push(n); });
+  if(voids.length) return Math.min.apply(null, voids);   // reuse a voided number first (lowest, so gaps fill in order)
   return mx+1;
 }
 
@@ -9526,8 +9528,8 @@ async function saveInvoice(siteId, poId, editId){
   const typedNum=parseInt((($('inv_num')||{}).value||'').replace(/\D/g,''))||0;
   const numN = typedNum>0 ? typedNum : nextInvoiceNumber();
   const numStr='PR'+String(numN).padStart(6,'0');
-  // duplicate-number check (ignore the invoice being edited)
-  if(allAppInvoices().some(function(x){ return (parseInt(x.number)||0)===numN && x.id!==editId; })){
+  // duplicate-number check — a VOID invoice's number is free to reuse, so it never blocks.
+  if(allAppInvoices().some(function(x){ return (parseInt(x.number)||0)===numN && x.id!==editId && !x.void; })){
     if(!confirm('Invoice '+numStr+' already exists in the app. Save with the same number?')){ refreshSitePOs(); return; }
   }
   // ── Over-invoicing guard: a contract (no-PO) invoice must not push the site past 100% of the quote ──
@@ -9558,8 +9560,10 @@ async function saveInvoice(siteId, poId, editId){
     Object.assign(inv, fields);   // keep id, paid, paid_date, created
     delete inv.void;   // editing a parked (void) invoice into a real one un-voids it
   } else {
-    inv=Object.assign({ id:uid(), paid:false, paid_date:'', created:invToday() }, fields);
-    d.invoices.push(inv);
+    // Reusing a voided number on THIS site? Fill that parked slot instead of making a second record.
+    const reuse=(d.invoices||[]).find(function(x){ return (parseInt(x.number)||0)===numN && x.void; });
+    if(reuse){ Object.assign(reuse, fields); reuse.paid=false; reuse.paid_date=''; delete reuse.void; inv=reuse; }
+    else { inv=Object.assign({ id:uid(), paid:false, paid_date:'', created:invToday() }, fields); d.invoices.push(inv); }
   }
   // Recompute the PO's invoiced % from all its invoices (robust for new & edited).
   if(po) po.invoiced_pct=(d.invoices||[]).filter(function(x){ return x.po_id===po.id; }).reduce(function(a,x){ return a+(parseFloat(x.pct)||0); },0);
@@ -9568,6 +9572,15 @@ async function saveInvoice(siteId, poId, editId){
   if(ok){
     s.details=d;
     if(typeof OWNER!=='undefined'){ const os=(OWNER.sites||[]).find(function(x){return x.id===siteId;}); if(os) os.details=d; }
+    // The number has now been used — remove it from any voided invoice parked on another site, so it isn't handed out again.
+    if(!editId && typeof OWNER!=='undefined' && Array.isArray(OWNER.sites)){
+      for(const os2 of OWNER.sites){
+        if(os2.id===siteId) continue;
+        const od=os2.details||{}; if(!Array.isArray(od.invoices)) continue;
+        const kept=od.invoices.filter(function(x){ return !((parseInt(x.number)||0)===numN && x.void); });
+        if(kept.length!==od.invoices.length){ od.invoices=kept; os2.details=od; try{ await sbPatch('sites','id=eq.'+encodeURIComponent(os2.id),{details:od}); }catch(e){} }
+      }
+    }
     openInvoicePDF(inv);   // open for a look; use ⬇ PDF to save the file when needed
     showSaveToast('Invoice '+numStr+(editId?' updated':' created')+' — opened for review');
     refreshSitePOs();
