@@ -9352,9 +9352,9 @@ function createManualInvoice(siteId){ renderInvoiceEditor(siteId, null, null, tr
 // Duplicate this site's deposit invoice (the first one raised) into a NEW invoice — % and line items editable.
 function renderDuplicateInvoice(siteId){
   const s=(SUMMARY&&SUMMARY.site)||{};
-  const invs=siteInvoices(s).filter(function(iv){ return !iv.void; }).slice().sort(function(a,b){ return (parseInt(a.number)||0)-(parseInt(b.number)||0); });
+  const invs=siteInvoices(s).filter(function(iv){ return !iv.void; }).slice().sort(function(a,b){ return (parseInt(b.number)||0)-(parseInt(a.number)||0); });
   if(!invs.length){ showSaveToast('No invoice to duplicate yet — create one first'); return; }
-  const src=invs[0];   // the deposit = the first invoice raised on this site
+  const src=invs[0];   // the most recent invoice — the right client & structure for the next payment
   INV_SEED={ client_name:src.client_name, client_address:src.client_address, client_vat:src.client_vat, client_reg:src.client_reg, client_group:src.client_group,
     order_nr:src.order_nr||'', project_ref:src.project_ref||s.name||'', heading:src.heading||'', description:src.description||'',
     pct:src.pct, base_ex:(src.base_ex!=null?src.base_ex:src.amount_ex), extra_lines:Array.isArray(src.extra_lines)?src.extra_lines.slice():[] };
@@ -9529,6 +9529,21 @@ async function saveInvoice(siteId, poId, editId){
   // duplicate-number check (ignore the invoice being edited)
   if(allAppInvoices().some(function(x){ return (parseInt(x.number)||0)===numN && x.id!==editId; })){
     if(!confirm('Invoice '+numStr+' already exists in the app. Save with the same number?')){ refreshSitePOs(); return; }
+  }
+  // ── Over-invoicing guard: a contract (no-PO) invoice must not push the site past 100% of the quote ──
+  if(!poId){
+    const contract = (typeof siteQuoteValue==='function' ? (siteQuoteValue(s)||0) : 0) || parseFloat(s.quote_value) || 0;
+    if(contract>0){
+      const baseExOf=function(x){ return parseFloat(x&&x.base_ex!=null?x.base_ex:(x?x.amount_ex:0))||0; };
+      let already=0;
+      (d.invoices||[]).forEach(function(iv){ if(iv.id!==editId && !iv.void && !iv.po_id) already+=baseExOf(iv); });
+      const totalEx = Math.round((already+base)*100)/100;
+      if(totalEx > contract + 0.5){
+        const m=function(v){ return 'R '+Math.round(v).toLocaleString('en-ZA'); };
+        const pc=function(v){ return (Math.round(v/contract*1000)/10)+'%'; };
+        if(!confirm('⚠ OVER-INVOICING\n\nThis site is a '+m(contract)+' contract (ex-VAT).\nAlready invoiced:  '+pc(already)+'  ('+m(already)+')\nThis invoice:      '+pc(base)+'  ('+m(base)+')\n──────────────\nTotal would be:    '+pc(totalEx)+'  ('+m(totalEx)+')\n\nThat is MORE than 100% of the contract. This usually means the % or amount is wrong.\n\nSave anyway?')){ refreshSitePOs(); return; }
+      }
+    }
   }
   const fields={ number:numN, number_str:numStr, po_id:poId||null,
     client_name: g('inv_client'), client_address: g('inv_addr'), client_vat: g('inv_vat'), client_reg: g('inv_reg'),
