@@ -9030,6 +9030,7 @@ function sitePOsHtml(){
     ${startBlock(`renderInvoiceEditor('${s.id}')`, '📄', 'Upload Quotation &amp; create tax invoice', 'Invoice from the quotation / contract total'+(d.quote_url?' · on file ✓':''), '#1A7A4A')}
     ${startBlock(`createManualInvoice('${s.id}')`, '✎', 'Create tax invoice manually', 'Type the client, description and amount yourself', '#2c5f8a')}
     ${startBlock(`renderInvoiceFromPast('${s.id}')`, '📋', 'Same client, new site — copy a past invoice', 'Reuse a previous invoice’s details; just set the new site, order &amp; amount', '#6B4FA3')}
+    ${invs.length ? startBlock(`renderDuplicateInvoice('${s.id}')`, '📑', 'Duplicate deposit invoice', 'Copy this site’s deposit invoice for the next payment — adjust the % &amp; add line items', '#B8862F') : ''}
     <div style="height:6px"></div>`;
   if(pos.length){
     h += `<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#A39E8C;margin:2px 0 8px">PURCHASE ORDERS</div>`;
@@ -9348,9 +9349,21 @@ let INV_LINES=[];   // extra invoice line items (add-ons / credits)
 // poId optional. With a PO → fields pre-filled from it & its invoiced% is tracked.
 // Without a PO (e.g. Antigua) → type client details + a quote/contract total; invoice any %.
 function createManualInvoice(siteId){ renderInvoiceEditor(siteId, null, null, true); }
+// Duplicate this site's deposit invoice (the first one raised) into a NEW invoice — % and line items editable.
+function renderDuplicateInvoice(siteId){
+  const s=(SUMMARY&&SUMMARY.site)||{};
+  const invs=siteInvoices(s).filter(function(iv){ return !iv.void; }).slice().sort(function(a,b){ return (parseInt(a.number)||0)-(parseInt(b.number)||0); });
+  if(!invs.length){ showSaveToast('No invoice to duplicate yet — create one first'); return; }
+  const src=invs[0];   // the deposit = the first invoice raised on this site
+  INV_SEED={ client_name:src.client_name, client_address:src.client_address, client_vat:src.client_vat, client_reg:src.client_reg, client_group:src.client_group,
+    order_nr:src.order_nr||'', project_ref:src.project_ref||s.name||'', heading:src.heading||'', description:src.description||'',
+    pct:src.pct, base_ex:(src.base_ex!=null?src.base_ex:src.amount_ex), extra_lines:Array.isArray(src.extra_lines)?src.extra_lines.slice():[] };
+  renderInvoiceEditor(siteId, null, null, 'duplicate');
+}
 function renderInvoiceEditor(siteId, poId, invId, manual){
   const isClone = (manual === 'clone');        // copied from a past invoice (same client, new site)
-  const seed = isClone ? (INV_SEED || {}) : null;
+  const isDup = (manual === 'duplicate');      // duplicated from this site's deposit invoice (new invoice)
+  const seed = (isClone||isDup) ? (INV_SEED || {}) : null;
   INV_SEED = null;                              // consume it so it can't leak into a later invoice
   manual = (manual === true);                   // only the real "manual" path; a clone uses the new site's quote as the % basis
   const s=(SUMMARY && SUMMARY.site)||{};
@@ -9362,7 +9375,9 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
   // Extra line items (add-ons = +, credits = −). Editable, added to the invoice total.
   INV_LINES = (existing && Array.isArray(existing.extra_lines))
     ? existing.extra_lines.map(function(l){ return { desc:String(l.desc||''), amount:parseFloat(l.amount)||0 }; })
-    : [];
+    : (isDup && seed && Array.isArray(seed.extra_lines))
+      ? seed.extra_lines.map(function(l){ return { desc:String(l.desc||''), amount:parseFloat(l.amount)||0 }; })
+      : [];
   // Edit → fill from the saved invoice. New → from the PO, but fall back to the most
   // recent invoice already raised for this site, so a recurring client's name, address,
   // VAT & reg carry over automatically and only the % needs to change.
@@ -9388,8 +9403,8 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
         client_vat:     pick(seed&&seed.client_vat,     d.client_vat, lastInv&&lastInv.client_vat),
         client_reg:     pick(seed&&seed.client_reg,     d.client_reg, lastInv&&lastInv.client_reg),
         client_group:   pick(seed&&seed.client_group,   lastInv&&lastInv.client_group),
-        order_nr:       '',
-        project_ref:    pick(s.name, lastInv&&lastInv.project_ref)
+        order_nr:       isDup ? (seed&&seed.order_nr||'') : '',
+        project_ref:    pick(isDup&&seed&&seed.project_ref, s.name, lastInv&&lastInv.project_ref)
       });
   // The project value the % works off: the PO total, but if the PO never captured it,
   // work it back from the last invoice (amount ÷ its %), then the site quote.
@@ -9405,16 +9420,19 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
   const remaining=Math.max(0,100-done);
   const numStr = existing ? existing.number_str : ('PR'+String(nextInvoiceNumber()).padStart(6,'0'));
   const defDesc = existing ? (existing.description||'')
+                : (isDup && seed ? (seed.description||'Preparation & Paint as per quotation')
                 : (po ? ('Preparation & Paint as per Purchase Order '+(po.order_nr||''))
-                      : 'Preparation & Paint as per quotation');
-  const startPct = existing ? (parseFloat(existing.pct)||0) : ((manual||isClone) ? '' : (po ? (remaining>0?remaining:100) : 100));
-  const startAmt = existing ? baseExOf(existing) : ((manual||isClone) ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100);
+                      : 'Preparation & Paint as per quotation'));
+  const startPct = existing ? (parseFloat(existing.pct)||0) : (isDup ? (parseFloat(seed&&seed.pct)||50) : ((manual||isClone) ? '' : (po ? (remaining>0?remaining:100) : 100)));
+  const startAmt = existing ? baseExOf(existing) : (isDup ? baseExOf(seed) : ((manual||isClone) ? 0 : Math.round(basis*(parseFloat(startPct)||0))/100));
   const lbl='font-size:11px;font-weight:700;color:#8A8470;display:block;margin-bottom:3px';
   const fld=function(label,id,val,ph){ return `<div style="margin-bottom:10px"><label style="${lbl}">${label}</label>
       <input class="f-input" id="${id}" value="${esc(val==null?'':String(val))}" ${ph?`placeholder="${ph}"`:''} style="margin:0"/></div>`; };
   const isGen = !!(d && d.is_general);
   // Quotation strip (no-PO path): open the quote on file, or upload it right here.
-  const quoteStrip = isClone
+  const quoteStrip = isDup
+    ? `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">📑 Duplicated from this site’s deposit invoice. It’s a <b>new invoice</b> (new number) — adjust the <b>%</b> / amount and add any <b>line items</b>, then save.</div>`
+    : isClone
     ? `<div style="background:#F0ECF7;border:1px solid #D4C7E8;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6B4FA3">📋 Copied from a past invoice — the client name, address, VAT &amp; reg are filled in. Set the <b>order number</b>, <b>amount</b> and <b>date</b> below; the project is already set to this site.</div>`
     : manual
     ? `<div style="background:#EAF1F7;border:1px solid #BBD2E6;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#2c5f8a">✎ Manual invoice — type the client, description and amount below. (The client is pre-filled from this site; edit anything.)</div>`
@@ -9423,7 +9441,7 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
       : `<div style="background:#FBF3E2;border:1px solid #EAD9AE;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;color:#6b5a2b">No quotation on file for this site yet. <label style="color:#8B1A1A;font-weight:800;cursor:pointer;text-decoration:underline">Upload the quotation<input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadQuoteThenInvoice('${siteId}',this)"/></label> (optional — you can still invoice below).</div>`);
   let h=`<div style="width:40px;height:4px;background:#e0ddd6;border-radius:2px;margin:0 auto 16px"></div>
     <div class="disp" style="font-size:17px;font-weight:800;margin-bottom:3px">${existing?'Edit invoice':'New invoice'} · ${numStr}</div>
-    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(isClone?'Copied from a past invoice — set the new order number, amount and date.':(manual?'Manual tax invoice — fill in the details yourself.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation'))))}</div>
+    <div style="font-size:11.5px;color:#8A8470;margin-bottom:14px">${existing?'Editing a saved invoice — change anything and save.':(isDup?'Duplicated deposit — change the heading / % and add line items, then save as a new invoice.':(isClone?'Copied from a past invoice — set the new order number, amount and date.':(manual?'Manual tax invoice — fill in the details yourself.':(po?('From Order '+esc(po.order_nr||'')+' · already invoiced '+done+'%'+(remaining<100?' · '+remaining+'% remaining':'')):(isGen?'Once-off / supply-only — type the client and amount below.':'No purchase order — invoiced from the quotation')))))}</div>
     ${quoteStrip}
     ${fld('Invoice number (you can change it to match your records)','inv_num',numStr)}
     ${fld('Client name','inv_client',src.client_name,'e.g. Excellerate JHI')}
@@ -9436,7 +9454,7 @@ function renderInvoiceEditor(siteId, poId, invId, manual){
     ${fld('Project / reference (RE)','inv_ref',(existing ? (existing.project_ref||'') : (s.name || src.project_ref || '')),'e.g. Absa Building Tzaneen')}
     <div style="margin-bottom:10px"><label style="${lbl}">${po?'PO':'Quote / contract'} total (ex-VAT, R) — used to work out the %</label>
       <input class="f-input" id="inv_base" type="number" step="0.01" value="${basis||''}" oninput="invPctToAmt()" style="margin:0" ${po?'':'placeholder="e.g. 250000"'}/></div>
-    ${fld('Invoice heading (top of the table, e.g. "PAYMENT 2")','inv_heading',(existing?(existing.heading||''):'PAYMENT 1'),'e.g. PAYMENT 2')}
+    ${fld('Invoice heading (top of the table, e.g. "PAYMENT 2")','inv_heading',(existing?(existing.heading||''):(isDup&&seed?(seed.heading||'PAYMENT 1'):'PAYMENT 1')),'e.g. PAYMENT 2')}
     <div style="margin-bottom:10px"><label style="${lbl}">Description (you can edit)</label>
       <textarea class="f-input" id="inv_desc" rows="3" style="margin:0">${esc(existing?existing.description:defDesc)}</textarea></div>
     <div style="display:flex;gap:10px;margin-bottom:10px">
